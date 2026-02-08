@@ -53,6 +53,9 @@ Strategy MoltBot (Intent 제안자)
   "decision": "PROPOSE",
   "intent": {
     "intentVersion": "V1",
+    "fundId": "fund-001",
+    "roomId": "telegram-room-abc",
+    "epochId": 12,
     "vault": "0xVault",
     "action": "BUY",
     "tokenIn": "0xUSDC",
@@ -81,6 +84,7 @@ Strategy MoltBot (Intent 제안자)
   "status": "OK",
   "taskType": "propose_intent",
   "fundId": "fund-001",
+  "roomId": "telegram-room-abc",
   "epochId": 12,
   "decision": "HOLD",
   "reason": "유동성 부족 또는 슬리피지 위험이 정책 임계치 초과",
