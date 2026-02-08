@@ -228,6 +228,49 @@ Notes:
 - it passes sanity checks.
 4) Once intent threshold is met, Vault executes onchain.
 
+### 5.5 Sequence diagrams (quick)
+
+#### 5.5.1 Observation/Claim validation loop
+```mermaid
+sequenceDiagram
+  participant Chat as Chat Room
+  participant Hub as CrawHub
+  participant C as Crawler Bots
+  participant S as Evidence Store
+  participant V as Validator Bots
+  participant R as Relayer
+  participant CB as ClaimBook (onchain)
+
+  Chat->>Hub: SourceSpec / token candidate proposal
+  Hub->>C: Assign crawl jobs
+  C->>S: Put Observation + evidence => evidenceURI
+  C->>CB: submitClaim(claimHash, claimURI)
+  V->>S: Fetch evidenceURI + re-crawl/verify
+  V->>R: Send attestation (sig + score)
+  R->>CB: attestClaim(claimHash, batch sigs)
+  CB-->>R: ClaimFinalized (threshold)
+```
+
+#### 5.5.2 Intent execution loop
+```mermaid
+sequenceDiagram
+  participant SA as Strategy Bot
+  participant IDX as Onchain Indexer
+  participant CB as ClaimBook (onchain)
+  participant IB as IntentBook (onchain)
+  participant V as Validator Bots
+  participant R as Relayer
+  participant VA as Vault (onchain)
+
+  CB-->>SA: finalized snapshot(s)
+  IDX-->>SA: onchain metrics
+  SA->>IB: proposeIntent(intentHash, intentURI, snapshotHash)
+  V->>R: Sign intentHash after checks
+  R->>IB: attestIntent(intentHash, batch sigs)
+  R->>VA: executeIntent(intent, batch sigs)
+  VA-->>R: ExecutedIntent
+```
+
 ### 5.5 Governance and custody model
 - Vault custody is managed by multisig (upgrades/pause/critical parameters).
 - Trading execution is delegated to the agent pipeline, but bounded by:
@@ -320,4 +363,3 @@ The first 5 items to lock down before writing lots of code:
 3) Trust score algorithm (count -> weighted -> dispute/slash)
 4) Chat command spec (minimal commands + permissions)
 5) Vault risk rules (caps/slippage/expiry/allowlists/pause) + governance hooks
-
