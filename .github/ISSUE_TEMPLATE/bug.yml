@@ -1,0 +1,58 @@
+name: "Bug"
+description: "Report something that is broken."
+title: "[Bug] "
+labels: ["bug", "priority/p1"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: "What is broken?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps To Reproduce
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Screenshots
+      description: "Paste logs (redact secrets), tx hashes, screenshots, etc."
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - area/contracts
+        - area/agents
+        - area/relayer
+        - area/ui
+        - area/infra
+        - documentation
+    validations:
+      required: true
+

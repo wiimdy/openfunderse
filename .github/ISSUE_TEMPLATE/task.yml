@@ -1,0 +1,68 @@
+name: "Task"
+description: "A scoped piece of work with clear acceptance criteria."
+title: "[Task] "
+labels: ["enhancement", "priority/p2"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: "What outcome should we achieve? (1-3 sentences)"
+      placeholder: "Example: Implement ClaimBook submit/attest flow with EIP-712 signature verification."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: "How do we know this is done? (checklist style)"
+      placeholder: "- [ ] ...\n- [ ] ..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: "Pick the primary area (also apply the matching label if possible)."
+      options:
+        - area/contracts
+        - area/agents
+        - area/relayer
+        - area/ui
+        - area/infra
+        - documentation
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: "Pick one (also apply the matching label if possible)."
+      options:
+        - priority/p0
+        - priority/p1
+        - priority/p2
+    validations:
+      required: true
+
+  - type: textarea
+    id: plan
+    attributes:
+      label: Implementation Notes
+      description: "Optional. Outline approach, files, and edge cases."
+      placeholder: "Notes, pseudo-code, related modules..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: links
+    attributes:
+      label: Links / References
+      description: "PRD sections, docs, related issues, Telegram message links, etc."
+      placeholder: "- docs/ARCHITECTURE.md#...\n- #123"
+    validations:
+      required: false
+

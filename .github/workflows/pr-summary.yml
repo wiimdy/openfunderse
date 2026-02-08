@@ -1,0 +1,105 @@
+name: PR Summary
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+concurrency:
+  group: pr-summary-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-summary:
+    # Safety: do not run on PRs from forks (prevents secret exposure + write perms issues)
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # If CLAUDE_CODE_OAUTH_TOKEN exists, use Claude Code to write/update the summary comment.
+      - name: PR Summary (Claude)
+        if: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Task:
+            - Read the PR title/description and diff.
+            - Post (or update) a single PR comment with a concise, reviewer-friendly summary.
+
+            Requirements:
+            - Comment must include this marker at the top: <!-- claw-pr-summary -->
+            - Output language: Korean first, then a short English summary section.
+            - Keep it concrete (what changed, why, impact). Avoid generic filler.
+            - Include:
+              1) Summary (3-8 bullets)
+              2) Notable files (up to 10 paths)
+              3) Reviewer notes / risks (up to 5 bullets)
+              4) Diffstat line (e.g., "X files changed, +A -D")
+
+            Use these commands:
+            - gh pr view ${{ github.event.pull_request.number }} --json title,body,author,baseRefName,headRefName,url
+            - gh pr view ${{ github.event.pull_request.number }} --json changedFiles,additions,deletions
+            - gh pr diff ${{ github.event.pull_request.number }} --name-only
+            - gh pr diff ${{ github.event.pull_request.number }} --patch
+
+            Post the summary by editing the last comment from the current user (github-actions[bot]) if it exists,
+            otherwise create it:
+
+            gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none -F - <<'EOF'
+            <!-- claw-pr-summary -->
+            ...your markdown here...
+            EOF
+
+            Do NOT modify the PR description. Only comment.
+          claude_args: '--allowed-tools "Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"'
+
+      # Fallback: if no Claude token is configured, still leave a deterministic summary comment.
+      - name: PR Summary (Basic Fallback)
+        if: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN == '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pr="${{ github.event.pull_request.number }}"
+          repo="${{ github.repository }}"
+
+          title="$(gh pr view "$pr" --repo "$repo" --json title --jq .title)"
+          url="$(gh pr view "$pr" --repo "$repo" --json url --jq .url)"
+          changed_files="$(gh pr view "$pr" --repo "$repo" --json changedFiles --jq .changedFiles)"
+          additions="$(gh pr view "$pr" --repo "$repo" --json additions --jq .additions)"
+          deletions="$(gh pr view "$pr" --repo "$repo" --json deletions --jq .deletions)"
+          diffstat="${changed_files} files changed, +${additions} -${deletions}"
+          files="$(gh pr diff "$pr" --repo "$repo" --name-only | head -n 30)"
+
+          gh pr comment "$pr" --repo "$repo" --edit-last --create-if-none -F - <<EOF
+          <!-- claw-pr-summary -->
+          ## PR 요약 (자동, 기본)
+          **$title**
+          $url
+
+          - Diffstat: $diffstat
+
+          ### 변경 파일(최대 30)
+          \`\`\`
+          $files
+          \`\`\`
+
+          > 참고: 더 정교한 요약(변경 의도/리스크 포함)을 원하면 repo secret에 \`CLAUDE_CODE_OAUTH_TOKEN\`을 설정해 주세요.
+          EOF
