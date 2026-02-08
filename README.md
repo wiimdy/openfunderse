@@ -76,6 +76,7 @@ Docs-first. Next steps are implementing:
 ## Docs
 - Product: `docs/PRD.md`
 - Architecture: `docs/ARCHITECTURE.md`
+- ChatOps Architecture (Telegram/Discord swarm fund): `docs/ARCHITECTURE_CHATOPS_kr.md`
 - Feature spec (MVP -> v1 -> v2): `docs/OPENCLAW_FEATURES.md`
 - Roadmap: `docs/ROADMAP.md`
 - Production checklist: `docs/PRODUCTION_READINESS.md`
