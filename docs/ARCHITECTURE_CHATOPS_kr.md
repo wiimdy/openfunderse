@@ -24,6 +24,80 @@ OpenClaw의 "펀드 정보"는 다음 파이프라인으로 만들어집니다.
 - "LLM 출력"은 신뢰 경계가 아닙니다. **온체인에서 실행되는 것은 서명과 룰에 의해 강제**됩니다.
 - "웹 크롤링"은 오프체인이 하고, 온체인은 **커밋/서명/정산**만 합니다.
 
+### 1.1 시각화(Overview)
+
+#### 1.1.1 시스템 다이어그램
+```mermaid
+flowchart LR
+  subgraph Chat["Telegram/Discord (Chat Room)"]
+    Users["참가자(펀드 참여자/커뮤니티)"]
+    FundOps["FundOps Bot (명령/상태조회)"]
+    Scout["Scout Bot (토큰 후보 탐지)"]
+  end
+
+  subgraph Hub["CrawHub (오프체인 허브)"]
+    Skill["Skill Registry"]
+    Spec["SourceSpec Registry"]
+    Queue["Job Queue / Scheduler"]
+    Evidence["Evidence Store (IPFS/HTTPS)"]
+  end
+
+  subgraph Bots["MoltBots (참가자 운영 에이전트)"]
+    Crawler["Crawler Bots (Miners)"]
+    Validator["Validator Bots (Verifiers)"]
+    Strategy["Strategy Bot (Decision agent)"]
+  end
+
+  subgraph Infra["Offchain Infra"]
+    Indexer["Onchain Indexer"]
+    Relayer["Relayer/Aggregator"]
+  end
+
+  subgraph Chain["Monad (onchain)"]
+    ClaimBook["ClaimBook"]
+    IntentBook["IntentBook"]
+    Vault["Vault"]
+    Gov["Governance + Multisig/Guardian"]
+  end
+
+  Users -->|/status /claims /vote| FundOps
+  Scout -->|token candidates| Hub
+
+  Skill --> Bots
+  Spec --> Queue
+  Queue --> Crawler
+  Crawler -->|Observation + evidenceURI| Evidence
+  Crawler -->|claimHash + claimURI| ClaimBook
+
+  Validator --> Evidence
+  Validator -->|attest (PASS/FAIL + score)| Relayer
+
+  Relayer -->|finalize claims/snapshot| ClaimBook
+  ClaimBook --> Strategy
+  Indexer --> Strategy
+
+  Strategy -->|propose intent| IntentBook
+  Validator -->|sign intentHash| Relayer
+  Relayer -->|attest intent| IntentBook
+  IntentBook -->|approved intent| Vault
+
+  Gov --> Vault
+```
+
+#### 1.1.2 상태 모델(큰 그림)
+```mermaid
+stateDiagram-v2
+  [*] --> ClaimSubmitted
+  ClaimSubmitted --> ClaimAttesting
+  ClaimAttesting --> ClaimFinal : threshold met
+  ClaimAttesting --> ClaimRejected : fail/expired
+  ClaimFinal --> SnapshotFinal
+  SnapshotFinal --> IntentProposed
+  IntentProposed --> IntentApproved : threshold met
+  IntentApproved --> Executed
+  IntentApproved --> Expired
+```
+
 ---
 
 ## 2. 구성요소(컴포넌트)
@@ -157,6 +231,49 @@ Relayer는 attestation을 모아 최종 신뢰도를 계산합니다.
 3) Validator들이 Intent를 검토하고 intentHash에 서명한다.
 4) threshold가 모이면 Vault가 온체인에서 실행한다.
 
+### 4.5 시퀀스 다이어그램(요약)
+
+#### 4.5.1 Observation/Claim 검증 루프
+```mermaid
+sequenceDiagram
+  participant Chat as Chat Room
+  participant Hub as CrawHub
+  participant C as Crawler Bots
+  participant S as Evidence Store
+  participant V as Validator Bots
+  participant R as Relayer
+  participant CB as ClaimBook (onchain)
+
+  Chat->>Hub: SourceSpec/Token candidate proposal
+  Hub->>C: Assign crawl jobs
+  C->>S: Put Observation + evidence => evidenceURI
+  C->>CB: submitClaim(claimHash, claimURI)
+  V->>S: Fetch evidenceURI + re-crawl/verify
+  V->>R: Send attestation(sig + score)
+  R->>CB: attestClaim(claimHash, batch sigs)
+  CB-->>R: ClaimFinalized (threshold)
+```
+
+#### 4.5.2 Intent 실행 루프
+```mermaid
+sequenceDiagram
+  participant SA as Strategy Bot
+  participant IDX as Onchain Indexer
+  participant CB as ClaimBook (onchain)
+  participant IB as IntentBook (onchain)
+  participant V as Validator Bots
+  participant R as Relayer
+  participant VA as Vault (onchain)
+
+  CB-->>SA: finalized snapshot(s)
+  IDX-->>SA: onchain metrics
+  SA->>IB: proposeIntent(intentHash, intentURI, snapshotHash)
+  V->>R: Sign intentHash after checks
+  R->>IB: attestIntent(intentHash, batch sigs)
+  R->>VA: executeIntent(intent, batch sigs)
+  VA-->>R: ExecutedIntent
+```
+
 ---
 
 ## 5. 사용자 입장 사용법(UX/ChatOps)
@@ -245,4 +362,31 @@ Relayer는 attestation을 모아 최종 신뢰도를 계산합니다.
 3) Trust score 계산 방식(단순 count -> 가중 평균 -> 슬래시 포함)
 4) Chat command spec(최소 커맨드/권한)
 5) Vault 리스크 룰(캡/슬리피지/만료/allowlist/pause)과 거버넌스 연결
+
+## 9. 부족한 점 / 고칠 부분(피드백)
+지금 설계 방향은 "해커톤 데모"뿐 아니라 제품으로 확장 가능한 뼈대가 있습니다. 다만 아래는 초기에 명시적으로 설계하지 않으면 나중에 크게 흔들립니다.
+
+1) **Sybil/담합 저항**
+- 누구나 봇을 붙일 수 있게 만들면 곧바로 Sybil이 들어옵니다.
+- MVP는 allowlist로 시작하고, 이후 stake + reputation + disputes/slashing로 가는 로드맵을 계약(정책) 수준에서 정의하는 게 좋습니다.
+
+2) **웹 데이터 재현성(재크롤 합의의 함정)**
+- 동적 페이지/AB 테스트/지역별 컨텐츠/봇 차단 때문에 "같은 selector인데 값이 다름"이 자주 발생합니다.
+- 해결: fetch 조건(UA, locale, viewport), evidence 포맷(원문 스냅샷, responseHash), freshness 규칙을 SourceSpec에 포함시키세요.
+
+3) **Trust Score 정의**
+- "N명이 PASS"만으로는 조작에 취약하고, "점수"도 정의가 필요합니다.
+- 최소로: outlier 처리, 최소 독립성(서로 다른 운영자), validator SLA, 가중치(스테이크/평판) 설계가 필요합니다.
+
+4) **Chat 조작/프롬프트 인젝션**
+- Strategy Agent 입력에 raw chat 텍스트가 섞이면 조작에 취약합니다.
+- 원칙: Strategy는 "검증된 스냅샷 + 온체인 지표"만 입력으로 사용하고, chat은 "후보 제안"으로만 취급하세요.
+
+5) **키/권한 모델**
+- 봇이 개인키를 들고 채팅방에서 돌아가면 유출/오남용 위험이 큽니다.
+- 권장: 스마트계정(ERC-1271) + session key + spending limits + allowlist venue 조합.
+
+6) **실행 안전장치**
+- Intent 승인만으로는 부족합니다. Vault가 끝에서 반드시 막아야 합니다.
+- 필수: allowlist, cap, slippage(minOut), deadline, cooldown, pause, (가능하면) circuit breaker.
 
