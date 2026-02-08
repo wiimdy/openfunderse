@@ -80,3 +80,7 @@ Docs-first. Next steps are implementing:
 - Roadmap: `docs/ROADMAP.md`
 - Production checklist: `docs/PRODUCTION_READINESS.md`
 - Build process: `docs/BUILD_PROCESS.md`
+
+## Team Workflow
+- Communication (Telegram + GitHub): `docs/COMMUNICATION_kr.md`
+- Decisions (ADR): `docs/DECISIONS_kr.md`

@@ -1,0 +1,47 @@
+name: "Protocol / Architecture"
+description: "Proposal that changes protocol/architecture and should be recorded as a decision (ADR)."
+title: "[Protocol] "
+labels: ["enhancement", "priority/p1", "area/contracts"]
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: "What problem are we solving? What constraints exist?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: "What is the change? Include interfaces, hashing/signing rules, and compatibility notes."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: "List alternatives and why they were rejected."
+      placeholder: "- Option A ...\n- Option B ..."
+    validations:
+      required: false
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security / Risk Considerations
+      description: "Threat model changes, attack surface, failure modes."
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: adr
+    attributes:
+      label: ADR
+      description: "Once agreed, record the decision under docs/decisions/."
+      options:
+        - label: "I will add an ADR (docs/decisions/) or ask someone to."
+          required: true
+
