@@ -3,6 +3,11 @@
 텔레그램은 빠른 대화에 강하지만, "할 일/결정/진척"을 누적 관리하기엔 구조가 약합니다.
 그래서 **Source of Truth를 GitHub로 두고**, 텔레그램은 실시간 조율에만 쓰는 운영을 권장합니다.
 
+## 링크
+- Repo: https://github.com/wiimdy/claw-validation-market
+- Kanban(Project): https://github.com/users/wiimdy/projects/1
+- ADR(결정 기록): https://github.com/wiimdy/claw-validation-market/blob/main/docs/DECISIONS_kr.md
+
 ## 원칙 (핵심 5줄)
 - 할 일은 **무조건 Issue**로 남긴다(대화로 끝내지 않기).
 - 1개 이슈 = 1명 오너(명확한 책임).
@@ -41,4 +46,3 @@ Blockers:
 - PR은 가능하면 작게 쪼갭니다.
 - PR 본문에 `Fixes #123`를 넣어 자동 연결/자동 close를 유도합니다.
 - 데모/심사 관점에서 "작동"이 바뀌면 docs 업데이트를 같이 합니다.
-

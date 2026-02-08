@@ -84,3 +84,4 @@ Docs-first. Next steps are implementing:
 ## Team Workflow
 - Communication (Telegram + GitHub): `docs/COMMUNICATION_kr.md`
 - Decisions (ADR): `docs/DECISIONS_kr.md`
+- Kanban (GitHub Project): https://github.com/users/wiimdy/projects/1
