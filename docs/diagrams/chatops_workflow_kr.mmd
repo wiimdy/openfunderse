@@ -1,0 +1,54 @@
+flowchart LR
+  subgraph Chat["Telegram/Discord (Chat Room)"]
+    Users["참가자(펀드 참여자/커뮤니티)"]
+    FundOps["FundOps Bot (명령/상태조회)"]
+    Scout["Scout Bot (토큰 후보 탐지)"]
+  end
+
+  subgraph Hub["CrawHub (오프체인 허브)"]
+    Skill["Skill Registry"]
+    Spec["SourceSpec Registry"]
+    Queue["Job Queue / Scheduler"]
+    Evidence["Evidence Store (IPFS/HTTPS)"]
+  end
+
+  subgraph Bots["MoltBots (참가자 운영 에이전트)"]
+    Crawler["Crawler Bots (Miners)"]
+    Validator["Validator Bots (Verifiers)"]
+    Strategy["Strategy Bot (Decision agent)"]
+  end
+
+  subgraph Infra["Offchain Infra"]
+    Indexer["Onchain Indexer"]
+    Relayer["Relayer/Aggregator"]
+  end
+
+  subgraph Chain["Monad (onchain)"]
+    ClaimBook["ClaimBook"]
+    IntentBook["IntentBook"]
+    Vault["Vault"]
+    Gov["Governance + Multisig/Guardian"]
+  end
+
+  Users -->|status, claims, vote| FundOps
+  Scout -->|token candidates| Hub
+
+  Skill --> Bots
+  Spec --> Queue
+  Queue --> Crawler
+  Crawler -->|Observation + evidenceURI| Evidence
+  Crawler -->|claimHash + claimURI| ClaimBook
+
+  Validator --> Evidence
+  Validator -->|attest PASS_FAIL, score| Relayer
+
+  Relayer -->|finalize claims snapshot| ClaimBook
+  ClaimBook --> Strategy
+  Indexer --> Strategy
+
+  Strategy -->|propose intent| IntentBook
+  Validator -->|sign intentHash| Relayer
+  Relayer -->|attest intent| IntentBook
+  IntentBook -->|approved intent| Vault
+
+  Gov --> Vault

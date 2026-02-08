@@ -62,7 +62,7 @@ flowchart LR
     Gov["Governance + Multisig/Guardian"]
   end
 
-  Users -->|/status /claims /vote| FundOps
+  Users -->|status, claims, vote| FundOps
   Scout -->|token candidates| Hub
 
   Skill --> Bots
@@ -72,9 +72,9 @@ flowchart LR
   Crawler -->|claimHash + claimURI| ClaimBook
 
   Validator --> Evidence
-  Validator -->|attest (PASS/FAIL + score)| Relayer
+  Validator -->|attest PASS_FAIL, score| Relayer
 
-  Relayer -->|finalize claims/snapshot| ClaimBook
+  Relayer -->|finalize claims snapshot| ClaimBook
   ClaimBook --> Strategy
   Indexer --> Strategy
 

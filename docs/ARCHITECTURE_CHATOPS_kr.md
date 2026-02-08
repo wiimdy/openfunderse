@@ -60,7 +60,7 @@ flowchart LR
     Gov["Governance + Multisig/Guardian"]
   end
 
-  Users -->|/status /claims /vote| FundOps
+  Users -->|status, claims, vote| FundOps
   Scout -->|token candidates| Hub
 
   Skill --> Bots
@@ -70,9 +70,9 @@ flowchart LR
   Crawler -->|claimHash + claimURI| ClaimBook
 
   Validator --> Evidence
-  Validator -->|attest (PASS/FAIL + score)| Relayer
+  Validator -->|attest PASS_FAIL, score| Relayer
 
-  Relayer -->|finalize claims/snapshot| ClaimBook
+  Relayer -->|finalize claims snapshot| ClaimBook
   ClaimBook --> Strategy
   Indexer --> Strategy
 
@@ -389,4 +389,3 @@ sequenceDiagram
 6) **실행 안전장치**
 - Intent 승인만으로는 부족합니다. Vault가 끝에서 반드시 막아야 합니다.
 - 필수: allowlist, cap, slippage(minOut), deadline, cooldown, pause, (가능하면) circuit breaker.
-
