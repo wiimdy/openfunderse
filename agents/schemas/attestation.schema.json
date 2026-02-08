@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openclaw.dev/schemas/attestation.schema.json",
+  "title": "Attestation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "subject", "subjectHash", "verifier", "decision", "eip712", "signature"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "subject": { "type": "string", "enum": ["claim", "intent"] },
+    "subjectHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+    "verifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "address": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" }
+      }
+    },
+    "decision": { "type": "string", "enum": ["APPROVE", "DENY"] },
+    "reason": { "type": "string" },
+    "eip712": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domain", "types", "primaryType", "message"],
+      "properties": {
+        "domain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "chainId", "verifyingContract"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "chainId": { "type": "integer", "minimum": 1 },
+            "verifyingContract": { "type": "string", "pattern": "^0x[0-9a-fA-F]{40}$" }
+          }
+        },
+        "types": { "type": "object" },
+        "primaryType": { "type": "string", "minLength": 1 },
+        "message": { "type": "object" }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "type": "string", "enum": ["eip712", "placeholder"] },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
+

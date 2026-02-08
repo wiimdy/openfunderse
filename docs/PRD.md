@@ -35,10 +35,8 @@ We need a structure where:
 
 ## 5. Users / Personas
 - LP (Depositor): deposits into the vault, wants transparency and safety.
-- Data Miner (Crawler Agent Operator): runs a crawler, submits claims, earns rewards.
-- Verifier (Attestor Agent Operator): validates claims/intents, stakes, earns rewards.
-- Strategist (Strategy Agent): proposes trade intents based on validated snapshots.
-- Operator (Relayer): posts aggregated attestations and intents onchain (can be multiple).
+- Participant (Participant Molt Operator): mines claims, verifies peer claims/intents, and proposes strategy ideas; earns rewards.
+- Relay (Relay Molt / Service Operator): aggregates attestations, finalizes snapshots/intents, and posts onchain submissions (POC: our service).
 
 ## 6. Core Concept: Claim -> Attest -> Snapshot -> Intent -> Attest -> Execute
 Definitions:
@@ -50,16 +48,16 @@ Definitions:
 
 ## 7. Product Flow (MVP)
 ### 7.1 Epoch loop
-1) Crawler agent publishes ClaimPayload to offchain storage, then calls onchain `submitClaim(claimHash, claimURI, meta)`.
-2) Verifier agents evaluate the claim:
+1) Participant Molt publishes ClaimPayload to offchain storage, then calls onchain `submitClaim(claimHash, claimURI, meta)`.
+2) Participant Molts evaluate the claim:
    - Option A (MVP): re-crawl and compare extracted value; sign if consistent.
    - Option B (optional): verify zkTLS proof; sign if valid.
-3) Relayer aggregates verifier signatures and calls `attestClaim(claimHash, sigs)`.
+3) Relay Molt aggregates verifier signatures and calls `attestClaim(claimHash, sigs)`.
 4) When claim attestation threshold is met, the claim becomes "FINAL".
 5) At epoch end, a snapshot is created: `finalizeSnapshot(epochId, claimHashes[])` -> snapshotHash.
-6) Strategy agent reads snapshot, generates a TradeIntent (structured JSON), and posts to chain `proposeIntent(intentHash, intentURI, snapshotHash, constraints)`.
-7) Verifiers evaluate the intent (risk checks + consistency) and sign intentHash.
-8) Relayer calls `attestIntent(intentHash, sigs)`.
+6) Participants propose strategy ideas offchain; Relay Molt generates a TradeIntent (structured JSON) referencing the snapshot and posts to chain `proposeIntent(intentHash, intentURI, snapshotHash, constraints)`.
+7) Participant Molts evaluate the intent (risk checks + consistency) and sign intentHash.
+8) Relay Molt calls `attestIntent(intentHash, sigs)`.
 9) Vault calls `executeIntent(intent)` only if intent is approved and within onchain risk limits.
 
 ### 7.2 UI / demo
@@ -152,15 +150,15 @@ Definitions:
   - multiple sources per score
 - MEV / sandwich:
   - use minOut + tight slippage + small sizes; consider private tx later
-- Relayer censorship:
-  - allow any relayer to submit aggregated sigs (permissionless)
+- Relay Molt censorship:
+  - POC: our relay can be a bottleneck; mitigation is allowing alternative relays to submit aggregated sigs.
 - Strategy mistakes:
   - keep strategy trivial; onchain risk caps; require higher intentThreshold
 
 ## 12. Milestones (2 weeks)
 - Day 1-2: finalize schemas and thresholds; scaffold contracts; local e2e happy path.
-- Day 3-5: relayer aggregator + signature collection; indexer script.
-- Day 6-8: crawler/verifier agents; claim generation and attestation flow.
+- Day 3-5: relay aggregator + signature collection; indexer script.
+- Day 6-8: participant molts (crawl/verify); claim generation and attestation flow.
 - Day 9-11: UI dashboard + leaderboard; demo script.
 - Day 12-14: polish, tests, deployment, video, submission docs.
 
@@ -168,4 +166,3 @@ Definitions:
 - Do we ship as "Agent" or "Agent+Token" track?
 - Which exact sources are stable enough for crawling?
 - Do we include stake/slashing in MVP, or points-only?
-

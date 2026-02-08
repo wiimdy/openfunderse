@@ -113,7 +113,7 @@ v2
 
 ### 4.5 Strategy와 Intent 시스템
 MVP
-- 전략 에이전트가 `snapshotHash`를 참조하는 TradeIntent 출력
+- 참여자들이 전략 아이디어를 제안하고, Relay Molt(집계기)가 `snapshotHash`를 참조하는 TradeIntent를 최종 생성/출력
 - Intent 승인 임계치를 온체인에서 강제
 
 v1
@@ -182,7 +182,7 @@ v2
 - sybil filters
 - dispute 기반 페널티
 
-### 4.8 Relayer 네트워크(집계)
+### 4.8 Relay Molt 네트워크(집계)
 MVP
 - 레퍼런스 relayer 1개로 서명 배치
 - permissionless submission(누구나 배치 제출 가능) + verifiers는 allowlist
@@ -279,4 +279,3 @@ v2
 - data market(claims + validation)
 - strategy market(intents + validation)
 - capital pool(vault execution)
-

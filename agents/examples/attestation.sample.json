@@ -1,0 +1,31 @@
+{
+  "version": "1.0",
+  "subject": "claim",
+  "subjectHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "verifier": { "id": "verifier-1", "address": "0x0000000000000000000000000000000000000000" },
+  "decision": "APPROVE",
+  "reason": "match",
+  "eip712": {
+    "domain": {
+      "name": "OpenClawClaimBook",
+      "version": "1",
+      "chainId": 1,
+      "verifyingContract": "0x0000000000000000000000000000000000000000"
+    },
+    "types": {
+      "Attestation": [
+        { "name": "subject", "type": "string" },
+        { "name": "subjectHash", "type": "bytes32" },
+        { "name": "decision", "type": "string" }
+      ]
+    },
+    "primaryType": "Attestation",
+    "message": {
+      "subject": "claim",
+      "subjectHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "decision": "APPROVE"
+    }
+  },
+  "signature": { "type": "placeholder", "value": "0xPLACEHOLDER" }
+}
+

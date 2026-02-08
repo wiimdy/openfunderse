@@ -18,15 +18,12 @@ Minimal contract set for MVP:
 5) `Points` (optional; points/reward accounting for demo)
 
 ### 2.2 Offchain
-- Crawler agent(s)
+- Participant Molt(s)
   - Fetch sources, extract fields, compute ClaimPayload, publish claimURI, submit claimHash.
-- Verifier agent(s)
   - Re-crawl or verify proof, sign claimHash and/or intentHash.
-- Strategy agent
-  - Reads finalized snapshots, computes signal, outputs TradeIntent + explanation.
-- Relayer/Aggregator (stateless)
-  - Collects ECDSA signatures from verifiers, submits batch tx onchain.
-  - Can be run by anyone; multiple relayers are fine.
+  - Propose strategy ideas / intent candidates offchain.
+- Relay Molt (aggregator; POC: our service)
+  - Collects ECDSA signatures from verifiers, finalizes snapshots/intents, submits batch tx onchain.
 - Storage
   - ClaimPayload/Intent JSON stored offchain (IPFS/S3/HTTPS).
 - Proof service (optional)
@@ -60,7 +57,7 @@ Onchain we store only:
 ### 3.2 Claim Attestation
 - Verifier signs EIP-712 typed data:
   - `ClaimAttestation(claimHash, epochId, verifier, expiresAt, nonce)`
-- Relayer submits a batch:
+- Relay Molt submits a batch:
   - `attestClaim(claimHash, verifierAddrs[], sigs[])`
 
 ### 3.3 Snapshot
@@ -144,11 +141,11 @@ Events:
 ### 5.1 Claim validation
 ```mermaid
 sequenceDiagram
-  participant C as Crawler Agent
+  participant C as Participant Molt
   participant S as Storage (IPFS/HTTPS)
   participant CB as ClaimBook (onchain)
-  participant V as Verifier Agents
-  participant R as Relayer
+  participant V as Participant Molts
+  participant R as Relay Molt
   C->>S: Put ClaimPayload JSON => claimURI
   C->>CB: submitClaim(claimHash, claimURI, ...)
   V->>S: Fetch claimURI + re-crawl/verify proof
@@ -160,10 +157,10 @@ sequenceDiagram
 ### 5.2 Intent execution
 ```mermaid
 sequenceDiagram
-  participant SA as Strategy Agent
+  participant SA as Relay Molt
   participant IB as IntentBook (onchain)
-  participant V as Verifier Agents
-  participant R as Relayer
+  participant V as Participant Molts
+  participant R as Relay Molt
   participant VA as ClawVault (onchain)
   SA->>IB: proposeIntent(intentHash, intentURI, snapshotHash)
   V->>R: Sign intentHash after checks
@@ -175,7 +172,7 @@ sequenceDiagram
 ## 6. Trust & Threat Model (MVP)
 ### 6.1 Assumptions
 - Offchain computation is not trusted; only signatures and onchain rules matter.
-- A relayer can be malicious, but cannot execute without enough verifier sigs.
+- A relay/aggregator can be malicious, but cannot execute without enough verifier sigs.
 - Verifiers may be dishonest; threshold + allowlist mitigates in MVP.
 
 ### 6.2 Threats and mitigations
@@ -198,4 +195,3 @@ MVP can ship with simplified registries and later swap to ERC-8004-compliant one
 - Use events heavily; index with a simple script for the demo.
 - Start with allowlisted verifiers to avoid sybil complexity.
 - Prefer a demo AMM you deploy for deterministic behavior (less integration risk).
-

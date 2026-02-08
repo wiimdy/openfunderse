@@ -56,15 +56,16 @@ Testing:
 Deliverable:
 - Deployed contracts + a script that runs the full loop locally.
 
-## 5. Agents + Relayer (2-4 days)
+## 5. Participant Molt + Relay Molt (2-4 days)
 Implement offchain components in the simplest possible way:
-- Crawler agent:
+- Participant Molt (claim mining):
   - fetch -> extract -> write claim JSON -> submit claimHash
-- Verifier agent:
+- Participant Molt (verification):
   - read claimURI -> re-crawl -> if match sign claimHash
   - read intentURI -> check risk constraints -> sign intentHash
-- Relayer:
-  - collect signatures from a few verifiers and submit batch txs
+- Relay Molt (aggregator; POC service):
+  - collect signatures from a few participants and submit batch txs
+  - finalize snapshot + generate/propose intent (referencing snapshotHash)
 
 Key design choice for MVP:
 - Make the system work with 3-5 verifier keys you control (not permissionless yet).
@@ -120,4 +121,3 @@ Pick only 1-2.
 - Slippage/minOut not enforced everywhere
 - "Paused" path and emergency recovery
 - A deterministic demo venue (DEX integration breaks demos)
-

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openclaw.dev/schemas/claim.schema.json",
+  "title": "ClaimPayload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "sourceRef", "extractor", "extracted", "timestamp", "responseHash", "evidenceURI"],
+  "properties": {
+    "version": { "type": "string", "const": "1.0" },
+    "sourceRef": { "type": "string", "minLength": 1 },
+    "extractor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "recipe"],
+      "properties": {
+        "type": { "type": "string", "enum": ["css", "jsonpath", "regex", "rpc", "abi"] },
+        "recipe": { "type": "string", "minLength": 1 },
+        "notes": { "type": "string" }
+      }
+    },
+    "extracted": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "value"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "value": { "type": ["string", "number", "integer", "boolean", "object", "array", "null"] },
+        "unit": { "type": "string" },
+        "context": { "type": "object" }
+      }
+    },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "responseHash": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algo", "hex"],
+      "properties": {
+        "algo": { "type": "string", "enum": ["keccak256", "sha256"] },
+        "hex": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" }
+      }
+    },
+    "evidenceURI": { "type": "string", "minLength": 1 },
+    "claimHash": { "type": "string", "pattern": "^0x[0-9a-fA-F]{64}$" },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  }
+}
+

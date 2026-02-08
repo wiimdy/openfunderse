@@ -35,10 +35,8 @@ Claw는 온체인 Vault로, 독립적인 에이전트(Verifier) 무리가 다음
 
 ## 5. 사용자 / 페르소나
 - LP(예치자): Vault에 예치, 투명성과 안전을 원함.
-- Data Miner(크롤러 에이전트 운영자): 크롤러를 돌려 Claim 제출, 보상 획득.
-- Verifier(검증 에이전트 운영자): Claim/Intent 검증, (옵션) 스테이크, 보상 획득.
-- Strategist(전략 에이전트): 검증된 스냅샷 기반으로 Trade Intent 제안.
-- Operator(릴레이어): 서명 집계와 Intent/Attestation의 온체인 게시(복수 가능).
+- Participant(참여자 Molt 운영자): Claim 마이닝, 상호 검증(Claim/Intent), 전략 아이디어 제안; 보상 획득.
+- Relay(집계기/우리 서비스 운영자): 서명 집계, Snapshot/Intent 최종화, 온체인 게시(POC: 우리 서비스).
 
 ## 6. 핵심 개념: Claim -> Attest -> Snapshot -> Intent -> Attest -> Execute
 정의:
@@ -50,16 +48,16 @@ Claw는 온체인 Vault로, 독립적인 에이전트(Verifier) 무리가 다음
 
 ## 7. 제품 플로우 (MVP)
 ### 7.1 Epoch 루프
-1) Crawler 에이전트가 ClaimPayload를 오프체인 저장소에 업로드하고, 온체인 `submitClaim(claimHash, claimURI, meta)`를 호출합니다.
-2) Verifier 에이전트들이 Claim을 평가합니다.
+1) Participant Molt(참여자 Molt)가 ClaimPayload를 오프체인 저장소에 업로드하고, 온체인 `submitClaim(claimHash, claimURI, meta)`를 호출합니다.
+2) Participant Molt(참여자 Molt)들이 Claim을 평가합니다.
    - Option A (MVP): 재크롤 후 추출값 비교, 일치하면 서명.
    - Option B (옵션): zkTLS proof 검증, 유효하면 서명.
-3) Relayer가 Verifier 서명을 모아 `attestClaim(claimHash, sigs)`를 호출합니다.
+3) Relay Molt(집계기)가 Verifier 서명을 모아 `attestClaim(claimHash, sigs)`를 호출합니다.
 4) Claim Attestation 임계치를 만족하면 Claim은 "FINAL"이 됩니다.
 5) epoch 종료 시 스냅샷 생성: `finalizeSnapshot(epochId, claimHashes[])` -> snapshotHash.
-6) Strategy 에이전트가 snapshot을 읽어 TradeIntent(구조화 JSON)를 생성하고, 온체인 `proposeIntent(intentHash, intentURI, snapshotHash, constraints)`로 게시합니다.
-7) Verifier들이 Intent(리스크 체크 + 일관성)를 평가하고 `intentHash`에 서명합니다.
-8) Relayer가 `attestIntent(intentHash, sigs)`를 호출합니다.
+6) 참여자들이 전략 아이디어를 오프체인으로 제안하고, Relay Molt가 snapshot을 참조하는 TradeIntent(구조화 JSON)를 생성해 온체인 `proposeIntent(intentHash, intentURI, snapshotHash, constraints)`로 게시합니다.
+7) Participant Molt(참여자 Molt)들이 Intent(리스크 체크 + 일관성)를 평가하고 `intentHash`에 서명합니다.
+8) Relay Molt(집계기)가 `attestIntent(intentHash, sigs)`를 호출합니다.
 9) Vault는 Intent가 승인되었고 온체인 리스크 한도 내일 때만 `executeIntent(intent)`를 실행합니다.
 
 ### 7.2 UI / 데모
@@ -152,15 +150,15 @@ Claw는 온체인 Vault로, 독립적인 에이전트(Verifier) 무리가 다음
   - 점수당 복수 소스 사용
 - MEV / sandwich:
   - minOut + 타이트한 슬리피지 + 작은 사이즈; 이후 private tx 고려
-- Relayer 검열:
-  - 누구나 서명 집계를 제출할 수 있게(permissionless)
+- Relay Molt(집계기) 검열:
+  - POC에서 우리 relay가 병목이 될 수 있음 → 대안 relay가 집계 서명을 제출할 수 있게 설계
 - 전략 실수:
   - 전략을 단순화; 온체인 리스크 cap; intentThreshold를 더 높임
 
 ## 12. 마일스톤 (2주)
 - Day 1-2: schema/threshold 확정, 컨트랙트 스캐폴딩, 로컬 e2e 해피패스.
-- Day 3-5: relayer 집계 + 서명 수집, 인덱서 스크립트.
-- Day 6-8: crawler/verifier 에이전트, claim 생성 및 attestation 플로우.
+- Day 3-5: relay 집계 + 서명 수집, 인덱서 스크립트.
+- Day 6-8: participant molt(수집/검증), claim 생성 및 attestation 플로우.
 - Day 9-11: UI 대시보드 + 리더보드, 데모 스크립트.
 - Day 12-14: 폴리시, 테스트, 배포, 비디오, 제출 문서.
 
@@ -168,4 +166,3 @@ Claw는 온체인 Vault로, 독립적인 에이전트(Verifier) 무리가 다음
 - "Agent" vs "Agent+Token" 트랙 중 무엇으로 제출할까?
 - 크롤링 소스는 무엇이 충분히 안정적인가?
 - MVP에 stake/slashing을 넣을까, points-only로 갈까?
-

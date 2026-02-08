@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "snapshotHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "timestamp": "2026-02-08T00:00:00Z",
+  "policy": {
+    "dryRun": true,
+    "execute": false,
+    "maxNotionalUSD": 100,
+    "slippageBpsCap": 50,
+    "deadlineSeconds": 300,
+    "venueAllowlist": ["uniswapv3-router"],
+    "tokenAllowlist": ["USDC", "WETH", "ABC"]
+  },
+  "actions": [
+    {
+      "type": "swapExactIn",
+      "chainId": 1,
+      "venue": "uniswapv3-router",
+      "tokenIn": "USDC",
+      "tokenOut": "ABC",
+      "amountIn": { "type": "uint256", "value": "100000000", "decimals": 6 },
+      "minAmountOut": { "type": "uint256", "value": "1", "decimals": 18 },
+      "deadlineUnix": 1760227200,
+      "notes": "POC example; verifier must confirm allowlists + slippage cap."
+    }
+  ],
+  "intentHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+}
+

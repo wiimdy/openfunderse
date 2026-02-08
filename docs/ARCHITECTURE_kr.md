@@ -18,15 +18,12 @@ MVP 기준 최소 컨트랙트 셋:
 5) `Points` (optional; 데모용 포인트/리워드 회계)
 
 ### 2.2 오프체인
-- Crawler agent(s)
+- Participant Molt(s)
   - 소스 fetch, 필드 추출, ClaimPayload 계산, claimURI 게시, claimHash 제출.
-- Verifier agent(s)
   - 재크롤 또는 proof 검증, claimHash 및/또는 intentHash 서명.
-- Strategy agent
-  - finalized snapshot을 읽고 신호 계산, TradeIntent + 설명 생성.
-- Relayer/Aggregator (stateless)
-  - verifier들의 ECDSA 서명 수집 후, 배치 tx를 온체인 제출.
-  - 누구나 운영 가능; relayer는 복수여도 OK.
+  - 전략 아이디어 / intent 후보를 오프체인으로 제안.
+- Relay Molt(집계기; POC: 우리 서비스)
+  - verifier들의 ECDSA 서명 수집, snapshot/intent 최종화, 배치 tx를 온체인 제출.
 - Storage
   - ClaimPayload/Intent JSON을 오프체인에 저장(IPFS/S3/HTTPS).
 - Proof service (optional)
@@ -60,7 +57,7 @@ MVP 기준 최소 컨트랙트 셋:
 ### 3.2 Claim Attestation
 - Verifier는 EIP-712 typed data에 서명:
   - `ClaimAttestation(claimHash, epochId, verifier, expiresAt, nonce)`
-- Relayer는 배치 제출:
+- Relay Molt는 배치 제출:
   - `attestClaim(claimHash, verifierAddrs[], sigs[])`
 
 ### 3.3 Snapshot
@@ -145,11 +142,11 @@ Events:
 ### 5.1 Claim 검증
 ```mermaid
 sequenceDiagram
-  participant C as Crawler Agent
+  participant C as Participant Molt
   participant S as Storage (IPFS/HTTPS)
   participant CB as ClaimBook (onchain)
-  participant V as Verifier Agents
-  participant R as Relayer
+  participant V as Participant Molts
+  participant R as Relay Molt
   C->>S: Put ClaimPayload JSON => claimURI
   C->>CB: submitClaim(claimHash, claimURI, ...)
   V->>S: Fetch claimURI + re-crawl/verify proof
@@ -161,10 +158,10 @@ sequenceDiagram
 ### 5.2 Intent 실행
 ```mermaid
 sequenceDiagram
-  participant SA as Strategy Agent
+  participant SA as Relay Molt
   participant IB as IntentBook (onchain)
-  participant V as Verifier Agents
-  participant R as Relayer
+  participant V as Participant Molts
+  participant R as Relay Molt
   participant VA as ClawVault (onchain)
   SA->>IB: proposeIntent(intentHash, intentURI, snapshotHash)
   V->>R: Sign intentHash after checks
@@ -176,7 +173,7 @@ sequenceDiagram
 ## 6. 신뢰/위협 모델 (MVP)
 ### 6.1 가정
 - 오프체인 계산은 신뢰하지 않음; 서명과 온체인 룰만이 사실상 보안 경계.
-- Relayer가 악성일 수 있으나, 충분한 verifier 서명 없이는 실행 불가.
+- Relay Molt(집계기)가 악성일 수 있으나, 충분한 verifier 서명 없이는 실행 불가.
 - Verifier가 부정직할 수 있음; MVP에서는 threshold + allowlist로 완화.
 
 ### 6.2 위협과 완화
@@ -199,4 +196,3 @@ MVP는 단순 registry로 시작하고, 이후 ERC-8004-compliant 구현으로 �
 - 이벤트를 충분히 설계하고, 데모용 인덱싱은 스크립트로 빠르게.
 - MVP는 allowlisted verifiers로 sybil 복잡도를 피함.
 - DEX 통합 리스크를 줄이려면 데모용 AMM을 직접 배포(결정적 데모).
-

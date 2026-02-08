@@ -1,0 +1,19 @@
+{
+  "version": "1.0",
+  "sourceRef": "https://example.com/market/ABC",
+  "extractor": {
+    "type": "jsonpath",
+    "recipe": "$.data.priceUsd"
+  },
+  "extracted": {
+    "type": "decimal",
+    "value": "1.2345",
+    "unit": "USD"
+  },
+  "timestamp": "2026-02-08T00:00:00Z",
+  "evidenceURI": "https://example.com/market/ABC?format=json",
+  "responseHash": { "algo": "sha256", "hex": "0x0000000000000000000000000000000000000000000000000000000000000000" },
+  "claimHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "tags": ["poc", "price"]
+}
+

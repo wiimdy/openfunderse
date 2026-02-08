@@ -113,7 +113,7 @@ v2
 
 ### 4.5 Strategy and Intent System
 MVP
-- Strategy agent outputs a TradeIntent referencing `snapshotHash`.
+- Participants propose strategy ideas; Relay Molt finalizes and outputs a TradeIntent referencing `snapshotHash`.
 - Intent approval threshold enforced onchain.
 
 v1
@@ -182,7 +182,7 @@ v2
   - sybil filters
   - dispute-driven penalties
 
-### 4.8 Relayer Network (Aggregation)
+### 4.8 Relay Molt Network (Aggregation)
 MVP
 - One reference relayer batching signatures.
 - Permissionless submission (anyone can submit batches) but verifiers are allowlisted.
@@ -279,4 +279,3 @@ If you want to operate beyond a demo, prioritize:
   - a data market (claims + validation)
   - a strategy market (intents + validation)
   - a capital pool (vault execution)
-

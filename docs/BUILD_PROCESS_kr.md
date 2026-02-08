@@ -56,15 +56,16 @@
 산출물:
 - 배포된 컨트랙트 + 로컬에서 전체 루프를 실행하는 스크립트
 
-## 5. 에이전트 + 릴레이어 (2-4일)
+## 5. Participant Molt + Relay Molt (2-4일)
 오프체인 컴포넌트는 최대한 단순하게 구현합니다.
-- Crawler agent:
+- Participant Molt(Claim 마이닝):
   - fetch -> extract -> claim JSON 작성 -> claimHash 제출
-- Verifier agent:
+- Participant Molt(검증):
   - claimURI 읽기 -> 재크롤 -> 일치하면 claimHash 서명
   - intentURI 읽기 -> 제약 조건 체크 -> intentHash 서명
-- Relayer:
-  - 몇 개 verifier 서명 수집 후 배치 tx 제출
+- Relay Molt(집계기; POC 서비스):
+  - 몇 개 참여자 서명 수집 후 배치 tx 제출
+  - snapshot finalize + snapshotHash 참조 intent 생성/게시
 
 MVP 핵심 선택:
 - verifier 키 3-5개를 팀이 컨트롤하는 형태로 먼저 끝까지 돌립니다(아직 permissionless가 아님).
@@ -120,4 +121,3 @@ MVP 핵심 선택:
 - slippage/minOut 미강제
 - pause 경로 및 비상 복구
 - 결정적 데모 venue(DEX 통합이 데모를 자주 망침)
-
