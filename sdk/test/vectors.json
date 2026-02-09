@@ -1,0 +1,124 @@
+{
+  "version": "v1",
+  "vectors": [
+    {
+      "id": "vector-1",
+      "claimPayload": {
+        "schemaId": "SOCIAL_SCORE_V1",
+        "sourceType": "WEB",
+        "sourceRef": "https://example.com/token/ABC",
+        "selector": ".score",
+        "extracted": "12345",
+        "extractedType": "uint",
+        "timestamp": "1739000000",
+        "responseHash": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "evidenceType": "RECrawlConsensus",
+        "evidenceURI": "ipfs://bafybeiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "crawler": "0x1111111111111111111111111111111111111111",
+        "notes": ""
+      },
+      "expectedClaimHash": "0x3aad4f1da71a80fccb5d5842524dd1f8cf23b1e072fc6d74860abd0f0246b3ae",
+      "snapshot": {
+        "epochId": "12",
+        "orderedClaimHashes": [
+          "0x3aad4f1da71a80fccb5d5842524dd1f8cf23b1e072fc6d74860abd0f0246b3ae",
+          "0x82f814e579d8b1278ea06514a407e755bb18445fde4142b6ac24bad998f7097b"
+        ],
+        "expectedSnapshotHash": "0x2497dde4cc715472e57f7be6422feb6f2bde4cd55eac1f6c0e4788692f06c973"
+      },
+      "tradeIntent": {
+        "intentVersion": "V1",
+        "vault": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "action": "BUY",
+        "tokenIn": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "tokenOut": "0x000000000000000000000000000000000000dEaD",
+        "amountIn": "1000000",
+        "minAmountOut": "1200",
+        "deadline": "1739003600",
+        "maxSlippageBps": "70",
+        "snapshotHash": "0x2497dde4cc715472e57f7be6422feb6f2bde4cd55eac1f6c0e4788692f06c973"
+      },
+      "expectedIntentHash": "0xe9436fca64e752da73fe7e8912837041f27adef605c346a963c04db6ee3e70b3"
+    },
+    {
+      "id": "vector-2",
+      "claimPayload": {
+        "schemaId": "SOCIAL_SCORE_V1",
+        "sourceType": "WEB",
+        "sourceRef": "https://example.com/token/XYZ",
+        "selector": ".score",
+        "extracted": "9988",
+        "extractedType": "uint",
+        "timestamp": "1739000300",
+        "responseHash": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "evidenceType": "RECrawlConsensus",
+        "evidenceURI": "ipfs://bafybeibbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "crawler": "0x2222222222222222222222222222222222222222",
+        "notes": ""
+      },
+      "expectedClaimHash": "0x82f814e579d8b1278ea06514a407e755bb18445fde4142b6ac24bad998f7097b",
+      "snapshot": {
+        "epochId": "12",
+        "orderedClaimHashes": [
+          "0x3aad4f1da71a80fccb5d5842524dd1f8cf23b1e072fc6d74860abd0f0246b3ae",
+          "0x82f814e579d8b1278ea06514a407e755bb18445fde4142b6ac24bad998f7097b",
+          "0xe48934f507b68e5c248cdeaf67c7394ee2af47820e09273b3c3ca7fb84c6578e"
+        ],
+        "expectedSnapshotHash": "0xce6fae06d9cce524738d00df6e66139688f18cfc1422f08c5bb8c158d9b4cb25"
+      },
+      "tradeIntent": {
+        "intentVersion": "V1",
+        "vault": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "action": "SELL",
+        "tokenIn": "0x000000000000000000000000000000000000dEaD",
+        "tokenOut": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "amountIn": "550000",
+        "minAmountOut": "490000",
+        "deadline": "1739007200",
+        "maxSlippageBps": "80",
+        "snapshotHash": "0xce6fae06d9cce524738d00df6e66139688f18cfc1422f08c5bb8c158d9b4cb25"
+      },
+      "expectedIntentHash": "0x76daa6087ad3262d5a3d6a58f148bc1408931b4e901347c3e783a3ec0010e8d2"
+    },
+    {
+      "id": "vector-3",
+      "claimPayload": {
+        "schemaId": "SOCIAL_SCORE_V1",
+        "sourceType": "WEB",
+        "sourceRef": "https://example.com/token/MEME",
+        "selector": ".score",
+        "extracted": "777",
+        "extractedType": "uint",
+        "timestamp": "1739000600",
+        "responseHash": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "evidenceType": "RECrawlConsensus",
+        "evidenceURI": "ipfs://bafybeicccccccccccccccccccccccccccccccccccccccccccccccc",
+        "crawler": "0x3333333333333333333333333333333333333333",
+        "notes": ""
+      },
+      "expectedClaimHash": "0xe48934f507b68e5c248cdeaf67c7394ee2af47820e09273b3c3ca7fb84c6578e",
+      "snapshot": {
+        "epochId": "12",
+        "orderedClaimHashes": [
+          "0x3aad4f1da71a80fccb5d5842524dd1f8cf23b1e072fc6d74860abd0f0246b3ae",
+          "0x82f814e579d8b1278ea06514a407e755bb18445fde4142b6ac24bad998f7097b",
+          "0xe48934f507b68e5c248cdeaf67c7394ee2af47820e09273b3c3ca7fb84c6578e"
+        ],
+        "expectedSnapshotHash": "0xce6fae06d9cce524738d00df6e66139688f18cfc1422f08c5bb8c158d9b4cb25"
+      },
+      "tradeIntent": {
+        "intentVersion": "V1",
+        "vault": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "action": "BUY",
+        "tokenIn": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "tokenOut": "0x000000000000000000000000000000000000bEEF",
+        "amountIn": "2000000",
+        "minAmountOut": "3100",
+        "deadline": "1739010800",
+        "maxSlippageBps": "50",
+        "snapshotHash": "0xce6fae06d9cce524738d00df6e66139688f18cfc1422f08c5bb8c158d9b4cb25"
+      },
+      "expectedIntentHash": "0xf9179d4b46145dad3831613487a2316d6864e24cc65d379fe08ce86c5f6d5162"
+    }
+  ]
+}
