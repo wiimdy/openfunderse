@@ -1,6 +1,6 @@
 # Relayer (Next Server) Prompt Template (KR)
 
-아래 프롬프트는 `prompts/kr/base_system.md`를 먼저 붙인 뒤 사용한다.
+아래 프롬프트는 `docs/prompts/kr/base_system.md`를 먼저 붙인 뒤 사용한다.
 
 ## Role
 Relayer/Aggregator (중앙 Next 서버)

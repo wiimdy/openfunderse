@@ -199,3 +199,7 @@ MVP can ship with simplified registries and later swap to ERC-8004-compliant one
 - Start with allowlisted verifiers to avoid sybil complexity.
 - Prefer a demo AMM you deploy for deterministic behavior (less integration risk).
 
+## 9. Canonical Spec Reference
+- Canonical hashing + EIP-712 v1: `docs/protocol/hashing-eip712-v1.md`
+- Conformance plan: `docs/protocol/conformance-plan-v1.md`
+- Test vectors: `sdk/test/vectors.json`

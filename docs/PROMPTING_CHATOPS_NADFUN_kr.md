@@ -88,10 +88,10 @@ NadFun 컨텍스트:
 ## 5. 프롬프트 세분화 (실사용 단위)
 
 프롬프트 파일:
-- `prompts/kr/base_system.md`
-- `prompts/kr/relayer_next_server.md`
-- `prompts/kr/strategy_moltbot.md`
-- `prompts/kr/participant_moltbot.md`
+- `docs/prompts/kr/base_system.md`
+- `docs/prompts/kr/relayer_next_server.md`
+- `docs/prompts/kr/strategy_moltbot.md`
+- `docs/prompts/kr/participant_moltbot.md`
 
 운영 규칙:
 1. 모든 역할 프롬프트 앞에 `base_system`을 prepend

@@ -169,3 +169,7 @@ Definitions:
 - Which exact sources are stable enough for crawling?
 - Do we include stake/slashing in MVP, or points-only?
 
+## 14. Protocol Spec Artifacts
+- Canonical hashing + EIP-712 spec (v1): `docs/protocol/hashing-eip712-v1.md`
+- Cross-component conformance plan: `docs/protocol/conformance-plan-v1.md`
+- Shared test vectors: `sdk/test/vectors.json`

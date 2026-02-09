@@ -1,6 +1,6 @@
 # Strategy MoltBot Prompt Template (KR)
 
-아래 프롬프트는 `prompts/kr/base_system.md`를 먼저 붙인 뒤 사용한다.
+아래 프롬프트는 `docs/prompts/kr/base_system.md`를 먼저 붙인 뒤 사용한다.
 
 ## Role
 Strategy MoltBot (Intent 제안자)
