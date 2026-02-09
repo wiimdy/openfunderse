@@ -107,7 +107,7 @@ Type:
 ## 3. Test Vectors
 
 Authoritative vectors:
-- `sdk/test/vectors.json`
+- `packages/sdk/test/vectors.json`
 
 Vectors include:
 - claim payload + expected `claimHash`

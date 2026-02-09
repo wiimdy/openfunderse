@@ -13,7 +13,7 @@ Purpose: ensure every component computes exactly the same `claimHash` / `intentH
 ## 2. Required Fixture
 
 Single source of truth:
-- `sdk/test/vectors.json`
+- `packages/sdk/test/vectors.json`
 
 Must not duplicate expected hashes in code comments or local constants.
 
