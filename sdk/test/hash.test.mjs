@@ -6,7 +6,8 @@ import {
   intentHash,
   snapshotHash,
   snapshotHashFromUnordered,
-  canonicalOrderedClaimHashes
+  canonicalOrderedClaimHashes,
+  reasonHash
 } from "../dist/index.js";
 
 function toClaimPayload(v) {
@@ -67,4 +68,46 @@ test("intentHash rejects invalid action and out-of-range uint16", () => {
   const base = toTradeIntent(vectors.vectors[0].tradeIntent);
   assert.throws(() => intentHash({ ...base, action: "HOLD" }));
   assert.throws(() => intentHash({ ...base, maxSlippageBps: 70000n }));
+});
+
+test("claimHash is stable under trimming + NFC normalization + address case", () => {
+  const base = toClaimPayload(vectors.vectors[0].claimPayload);
+  const decomposed = "Cafe\u0301";
+  const composed = "Caf\u00E9";
+
+  const a = claimHash({
+    ...base,
+    schemaId: `  ${base.schemaId}  `,
+    evidenceType: decomposed,
+    notes: "  hello  ",
+    crawler: "0x1111111111111111111111111111111111111111"
+  });
+
+  const b = claimHash({
+    ...base,
+    schemaId: base.schemaId,
+    evidenceType: composed,
+    notes: "hello",
+    crawler: "0x1111111111111111111111111111111111111111"
+  });
+
+  assert.equal(a, b);
+});
+
+test("reasonHash is stable under trim + NFC normalization", () => {
+  const left = reasonHash("  Cafe\u0301 signal  ");
+  const right = reasonHash("Caf\u00E9 signal");
+  assert.equal(left, right);
+});
+
+test("uint64 boundaries are enforced", () => {
+  const claim = toClaimPayload(vectors.vectors[0].claimPayload);
+  assert.doesNotThrow(() => claimHash({ ...claim, timestamp: 0n }));
+  assert.doesNotThrow(() => claimHash({ ...claim, timestamp: (1n << 64n) - 1n }));
+  assert.throws(() => claimHash({ ...claim, timestamp: 1n << 64n }));
+
+  const intent = toTradeIntent(vectors.vectors[0].tradeIntent);
+  assert.doesNotThrow(() => intentHash({ ...intent, deadline: 0n }));
+  assert.doesNotThrow(() => intentHash({ ...intent, deadline: (1n << 64n) - 1n }));
+  assert.throws(() => intentHash({ ...intent, deadline: 1n << 64n }));
 });
