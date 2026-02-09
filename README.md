@@ -67,11 +67,81 @@ OpenClaw makes the decision pipeline auditable and the execution path enforceabl
 - **Upgradeable path**: start allowlisted, evolve to stake+reputation+disputes; optional ERC-8004 alignment.
 
 ## Repository Status
-Docs-first. Next steps are implementing:
-- contracts (ClaimBook, IntentBook, Vault, Registry),
-- agent SDK + reference agents (crawler/verifier/strategy),
-- relayer batching,
-- indexer + dashboard UI.
+Monorepo scaffold is now prepared for hackathon MVP implementation.
+
+Top-level workspaces:
+- `packages/contracts` (Foundry)
+- `packages/relayer` (TypeScript/Node)
+- `packages/agents` (TypeScript/Node)
+- `packages/sdk` (shared protocol utilities package)
+- `packages/indexer` (TypeScript/Node + SQLite target, deferred)
+
+Priority note for MVP:
+- **P0 now**: `contracts` + `sdk` + `relayer` + `agents`
+- **Last priority**: `indexer` (issue #9). For MVP speed, prefer direct source APIs first (e.g. NadFun/Monad exposed endpoints) and defer custom indexer hardening.
+
+## Local Development (Scaffold)
+Prerequisites:
+- Node.js 20+
+- npm 10+
+- Foundry (`forge`) for contracts
+
+### 1) Environment setup
+```bash
+cp .env.example .env
+```
+
+### 2) Contracts compile/deploy
+```bash
+cd packages/contracts
+forge build
+forge create src/ClawCore.sol:ClawCore --rpc-url "$RPC_URL" --private-key "$DEPLOYER_PRIVATE_KEY"
+```
+
+### 3) Offchain services run
+Install workspace deps at root:
+```bash
+npm install
+```
+
+Run relayer:
+```bash
+npm run dev -w @claw/relayer
+```
+
+### 4) Agents run
+```bash
+npm run dev -w @claw/agents
+```
+
+### 5) SDK build/test
+```bash
+npm run build -w @claw/protocol-sdk
+npm test -w @claw/protocol-sdk
+```
+
+### 6) Optional indexer (deferred)
+```bash
+npm run dev -w @claw/indexer
+```
+
+### 7) One-command local happy path
+```bash
+./scripts/demo-local.sh
+```
+
+## Package Usage Guide
+- `packages/contracts`: onchain contracts workspace. Use `forge build`, `forge test`, and `forge create` for deploy.
+- `packages/relayer`: API gateway for attestation collection and settlement submission. Start with `npm run dev -w @claw/relayer`.
+- `packages/agents`: crawler/verifier/strategy runners. Start with `npm run dev -w @claw/agents`.
+  - agent prompt references:
+    - `docs/jupyter-notebook/openclaw-agent-prompt-book.ipynb`
+    - `docs/prompts/kr/base_system.md`
+    - `docs/prompts/kr/participant_moltbot.md`
+    - `docs/prompts/kr/strategy_moltbot.md`
+    - `docs/prompts/kr/relayer_next_server.md`
+- `packages/sdk`: canonical hashing + EIP-712 shared utilities used by relayer/agents/clients.
+- `packages/indexer`: **deferred/last priority** for MVP. Keep as optional v0 path (`events -> SQLite -> read API`) after relayer+agents happy path is stable.
 
 ## Docs
 - Product: `docs/PRD.md`

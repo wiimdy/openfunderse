@@ -172,4 +172,4 @@ Definitions:
 ## 14. Protocol Spec Artifacts
 - Canonical hashing + EIP-712 spec (v1): `docs/protocol/hashing-eip712-v1.md`
 - Cross-component conformance plan: `docs/protocol/conformance-plan-v1.md`
-- Shared test vectors: `sdk/test/vectors.json`
+- Shared test vectors: `packages/sdk/test/vectors.json`

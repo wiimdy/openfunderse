@@ -24,7 +24,7 @@ npm install @claw/protocol-sdk
 For local development in this repository:
 
 ```bash
-cd /Users/ham-yunsig/Documents/github/claw-validation-market/sdk
+cd /Users/ham-yunsig/Documents/github/claw-validation-market/packages/sdk
 npm install
 npm run build
 ```
@@ -75,7 +75,7 @@ Implemented in SDK:
 - scope guard helpers for `fundId` / `roomId` / `epochId`
 
 Still recommended next:
-- keep fixed test vectors (`claim/intent/snapshot`) in `sdk/test/vectors.json`
+- keep fixed test vectors (`claim/intent/snapshot`) in `packages/sdk/test/vectors.json`
 - wire contract tests to the same vectors
 - finalize one authoritative spec doc with field ordering and normalization rules
 
