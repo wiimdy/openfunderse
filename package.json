@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "description": "Monorepo scaffold for contracts, relayer, indexer, and agents.",
+  "engines": {
+    "node": ">=20"
+  },
   "workspaces": [
     "packages/*"
   ],
