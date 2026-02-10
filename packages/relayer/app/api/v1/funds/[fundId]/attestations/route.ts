@@ -1,25 +1,70 @@
 import { NextResponse } from "next/server";
 import { requireBotAuth } from "@/lib/bot-auth";
+import { ingestClaimAttestation } from "@/lib/aggregator";
 
 export async function POST(
   request: Request,
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
+
   const botAuth = requireBotAuth(request, ["claims.attest"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }
 
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return NextResponse.json({ error: "invalid json body" }, { status: 400 });
+  }
+
+  let result;
+  try {
+    result = await ingestClaimAttestation({
+      fundId,
+      claimHash: String(body.claimHash ?? "") as `0x${string}`,
+      epochId: BigInt(String(body.epochId ?? "0")),
+      verifier: String(body.verifier ?? "") as `0x${string}`,
+      expiresAt: BigInt(String(body.expiresAt ?? "0")),
+      nonce: BigInt(String(body.nonce ?? "0")),
+      signature: String(body.signature ?? "") as `0x${string}`
+    });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        status: "ERROR",
+        endpoint: "POST /api/v1/funds/{fundId}/attestations",
+        fundId,
+        botId: botAuth.botId,
+        error: error instanceof Error ? error.message : String(error)
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!result.ok) {
+    return NextResponse.json(
+      {
+        status: "ERROR",
+        endpoint: "POST /api/v1/funds/{fundId}/attestations",
+        fundId,
+        botId: botAuth.botId,
+        error: result.error
+      },
+      { status: result.status }
+    );
+  }
+
   return NextResponse.json(
     {
-      status: "TODO",
+      status: "OK",
       endpoint: "POST /api/v1/funds/{fundId}/attestations",
       fundId,
       botId: botAuth.botId,
-      message:
-        "Claim attestation ingestion API baseline is scaffolded. Implement claimHash re-computation, EIP-712 signature checks, and duplicate attestation guards."
+      ...result.data
     },
-    { status: 501 }
+    { status: result.status }
   );
 }

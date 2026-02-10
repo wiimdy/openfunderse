@@ -12,16 +12,33 @@ export const {
   ...authConfig,
   providers: [
     Credentials({
-      async authorize({ email, password }: any) {
-        if (!process.env.POSTGRES_URL) {
+      async authorize({ id, password }: any) {
+        const adminId = process.env.ADMIN_LOGIN_ID?.trim();
+        const adminPassword = process.env.ADMIN_LOGIN_PASSWORD;
+        const adminPasswordHash = process.env.ADMIN_LOGIN_PASSWORD_HASH;
+
+        if (!adminId || (!adminPassword && !adminPasswordHash)) {
           return null;
         }
 
-        const { getUser } = await import('app/db');
-        let user = await getUser(email);
-        if (user.length === 0) return null;
-        let passwordsMatch = await compare(password, user[0].password!);
-        if (passwordsMatch) return user[0] as any;
+        const inputId = String(id ?? '').trim();
+        const inputPassword = String(password ?? '');
+        if (!inputId || !inputPassword) return null;
+        if (inputId !== adminId) return null;
+
+        let passwordOk = false;
+        if (adminPasswordHash) {
+          passwordOk = await compare(inputPassword, adminPasswordHash);
+        } else if (adminPassword) {
+          passwordOk = inputPassword === adminPassword;
+        }
+
+        if (!passwordOk) return null;
+
+        return {
+          id: adminId,
+          name: adminId
+        } as any;
       },
     }),
   ],

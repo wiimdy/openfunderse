@@ -12,17 +12,17 @@ export function Form({
     >
       <div>
         <label
-          htmlFor="email"
+          htmlFor="id"
           className="block text-xs text-gray-600 uppercase"
         >
-          Email Address
+          Admin ID
         </label>
         <input
-          id="email"
-          name="email"
-          type="email"
-          placeholder="user@acme.com"
-          autoComplete="email"
+          id="id"
+          name="id"
+          type="text"
+          placeholder="admin"
+          autoComplete="username"
           required
           className="mt-1 block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-black focus:outline-none focus:ring-black sm:text-sm"
         />

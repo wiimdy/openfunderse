@@ -105,12 +105,6 @@ export default function Page() {
             <a href="/login" className="underline">
               Login
             </a>
-            <a href="/register" className="underline">
-              Register
-            </a>
-            <a href="/protected" className="underline">
-              Protected
-            </a>
           </div>
           <div className="mt-2">
             Bot write API requires <code>x-bot-id</code>, <code>x-bot-api-key</code>, and scope checks.

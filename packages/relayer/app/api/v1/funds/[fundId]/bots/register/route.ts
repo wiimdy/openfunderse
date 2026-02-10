@@ -1,16 +1,17 @@
 import { NextResponse } from "next/server";
-import { requireAdminSession } from "@/lib/authz";
+import { requireBotAuth } from "@/lib/bot-auth";
+import { getFund, listFundBots, upsertFundBot } from "@/lib/sqlite";
 
-const ALLOWED_ROLES = new Set(["strategy", "crawler", "verifier"]);
+const ALLOWED_ROLES = new Set(["crawler", "verifier"]);
 
 export async function POST(
   request: Request,
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
-  const admin = await requireAdminSession();
-  if (!admin.ok) {
-    return admin.response;
+  const botAuth = requireBotAuth(request, ["bots.register"]);
+  if (!botAuth.ok) {
+    return botAuth.response;
   }
 
   let body: Record<string, unknown>;
@@ -28,7 +29,7 @@ export async function POST(
     return NextResponse.json(
       {
         error: "BAD_REQUEST",
-        message: "role must be one of: strategy, crawler, verifier"
+        message: "role must be one of: crawler, verifier"
       },
       { status: 400 }
     );
@@ -44,12 +45,45 @@ export async function POST(
     );
   }
 
+  const fund = getFund(fundId);
+  if (!fund) {
+    return NextResponse.json(
+      {
+        error: "NOT_FOUND",
+        message: `fund not found: ${fundId}`
+      },
+      { status: 404 }
+    );
+  }
+  if (fund.strategy_bot_id !== botAuth.botId) {
+    return NextResponse.json(
+      {
+        error: "FORBIDDEN",
+        message: "only the fund strategy bot can register participant bots",
+        expectedStrategyBotId: fund.strategy_bot_id,
+        callerBotId: botAuth.botId
+      },
+      { status: 403 }
+    );
+  }
+
+  upsertFundBot({
+    fundId,
+    botId,
+    role,
+    botAddress,
+    status: "ACTIVE",
+    policyUri: body.policyUri ? String(body.policyUri) : null,
+    telegramHandle: body.telegramHandle ? String(body.telegramHandle) : null,
+    registeredBy: botAuth.botId
+  });
+
   return NextResponse.json(
     {
-      status: "TODO",
+      status: "OK",
       endpoint: "POST /api/v1/funds/{fundId}/bots/register",
       fundId,
-      admin: admin.email,
+      strategyBotId: botAuth.botId,
       payload: {
         role,
         botId,
@@ -57,9 +91,55 @@ export async function POST(
         policyUri: body.policyUri ?? null,
         telegramHandle: body.telegramHandle ?? null
       },
-      message:
-        "Admin-only bot registration baseline is scaffolded. Persist role mapping, issue bot API key, and sync allowlist onchain."
+      message: "Bot registered for fund."
     },
-    { status: 501 }
+    { status: 200 }
+  );
+}
+
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ fundId: string }> }
+) {
+  const { fundId } = await context.params;
+  const botAuth = requireBotAuth(request, ["bots.register"]);
+  if (!botAuth.ok) {
+    return botAuth.response;
+  }
+
+  const fund = getFund(fundId);
+  if (!fund) {
+    return NextResponse.json(
+      {
+        error: "NOT_FOUND",
+        message: `fund not found: ${fundId}`
+      },
+      { status: 404 }
+    );
+  }
+  if (fund.strategy_bot_id !== botAuth.botId) {
+    return NextResponse.json(
+      {
+        error: "FORBIDDEN",
+        message: "only the fund strategy bot can list participant bots",
+        expectedStrategyBotId: fund.strategy_bot_id,
+        callerBotId: botAuth.botId
+      },
+      { status: 403 }
+    );
+  }
+
+  const bots = listFundBots(fundId);
+
+  return NextResponse.json(
+    {
+      status: "OK",
+      endpoint: "GET /api/v1/funds/{fundId}/bots/register",
+      fundId,
+      strategyBotId: botAuth.botId,
+      count: bots.length,
+      bots
+    },
+    { status: 200 }
   );
 }

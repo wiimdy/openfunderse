@@ -1,0 +1,472 @@
+{
+  "info": {
+    "name": "Claw Relayer v0 (Local)",
+    "description": "Relayer/Aggregator v0 API samples for local SQLite testing. Import with the matching environment file.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": {
+      "major": 0,
+      "minor": 1,
+      "patch": 0
+    }
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET metrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/metrics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "metrics"
+              ]
+            },
+            "description": "Expected 200. Returns counters: requests/success/fail/duplicates/onchain submit."
+          }
+        },
+        {
+          "name": "GET fund status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "status"
+              ]
+            },
+            "description": "Expected 200. Includes weightedConfig + summary + metrics."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin APIs (Session Required)",
+      "item": [
+        {
+          "name": "GET auth session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/auth/session",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "session"
+              ]
+            },
+            "description": "Check current NextAuth session."
+          }
+        },
+        {
+          "name": "POST create fund",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{admin_auth_cookie}}",
+                "disabled": false
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundId\": \"{{fund_id}}\",\n  \"fundName\": \"OpenClaw Demo Fund\",\n  \"strategyBotId\": \"{{strategy_bot_id}}\",\n  \"strategyBotAddress\": \"0x00000000000000000000000000000000000000a1\",\n  \"verifierThresholdWeight\": \"3\",\n  \"intentThresholdWeight\": \"5\",\n  \"strategyPolicyUri\": \"ipfs://todo\",\n  \"telegramRoomId\": \"-1001234567890\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds"
+              ]
+            },
+            "description": "Creates/updates fund config and pins single strategy bot for this fund."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Claim APIs",
+      "item": [
+        {
+          "name": "POST register participant bot (strategy only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-bot-id",
+                "value": "{{strategy_bot_id}}"
+              },
+              {
+                "key": "x-bot-api-key",
+                "value": "{{strategy_bot_api_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"verifier\",\n  \"botId\": \"bot-verifier-2\",\n  \"botAddress\": \"0x00000000000000000000000000000000000000b2\",\n  \"policyUri\": \"ipfs://todo\",\n  \"telegramHandle\": \"@bot_verifier_2\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/bots/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "bots",
+                "register"
+              ]
+            },
+            "description": "Only the strategy bot configured for this fund can call this endpoint."
+          }
+        },
+        {
+          "name": "GET registered bots (strategy only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-bot-id",
+                "value": "{{strategy_bot_id}}"
+              },
+              {
+                "key": "x-bot-api-key",
+                "value": "{{strategy_bot_api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/bots/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "bots",
+                "register"
+              ]
+            },
+            "description": "Only the strategy bot configured for this fund can list bots."
+          }
+        },
+        {
+          "name": "POST claims (scaffold)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-bot-id",
+                "value": "{{crawler_bot_id}}"
+              },
+              {
+                "key": "x-bot-api-key",
+                "value": "{{crawler_bot_api_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceType\": \"WEB\",\n  \"sourceRef\": \"https://example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/claims",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "claims"
+              ]
+            },
+            "description": "Expected 501 scaffold with valid crawler bot auth."
+          }
+        },
+        {
+          "name": "GET claims (scaffold)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/claims",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "claims"
+              ]
+            },
+            "description": "Expected 501 scaffold."
+          }
+        },
+        {
+          "name": "POST claim attestation (valid signature)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-bot-id",
+                "value": "{{verifier_bot_id}}"
+              },
+              {
+                "key": "x-bot-api-key",
+                "value": "{{verifier_bot_api_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\",\n  \"verifier\": \"{{verifier_address}}\",\n  \"expiresAt\": \"{{claim_expires_at}}\",\n  \"nonce\": \"{{claim_nonce}}\",\n  \"signature\": \"{{claim_signature}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/attestations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "attestations"
+              ]
+            },
+            "description": "Expected 202 (pending) or 200 (submitted) when signature and weighted config are valid."
+          }
+        },
+        {
+          "name": "POST claim attestation (negative: bad signature)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-bot-id",
+                "value": "{{verifier_bot_id}}"
+              },
+              {
+                "key": "x-bot-api-key",
+                "value": "{{verifier_bot_api_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\",\n  \"verifier\": \"{{verifier_address}}\",\n  \"expiresAt\": \"{{claim_expires_at}}\",\n  \"nonce\": \"{{claim_nonce}}\",\n  \"signature\": \"0xdeadbeef\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/attestations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "attestations"
+              ]
+            },
+            "description": "Expected 400 verification failure."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Intent APIs",
+      "item": [
+        {
+          "name": "POST intents/propose (scaffold)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-bot-id",
+                "value": "{{strategy_bot_id}}"
+              },
+              {
+                "key": "x-bot-api-key",
+                "value": "{{strategy_bot_api_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"intentHash\": \"{{intent_hash}}\",\n  \"snapshotHash\": \"{{snapshot_hash}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/intents/propose",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "intents",
+                "propose"
+              ]
+            },
+            "description": "Expected 501 scaffold with valid strategy bot auth."
+          }
+        },
+        {
+          "name": "POST intent attestations/batch (valid signature)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-bot-id",
+                "value": "{{verifier_bot_id}}"
+              },
+              {
+                "key": "x-bot-api-key",
+                "value": "{{verifier_bot_api_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attestations\": [\n    {\n      \"intentHash\": \"{{intent_hash}}\",\n      \"verifier\": \"{{verifier_address}}\",\n      \"expiresAt\": \"{{intent_expires_at}}\",\n      \"nonce\": \"{{intent_nonce}}\",\n      \"signature\": \"{{intent_signature}}\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/intents/attestations/batch",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "intents",
+                "attestations",
+                "batch"
+              ]
+            },
+            "description": "Expected 200/207 depending on result per attestation item."
+          }
+        },
+        {
+          "name": "POST intent attestations/batch (negative: bad signature)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-bot-id",
+                "value": "{{verifier_bot_id}}"
+              },
+              {
+                "key": "x-bot-api-key",
+                "value": "{{verifier_bot_api_key}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attestations\": [\n    {\n      \"intentHash\": \"{{intent_hash}}\",\n      \"verifier\": \"{{verifier_address}}\",\n      \"expiresAt\": \"{{intent_expires_at}}\",\n      \"nonce\": \"{{intent_nonce}}\",\n      \"signature\": \"0xdeadbeef\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/intents/attestations/batch",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "intents",
+                "attestations",
+                "batch"
+              ]
+            },
+            "description": "Expected PARTIAL/207 with item-level verification error."
+          }
+        },
+        {
+          "name": "GET snapshots/latest (scaffold)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/snapshots/latest",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "snapshots",
+                "latest"
+              ]
+            },
+            "description": "Expected 501 scaffold."
+          }
+        }
+      ]
+    }
+  ]
+}

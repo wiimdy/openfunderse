@@ -12,19 +12,23 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@claw/protocol-sdk": "file:../sdk",
     "@types/node": "^20.10.5",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "bcrypt-ts": "^5.0.0",
+    "better-sqlite3": "^11.10.0",
     "drizzle-orm": "^0.29.2",
     "geist": "^1.2.0",
     "next": "^16.1.6",
     "next-auth": "^5.0.0-beta.30",
     "postgres": "^3.4.3",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "viem": "^2.38.2"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "autoprefixer": "^10.4.16",
     "eslint": "8.56.0",
     "eslint-config-next": "^14.0.4",
