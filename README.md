@@ -82,12 +82,14 @@ Priority note for MVP:
 
 ## Local Development (Scaffold)
 Prerequisites:
-- Node.js 20+
+- nvm (recommended)
+- Node.js (use version in `.nvmrc`)
 - npm 10+
 - Foundry (`forge`) for contracts
 
 ### 1) Environment setup
 ```bash
+nvm use
 cp .env.example .env
 ```
 
@@ -154,6 +156,7 @@ npm run dev -w @claw/indexer
 - Production checklist: `docs/PRODUCTION_READINESS.md`
 - Build process: `docs/BUILD_PROCESS.md`
 - NadFun ChatOps Prompting spec (KR): `docs/PROMPTING_CHATOPS_NADFUN_kr.md`
+- Vercel integration runbook (KR): `docs/VERCEL_INTEGRATION_RUNBOOK_kr.md`
 
 ## Team Workflow
 - Communication (Telegram + GitHub): `docs/COMMUNICATION_kr.md`
