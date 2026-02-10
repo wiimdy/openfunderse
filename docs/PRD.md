@@ -21,7 +21,7 @@ We need a structure where:
 
 ## 3. Goals (Hackathon MVP)
 - Evidence-backed data claims: store a commitment onchain, keep heavy evidence offchain.
-- Multi-agent validation: gather N-of-M unique attestations (optionally weighted).
+- Multi-agent validation: aggregate attestations by onchain snapshot-based weighted threshold.
 - Prompt-to-intent pipeline: validated dataset snapshot -> strategy output -> structured trade intent.
 - Onchain execution: vault executes the intent only after intent-attestation threshold is met.
 - Transparent incentives: points/rewards for miners and verifiers; a clear leaderboard.

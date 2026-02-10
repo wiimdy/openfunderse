@@ -2,6 +2,11 @@
 
 Purpose: ensure every component computes exactly the same `claimHash` / `intentHash` / `snapshotHash` and applies the same EIP-712 typed data.
 
+## 0. Runtime Model
+
+Status (`2026-02-10`):
+- Weighted threshold from onchain validator snapshot is the only canonical model.
+
 ## 1. Target Components
 
 - Agent implementations (crawler, verifier, strategy)
@@ -25,11 +30,18 @@ For each vector in `test-vectors.json`, every component MUST pass:
 2. `snapshotHash(epochId, orderedClaimHashes) == expectedSnapshotHash`
 3. `intentHash(tradeIntent) == expectedIntentHash`
 
+Weighted attestation:
+
+4. with a fixed validator snapshot, `attestedWeight(attesters, snapshotWeights)` matches expected
+5. `reachedWeightedThreshold(attesters, snapshotWeights, thresholdWeight)` matches expected
+
 Plus negative tests:
 
 1. snapshot ordering violated (unsorted / duplicates) -> reject
 2. invalid `action` (not BUY/SELL) -> reject
 3. out-of-range `uint64`/`uint16` fields -> reject
+4. duplicated validator entries in snapshot weights -> reject
+5. non-positive `thresholdWeight` -> reject
 
 ## 4. EIP-712 Conformance
 
@@ -48,7 +60,7 @@ Runtime checks:
 ## 5. Execution Plan by Layer
 
 ### 5.1 SDK
-- Unit tests consume `specs/protocol/v1/test-vectors.json`.
+- Unit tests consume `packages/sdk/test/vectors.json`.
 - Verify all positive and negative matrix cases.
 
 ### 5.2 Relayer / Next server
@@ -56,6 +68,7 @@ Runtime checks:
   - recompute subject hash from payload via SDK
   - verify EIP-712 signature (EOA)
   - verify ERC-1271 for smart-wallet verifiers if configured
+  - load onchain validator snapshot and apply weighted threshold helpers from SDK
 
 ### 5.3 Agent services
 - For claim submit/sign and intent sign:
@@ -75,4 +88,4 @@ PR is blocked unless:
 3. Contract vector tests pass
 4. Any spec change updates both:
    - `docs/protocol/hashing-eip712-v1.md`
-   - `specs/protocol/v1/test-vectors.json`
+   - `packages/sdk/test/vectors.json`

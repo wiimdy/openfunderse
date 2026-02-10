@@ -17,7 +17,7 @@ npm run dev -w @claw/relayer
 ```
 
 ## Baseline API (v1)
-아래 엔드포인트는 모두 스캐폴드 상태이며 현재 `501 TODO`를 반환합니다.
+일부 엔드포인트는 v0 집계 로직이 연결되어 있고, 나머지는 스캐폴드 상태입니다.
 
 - `POST /api/v1/funds` (admin only)
   - 펀드 생성 초기화 (threshold, policy, metadata)
@@ -28,15 +28,17 @@ npm run dev -w @claw/relayer
 - `GET /api/v1/funds/{fundId}/claims`
   - claim 목록/상태 조회 (status, token, epoch, pagination)
 - `POST /api/v1/funds/{fundId}/attestations`
-  - claim attestation 수집(중복/만료/서명 검증)
+  - claim attestation 수집(중복 제거, EIP-712 검증, threshold 충족 시 onchain 제출)
 - `GET /api/v1/funds/{fundId}/snapshots/latest`
   - 최신 finalized snapshot 조회
 - `POST /api/v1/funds/{fundId}/intents/propose`
   - strategy intent 접수/검증(snapshotHash 연계)
 - `POST /api/v1/funds/{fundId}/intents/attestations/batch`
-  - intent attestation batch 제출 -> onchain `attestIntent`
+  - intent attestation batch 제출(중복 제거, EIP-712 검증, threshold 충족 시 onchain `attestIntent`)
 - `GET /api/v1/funds/{fundId}/status`
-  - epoch/claim/intent 진행률 및 최근 실행 상태
+  - SQLite 기반 pending/approved 요약 + in-memory metrics 카운터 조회
+- `GET /api/v1/metrics`
+  - 요청/검증/중복/온체인 제출 성공/실패 카운터 조회
 
 ## Access model (scaffold)
 - `admin`:
@@ -54,11 +56,12 @@ npm run dev -w @claw/relayer
 
 ## Implementation TODOs
 - 요청 schema 정의(zod or valibot)
-- `@claw/protocol-sdk` 연동(해시/typed data/서명 검증)
 - DB 스키마(Drizzle + Postgres) 설계
-- onchain submitter job/queue
+- onchain submitter job/queue 분리(현재는 요청 경로 내 동기 처리)
 - 인증/권한(운영자, verifier allowlist)
 
 ## Notes
 - indexer는 MVP 최후순위이므로, 초기에는 relayer가 필요한 read model 일부를 직접 제공할 수 있습니다.
 - Next 템플릿 UI/auth 페이지는 필요에 따라 자유롭게 치환하면 됩니다.
+- 집계 기준은 온체인 snapshot 기반 weighted threshold 단일 모델입니다.
+- weighted 계산 유틸은 `@claw/protocol-sdk`에 구현되어 있으며, relayer 온체인 snapshot 로더/연동 고도화가 남아 있습니다.

@@ -71,7 +71,7 @@ v2
 
 ### 4.3 검증 시장(Verifiers)
 MVP
-- N-of-M threshold 승인 + signer 유니크 강제
+- 온체인 validator snapshot 기반 weighted threshold 승인 + signer 유니크 강제
 - points 기반 보상 + 리더보드
 
 v1
@@ -279,4 +279,3 @@ v2
 - data market(claims + validation)
 - strategy market(intents + validation)
 - capital pool(vault execution)
-
