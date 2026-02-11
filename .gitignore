@@ -48,3 +48,6 @@ coverage/
 # Local SQLite artifacts
 packages/relayer/data/
 *.db
+
+# IntentBook local deployment artifacts
+packages/contracts/.intentbook.local.env
