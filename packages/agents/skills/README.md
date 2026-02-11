@@ -2,7 +2,7 @@
 
 This folder is a scaffold for MoltBot skills that will be distributed via:
 
-`npx clawhub@latest install claw-validation-market`
+`npx @wiimdy/openfunderse@latest install openfunderse`
 
 Planned bundles:
 - `strategy`
