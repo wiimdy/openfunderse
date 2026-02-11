@@ -7,7 +7,9 @@ import {
   scopedSnapshotHash,
   encodeErc1271IsValidSignatureCall,
   isValidErc1271Result,
-  ERC1271_MAGIC_VALUE
+  ERC1271_MAGIC_VALUE,
+  intentExecutionAllowlistHash,
+  intentExecutionCallHash
 } from "../dist/index.js";
 
 test("scope canonicalization normalizes text and keeps epoch", () => {
@@ -59,4 +61,21 @@ test("ERC-1271 calldata encoder includes function selector and args", () => {
   assert.equal(calldata.length > 10, true);
   assert.equal(isValidErc1271Result("0x1626ba7e"), true);
   assert.equal(isValidErc1271Result("0xffffffff"), false);
+});
+
+test("intent execution allowlist hash includes adapterData hash", () => {
+  const tokenIn = "0x0000000000000000000000000000000000000001";
+  const tokenOut = "0x0000000000000000000000000000000000000002";
+  const adapter = "0x0000000000000000000000000000000000000003";
+  const emptyDataHash = intentExecutionCallHash(tokenIn, tokenOut, adapter, "0x");
+  const explicitEmptyHash = intentExecutionAllowlistHash(
+    tokenIn,
+    tokenOut,
+    adapter,
+    "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+  );
+  assert.equal(emptyDataHash, explicitEmptyHash);
+
+  const nonEmpty = intentExecutionCallHash(tokenIn, tokenOut, adapter, "0x1234");
+  assert.notEqual(nonEmpty, emptyDataHash);
 });

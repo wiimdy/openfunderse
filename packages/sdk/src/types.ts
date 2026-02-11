@@ -67,3 +67,18 @@ export interface SignedAttestation<TSubject extends SubjectType, TMessage> {
   message: TMessage;
   signature: Hex;
 }
+
+export type ExecutionAction = "BUY" | "SELL";
+export type ExecutionVenue = "NADFUN_BONDING_CURVE" | "NADFUN_DEX";
+
+export interface NadfunExecutionDataV1 {
+  version: 1;
+  action: ExecutionAction;
+  venue: ExecutionVenue;
+  router: Address;
+  recipient: Address;
+  token: Address;
+  deadline: bigint;
+  amountOutMin: bigint;
+  extra: Hex;
+}

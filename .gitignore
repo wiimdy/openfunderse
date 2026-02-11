@@ -48,6 +48,10 @@ coverage/
 # Local SQLite artifacts
 packages/relayer/data/
 *.db
+packages/agents/reports/
+packages/sdk/reports/
 
-# IntentBook local deployment artifacts
+# Local contracts deployment artifacts
 packages/contracts/.intentbook.local.env
+packages/contracts/.claw.local.env
+packages/contracts/.clawcore.deploy.env

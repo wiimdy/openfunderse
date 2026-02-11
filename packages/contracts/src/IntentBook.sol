@@ -212,6 +212,28 @@ contract IntentBook {
         return intents[intentHash];
     }
 
+    /// @notice Execution-oriented lightweight view for core settlement contracts.
+    function getIntentExecutionData(bytes32 intentHash)
+        external
+        view
+        returns (
+            bool exists,
+            bool approved,
+            bytes32 snapshotHash,
+            uint64 deadline,
+            uint256 maxNotional,
+            bytes32 allowlistHash
+        )
+    {
+        Intent storage intent = intents[intentHash];
+        exists = intent.proposer != address(0);
+        approved = intent.approved;
+        snapshotHash = intent.snapshotHash;
+        deadline = intent.constraints.deadline;
+        maxNotional = intent.constraints.maxNotional;
+        allowlistHash = intent.constraints.allowlistHash;
+    }
+
     function _domainSeparator() internal view returns (bytes32) {
         return keccak256(
             abi.encode(
