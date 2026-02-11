@@ -9,3 +9,4 @@ export * from "./attestation.js";
 export * from "./validate.js";
 export * from "./attestation-verifier.js";
 export * from "./weighted-attestation.js";
+export * from "./execution-data.js";

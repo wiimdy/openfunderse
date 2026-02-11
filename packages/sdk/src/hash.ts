@@ -1,7 +1,7 @@
 import { encodeAbiParameters, keccak256, parseAbiParameters, toHex } from "viem";
 import { canonicalClaim, canonicalIntent } from "./canonical.js";
 import { assertStrictlySortedHex, uniqueSortedBytes32Hex } from "./ordering.js";
-import type { ClaimPayload, Hex, TradeIntent } from "./types.js";
+import type { Address, ClaimPayload, Hex, TradeIntent } from "./types.js";
 import { assertUint16, assertUint64 } from "./validate.js";
 
 export function claimHash(payload: ClaimPayload): Hex {
@@ -77,4 +77,36 @@ export function snapshotHashFromUnordered(epochId: bigint, claimHashes: Hex[]): 
 
 export function reasonHash(reason: string): Hex {
   return keccak256(toHex(reason.normalize("NFC").trim()));
+}
+
+/**
+ * Canonical allowlist hash for intent execution route.
+ * Must match ClawCore allowlist verification logic.
+ */
+export function intentExecutionAllowlistHash(
+  tokenIn: Address,
+  tokenOut: Address,
+  adapter: Address,
+  adapterDataHash: Hex
+): Hex {
+  return keccak256(
+    encodeAbiParameters(
+      parseAbiParameters(
+        "address tokenIn,address tokenOut,address adapter,bytes32 adapterDataHash"
+      ),
+      [tokenIn, tokenOut, adapter, adapterDataHash]
+    )
+  );
+}
+
+/**
+ * Helper that hashes raw adapter calldata before building the allowlist hash.
+ */
+export function intentExecutionCallHash(
+  tokenIn: Address,
+  tokenOut: Address,
+  adapter: Address,
+  adapterData: Hex
+): Hex {
+  return intentExecutionAllowlistHash(tokenIn, tokenOut, adapter, keccak256(adapterData));
 }

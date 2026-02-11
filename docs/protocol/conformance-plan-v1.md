@@ -35,6 +35,11 @@ Weighted attestation:
 4. with a fixed validator snapshot, `attestedWeight(attesters, snapshotWeights)` matches expected
 5. `reachedWeightedThreshold(attesters, snapshotWeights, thresholdWeight)` matches expected
 
+Settlement route hash:
+
+6. `allowlistHash(tokenIn, tokenOut, adapter, adapterData)` matches
+   `keccak256(abi.encode(tokenIn, tokenOut, adapter, keccak256(adapterData)))`
+
 Plus negative tests:
 
 1. snapshot ordering violated (unsorted / duplicates) -> reject
@@ -42,6 +47,7 @@ Plus negative tests:
 3. out-of-range `uint64`/`uint16` fields -> reject
 4. duplicated validator entries in snapshot weights -> reject
 5. non-positive `thresholdWeight` -> reject
+6. allowlist hash mismatch by changing only `adapterData` -> reject
 
 ## 4. EIP-712 Conformance
 

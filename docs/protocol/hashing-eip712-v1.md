@@ -151,3 +151,25 @@ Notes:
 
 - Runtime threshold check MUST use `attestedWeight >= thresholdWeight`.
 - Non-weighted threshold models are out of scope for this spec.
+
+## 5. Intent Settlement Route Hash (v1)
+
+`constraints.allowlistHash` is the canonical execution-route commitment used by settlement contracts.
+
+Formula:
+
+`allowlistHash = keccak256(abi.encode(tokenIn, tokenOut, adapter, keccak256(adapterData)))`
+
+where:
+- `tokenIn` is input asset address
+- `tokenOut` is output asset address
+- `adapter` is execution adapter contract address
+- `adapterData` is opaque calldata for adapter/router execution
+
+Rationale:
+- binds the approved intent to an exact route + calldata payload shape
+- prevents post-approval adapter-data substitution
+
+NadFun mapping guidance:
+- `adapter` should represent a dedicated execution adapter for NadFun trading venues
+- `adapterData` should encode the concrete router call payload (e.g. buy/sell params, deadline, min-out), so hash commitment includes venue-level execution details
