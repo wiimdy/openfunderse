@@ -158,7 +158,7 @@ Notes:
 
 Formula:
 
-`allowlistHash = keccak256(abi.encode(tokenIn, tokenOut, adapter, keccak256(adapterData)))`
+`allowlistHash = keccak256(abi.encode(tokenIn, tokenOut, quoteAmountOut, minAmountOut, adapter, keccak256(adapterData)))`
 
 where:
 - `tokenIn` is input asset address

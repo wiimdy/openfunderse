@@ -20,7 +20,8 @@
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test test/**/*.test.mjs"
+    "test": "npm run build && node --test test/**/*.test.mjs",
+    "intent:compute:nadfun": "npm run build && node scripts/compute-nadfun-intent.mjs"
   },
   "dependencies": {
     "viem": "^2.38.2"

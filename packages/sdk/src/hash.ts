@@ -86,15 +86,17 @@ export function reasonHash(reason: string): Hex {
 export function intentExecutionAllowlistHash(
   tokenIn: Address,
   tokenOut: Address,
+  quoteAmountOut: bigint,
+  minAmountOut: bigint,
   adapter: Address,
   adapterDataHash: Hex
 ): Hex {
   return keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "address tokenIn,address tokenOut,address adapter,bytes32 adapterDataHash"
+        "address tokenIn,address tokenOut,uint256 quoteAmountOut,uint256 minAmountOut,address adapter,bytes32 adapterDataHash"
       ),
-      [tokenIn, tokenOut, adapter, adapterDataHash]
+      [tokenIn, tokenOut, quoteAmountOut, minAmountOut, adapter, adapterDataHash]
     )
   );
 }
@@ -105,8 +107,17 @@ export function intentExecutionAllowlistHash(
 export function intentExecutionCallHash(
   tokenIn: Address,
   tokenOut: Address,
+  quoteAmountOut: bigint,
+  minAmountOut: bigint,
   adapter: Address,
   adapterData: Hex
 ): Hex {
-  return intentExecutionAllowlistHash(tokenIn, tokenOut, adapter, keccak256(adapterData));
+  return intentExecutionAllowlistHash(
+    tokenIn,
+    tokenOut,
+    quoteAmountOut,
+    minAmountOut,
+    adapter,
+    keccak256(adapterData)
+  );
 }

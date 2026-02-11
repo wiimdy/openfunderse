@@ -58,6 +58,7 @@ INTENT_HASH=0x... \
 TOKEN_IN=0x... \
 TOKEN_OUT=0x... \
 AMOUNT_IN=1000000000000000 \
+QUOTE_AMOUNT_OUT=100 \
 MIN_AMOUNT_OUT=1 \
 ADAPTER=0x... \
 ADAPTER_DATA=0x... \
@@ -70,6 +71,7 @@ CLAW_CORE_ADDRESS=0x... \
 - `notExpired == true`
 - `notExecuted == true`
 - `withinNotional == true`
+- `slippageOk == true`
 - `allowlistOk == true`
 
 ## 테스트 권장 경로
