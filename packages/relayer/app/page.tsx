@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 
 type Mode = 'human' | 'agent';
 
-const INSTALL_COMMAND = 'npx clawhub@latest install claw-validation-market';
+const INSTALL_COMMAND = 'npx @wiimdy/openfunderse@latest install openfunderse';
 
 const CONTENT: Record<Mode, { title: string; steps: string[] }> = {
   human: {

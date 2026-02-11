@@ -50,7 +50,7 @@ Optional env:
 Target onboarding UX:
 
 ```bash
-npx clawhub@latest install claw-validation-market
+npx @wiimdy/openfunderse@latest install openfunderse
 ```
 
 Scaffold files for future packaging are prepared at:

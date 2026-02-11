@@ -1,0 +1,21 @@
+{
+  "name": "@wiimdy/openfunderse",
+  "version": "0.1.0",
+  "description": "Install OpenFunderse skill packs into Codex",
+  "type": "module",
+  "bin": {
+    "openfunderse": "./bin/openfunderse.mjs"
+  },
+  "files": [
+    "bin",
+    "packs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node ./bin/openfunderse.mjs",
+    "check": "node ./bin/openfunderse.mjs list"
+  }
+}
