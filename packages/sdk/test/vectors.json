@@ -118,7 +118,87 @@
         "maxSlippageBps": "50",
         "snapshotHash": "0xce6fae06d9cce524738d00df6e66139688f18cfc1422f08c5bb8c158d9b4cb25"
       },
-      "expectedIntentHash": "0xf9179d4b46145dad3831613487a2316d6864e24cc65d379fe08ce86c5f6d5162"
+       "expectedIntentHash": "0xf9179d4b46145dad3831613487a2316d6864e24cc65d379fe08ce86c5f6d5162"
+     },
+    {
+      "id": "claimbook-vector-1",
+      "description": "ClaimBook hash conformance: claim 1 from SDK test",
+      "claimPayload": {
+        "schemaId": "CLAIMBOOK_TEST",
+        "sourceType": "TEST",
+        "sourceRef": "claim-1",
+        "selector": "identity",
+        "extracted": "claim-1",
+        "extractedType": "string",
+        "timestamp": "1739000000",
+        "responseHash": "0x4444444444444444444444444444444444444444444444444444444444444444",
+        "evidenceType": "Direct",
+        "evidenceURI": "test://claim-1",
+        "crawler": "0x4444444444444444444444444444444444444444",
+        "notes": "ClaimBook test vector from SDK test"
+      },
+      "expectedClaimHash": "0xa9513861129456df7037b40bfd9e92614c5353756f6fd81af3be4984a0df7ab7",
+      "snapshot": {
+        "epochId": "12",
+        "orderedClaimHashes": [
+          "0x89544fddb986012fe09599acc320c92fe7d7ef4d85bcfa7c8bfdb82e0caca0ee",
+          "0xa9513861129456df7037b40bfd9e92614c5353756f6fd81af3be4984a0df7ab7"
+        ],
+        "expectedSnapshotHash": "0xf8ecf9d6b2a05d58865b69120a8ff48cb0f1ac27942bae3b20a2db19e6e06958"
+      },
+      "tradeIntent": {
+        "intentVersion": "V1",
+        "vault": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "action": "BUY",
+        "tokenIn": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "tokenOut": "0x000000000000000000000000000000000000dEaD",
+        "amountIn": "1000000",
+        "minAmountOut": "1200",
+        "deadline": "1739003600",
+        "maxSlippageBps": "50",
+        "snapshotHash": "0xf8ecf9d6b2a05d58865b69120a8ff48cb0f1ac27942bae3b20a2db19e6e06958"
+      },
+      "expectedIntentHash": "0xfeff6101c588079d615a2ecd5bc7197a9045b9c87e47a1e6a8125c7f106096ce"
+    },
+    {
+      "id": "claimbook-vector-2",
+      "description": "ClaimBook hash conformance: claim 2 from SDK test",
+      "claimPayload": {
+        "schemaId": "CLAIMBOOK_TEST",
+        "sourceType": "TEST",
+        "sourceRef": "claim-2",
+        "selector": "identity",
+        "extracted": "claim-2",
+        "extractedType": "string",
+        "timestamp": "1739000100",
+        "responseHash": "0x5555555555555555555555555555555555555555555555555555555555555555",
+        "evidenceType": "Direct",
+        "evidenceURI": "test://claim-2",
+        "crawler": "0x5555555555555555555555555555555555555555",
+        "notes": "ClaimBook test vector 2"
+      },
+      "expectedClaimHash": "0x89544fddb986012fe09599acc320c92fe7d7ef4d85bcfa7c8bfdb82e0caca0ee",
+      "snapshot": {
+        "epochId": "12",
+        "orderedClaimHashes": [
+          "0x89544fddb986012fe09599acc320c92fe7d7ef4d85bcfa7c8bfdb82e0caca0ee",
+          "0xa9513861129456df7037b40bfd9e92614c5353756f6fd81af3be4984a0df7ab7"
+        ],
+        "expectedSnapshotHash": "0xf8ecf9d6b2a05d58865b69120a8ff48cb0f1ac27942bae3b20a2db19e6e06958"
+      },
+      "tradeIntent": {
+        "intentVersion": "V1",
+        "vault": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "action": "SELL",
+        "tokenIn": "0x000000000000000000000000000000000000dEaD",
+        "tokenOut": "0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "amountIn": "550000",
+        "minAmountOut": "490000",
+        "deadline": "1739007200",
+        "maxSlippageBps": "80",
+        "snapshotHash": "0xf8ecf9d6b2a05d58865b69120a8ff48cb0f1ac27942bae3b20a2db19e6e06958"
+      },
+      "expectedIntentHash": "0x0a7c7d347ff8d5cc48aca199e3c008ceca5dac29f3ae0e759f61c8dcab51f2f6"
     }
-  ]
+   ]
 }
