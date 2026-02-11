@@ -1,0 +1,2 @@
+- 2026-02-11: `forge test` first run auto-installed missing `forge-std` dependency in `packages/contracts/lib/forge-std` (workspace side-effect unrelated to ClaimBook logic).
+- 2026-02-11: Solidity LSP diagnostics are unavailable in this environment (`No LSP server configured for extension: .sol`), so verification relied on `forge build` + `forge test`.
