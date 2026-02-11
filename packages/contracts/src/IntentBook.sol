@@ -221,6 +221,7 @@ contract IntentBook {
             bool approved,
             bytes32 snapshotHash,
             uint64 deadline,
+            uint16 maxSlippageBps,
             uint256 maxNotional,
             bytes32 allowlistHash
         )
@@ -230,6 +231,7 @@ contract IntentBook {
         approved = intent.approved;
         snapshotHash = intent.snapshotHash;
         deadline = intent.constraints.deadline;
+        maxSlippageBps = intent.constraints.maxSlippageBps;
         maxNotional = intent.constraints.maxNotional;
         allowlistHash = intent.constraints.allowlistHash;
     }

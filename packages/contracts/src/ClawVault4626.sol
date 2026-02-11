@@ -17,8 +17,10 @@ contract ClawVault4626 {
     uint8 public constant decimals = 18;
 
     address public owner;
+    address public guardian;
     address public core;
     address public immutable asset;
+    bool public paused;
 
     uint256 public totalSupply;
     mapping(address => uint256) public balanceOf;
@@ -28,6 +30,8 @@ contract ClawVault4626 {
 
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event CoreUpdated(address indexed core);
+    event GuardianUpdated(address indexed guardian);
+    event PauseUpdated(bool paused);
     event TokenAllowed(address indexed token, bool allowed);
     event AdapterAllowed(address indexed adapter, bool allowed);
 
@@ -41,9 +45,11 @@ contract ClawVault4626 {
         uint256 amountIn,
         uint256 amountOut
     );
+    event VaultBalanceUpdated(address indexed token, uint256 tokenBalance, uint256 assetBalance, uint256 shareSupply);
 
     error NotOwner();
     error NotCore();
+    error NotGuardian();
     error InvalidAddress();
     error InvalidAmount();
     error InsufficientShares();
@@ -52,6 +58,7 @@ contract ClawVault4626 {
     error AdapterNotAllowed();
     error InsufficientTokenBalance();
     error OutputBelowMinimum();
+    error VaultPaused();
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert NotOwner();
@@ -63,9 +70,15 @@ contract ClawVault4626 {
         _;
     }
 
+    modifier onlyOwnerOrGuardian() {
+        if (msg.sender != owner && msg.sender != guardian) revert NotGuardian();
+        _;
+    }
+
     constructor(address owner_, address asset_, string memory name_, string memory symbol_) {
         if (owner_ == address(0) || asset_ == address(0)) revert InvalidAddress();
         owner = owner_;
+        guardian = owner_;
         asset = asset_;
         name = name_;
         symbol = symbol_;
@@ -73,6 +86,7 @@ contract ClawVault4626 {
         isTokenAllowed[asset_] = true;
 
         emit OwnershipTransferred(address(0), owner_);
+        emit GuardianUpdated(owner_);
         emit TokenAllowed(asset_, true);
     }
 
@@ -86,6 +100,17 @@ contract ClawVault4626 {
         if (newCore == address(0)) revert InvalidAddress();
         core = newCore;
         emit CoreUpdated(newCore);
+    }
+
+    function setGuardian(address newGuardian) external onlyOwner {
+        if (newGuardian == address(0)) revert InvalidAddress();
+        guardian = newGuardian;
+        emit GuardianUpdated(newGuardian);
+    }
+
+    function setPaused(bool paused_) external onlyOwnerOrGuardian {
+        paused = paused_;
+        emit PauseUpdated(paused_);
     }
 
     function setTokenAllowed(address token, bool allowed) external onlyOwner {
@@ -144,6 +169,7 @@ contract ClawVault4626 {
         balanceOf[receiver] += shares;
 
         emit Deposit(msg.sender, receiver, assets, shares);
+        emit VaultBalanceUpdated(asset, IERC20Minimal(asset).balanceOf(address(this)), totalAssets(), totalSupply);
     }
 
     function withdraw(uint256 assets, address receiver, address owner_) external returns (uint256 shares) {
@@ -160,6 +186,7 @@ contract ClawVault4626 {
         if (!IERC20Minimal(asset).transfer(receiver, assets)) revert TransferFailed();
 
         emit Withdraw(msg.sender, receiver, owner_, assets, shares);
+        emit VaultBalanceUpdated(asset, IERC20Minimal(asset).balanceOf(address(this)), totalAssets(), totalSupply);
     }
 
     function executeTrade(
@@ -171,6 +198,7 @@ contract ClawVault4626 {
         address adapter,
         bytes calldata data
     ) external onlyCore returns (uint256 amountOut) {
+        if (paused) revert VaultPaused();
         if (!isTokenAllowed[tokenIn] || !isTokenAllowed[tokenOut]) revert TokenNotAllowed();
         if (!isAdapterAllowed[adapter]) revert AdapterNotAllowed();
         if (amountIn == 0) revert InvalidAmount();
@@ -189,5 +217,6 @@ contract ClawVault4626 {
         if (deltaOut < minAmountOut || amountOut < minAmountOut) revert OutputBelowMinimum();
 
         emit TradeExecuted(intentHash, tokenIn, tokenOut, adapter, amountIn, deltaOut);
+        emit VaultBalanceUpdated(tokenOut, IERC20Minimal(tokenOut).balanceOf(address(this)), totalAssets(), totalSupply);
     }
 }

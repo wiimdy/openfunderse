@@ -20,11 +20,13 @@ export STRATEGY_PRIVATE_KEY=0x...
 export VERIFIER_PRIVATE_KEY=0x...
 export INTENT_BOOK_ADDRESS=0x...
 export CLAW_CORE_ADDRESS=0x...
+export CLAW_VAULT_ADDRESS=0x...
 export SNAPSHOT_HASH=0x...
 export ADAPTER=0x...
 export TOKEN_IN=0x...
 export TOKEN_OUT=0x...
 export AMOUNT_IN=1000000000000000
+export QUOTE_AMOUNT_OUT=100
 export MIN_AMOUNT_OUT=1
 export MAX_SLIPPAGE_BPS=200
 ```
@@ -50,7 +52,7 @@ const adapterData = encodeNadfunExecutionDataV1({
   action: "BUY",
   venue: "NADFUN_BONDING_CURVE",
   router: process.env.NADFUN_BONDING_CURVE_ROUTER || "0x865054F0F6A288adaAc30261731361EA7E908003",
-  recipient: process.env.CLAW_CORE_ADDRESS,
+  recipient: process.env.CLAW_VAULT_ADDRESS,
   token: process.env.TOKEN_OUT,
   deadline,
   amountOutMin: BigInt(process.env.MIN_AMOUNT_OUT),
@@ -73,6 +75,8 @@ const ih = intentHash({
 const allowlistHash = intentExecutionCallHash(
   process.env.TOKEN_IN,
   process.env.TOKEN_OUT,
+  BigInt(process.env.QUOTE_AMOUNT_OUT),
+  BigInt(process.env.MIN_AMOUNT_OUT),
   process.env.ADAPTER,
   adapterData
 );
@@ -144,6 +148,7 @@ export INTENT_HASH=$INTENT_HASH
 export TOKEN_IN=$TOKEN_IN
 export TOKEN_OUT=$TOKEN_OUT
 export AMOUNT_IN=$AMOUNT_IN
+export QUOTE_AMOUNT_OUT=$QUOTE_AMOUNT_OUT
 export MIN_AMOUNT_OUT=$MIN_AMOUNT_OUT
 export ADAPTER=$ADAPTER
 export ADAPTER_DATA=$ADAPTER_DATA
@@ -156,6 +161,7 @@ export CLAW_CORE_ADDRESS=$CLAW_CORE_ADDRESS
 - `notExpired = true`
 - `notExecuted = true`
 - `withinNotional = true`
+- `slippageOk = true`
 - `allowlistOk = true`
 
 ## 9. Approved Status Check

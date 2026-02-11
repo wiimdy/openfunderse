@@ -37,8 +37,8 @@ Weighted attestation:
 
 Settlement route hash:
 
-6. `allowlistHash(tokenIn, tokenOut, adapter, adapterData)` matches
-   `keccak256(abi.encode(tokenIn, tokenOut, adapter, keccak256(adapterData)))`
+6. `allowlistHash(tokenIn, tokenOut, quoteAmountOut, minAmountOut, adapter, adapterData)` matches
+   `keccak256(abi.encode(tokenIn, tokenOut, quoteAmountOut, minAmountOut, adapter, keccak256(adapterData)))`
 
 Plus negative tests:
 
