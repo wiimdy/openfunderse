@@ -264,7 +264,7 @@ Critical Path: Task 1 → Task 3 → Task 5 → Task 7
 
 ---
 
-- [ ] 2. SDK NadFunIntentMeta Type Extension
+- [x] 2. SDK NadFunIntentMeta Type Extension
 
   **What to do**:
   - Write tests first for new types
@@ -350,7 +350,7 @@ Critical Path: Task 1 → Task 3 → Task 5 → Task 7
 
 ---
 
-- [ ] 3. SDK ClaimBook Hash Conformance
+- [x] 3. SDK ClaimBook Hash Conformance
 
   **What to do**:
   - Add test vectors for ClaimBook hashes
@@ -480,7 +480,7 @@ Critical Path: Task 1 → Task 3 → Task 5 → Task 7
 
 ---
 
-- [ ] 5. Relayer SSE Endpoints
+- [x] 5. Relayer SSE Endpoints
 
   **What to do**:
   - Write tests first for SSE behavior

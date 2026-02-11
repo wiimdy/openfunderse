@@ -111,3 +111,25 @@ test("uint64 boundaries are enforced", () => {
   assert.doesNotThrow(() => intentHash({ ...intent, deadline: (1n << 64n) - 1n }));
   assert.throws(() => intentHash({ ...intent, deadline: 1n << 64n }));
 });
+
+test("ClaimBook hash conformance: snapshotHash matches Solidity keccak256(abi.encode(epochId, orderedClaimHashes))", () => {
+  // Test vector from ClaimBook.t.sol: claimHash1 = keccak256("claim-1"), claimHash2 = keccak256("claim-2")
+  const claimBookVector = vectors.vectors.find(v => v.id === "claimbook-vector-1");
+  assert(claimBookVector, "ClaimBook test vector not found");
+
+  const epochId = BigInt(claimBookVector.snapshot.epochId);
+  const orderedClaimHashes = claimBookVector.snapshot.orderedClaimHashes;
+  const expectedSnapshotHash = claimBookVector.snapshot.expectedSnapshotHash;
+
+  const computed = snapshotHash(epochId, orderedClaimHashes);
+  assert.equal(computed, expectedSnapshotHash, "snapshotHash mismatch for ClaimBook vector");
+});
+
+test("ClaimBook hash conformance: claimHash computation", () => {
+  const claimBookVector = vectors.vectors.find(v => v.id === "claimbook-vector-1");
+  assert(claimBookVector, "ClaimBook test vector not found");
+
+  const claim = toClaimPayload(claimBookVector.claimPayload);
+  const computed = claimHash(claim);
+  assert.equal(computed, claimBookVector.expectedClaimHash, "claimHash mismatch for ClaimBook vector");
+});
