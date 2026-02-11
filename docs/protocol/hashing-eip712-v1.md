@@ -113,3 +113,41 @@ Vectors include:
 - claim payload + expected `claimHash`
 - ordered claim hashes + expected `snapshotHash`
 - trade intent + expected `intentHash`
+
+## 4. Onchain Snapshot-Based Weighted Attestation
+
+Status (`2026-02-10`):
+- Canonical attestation threshold model is weighted-only.
+- Relayer/agents must evaluate threshold from onchain validator snapshot.
+
+### 4.1 Validator Snapshot
+
+- Source of truth is onchain snapshot at deterministic block/epoch-finalization point.
+- Snapshot row shape:
+  - `validator` (`address`)
+  - `weight` (`uint256`)
+- Snapshot constraints:
+  - no duplicate validator addresses
+  - every weight is positive
+- snapshot id `(fundId, epochId, blockNumber)` is immutable after finalization
+
+### 4.2 Weighted Threshold
+
+Definition:
+- `W(v)`: validator weight from snapshot
+- `A`: unique attesters for one subject (`claimHash` or `intentHash`)
+- `T`: configured threshold weight (`uint256`)
+
+Rule:
+- `attestedWeight = sum(W(v) for v in A where v exists in snapshot)`
+- threshold satisfied iff `attestedWeight >= T`
+
+Notes:
+- duplicate signatures from same validator count once
+- attesters not in snapshot contribute `0`
+- `T` must be strictly positive
+
+### 4.3 Runtime Requirement
+
+- Runtime threshold check MUST use `attestedWeight >= thresholdWeight`.
+- Non-weighted threshold models are out of scope for this spec.

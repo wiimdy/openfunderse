@@ -21,7 +21,7 @@ Claw는 온체인 Vault로, 독립적인 에이전트(Verifier) 무리가 다음
 
 ## 3. 목표 (해커톤 MVP)
 - 근거 기반 데이터 Claim: 온체인에는 커밋(해시)만 저장하고, 무거운 근거는 오프체인으로.
-- 멀티 에이전트 검증: N-of-M 유니크 Attestation 수집(옵션으로 가중치).
+- 멀티 에이전트 검증: 온체인 snapshot 기반 weighted threshold로 attestation 집계.
 - Prompt-to-Intent 파이프라인: 검증된 데이터셋 스냅샷 -> 전략 출력 -> 구조화된 Trade Intent.
 - 온체인 실행: Intent Attestation 임계치가 만족될 때만 Vault가 실행.
 - 투명한 인센티브: Miner/Verifier 포인트/보상 및 명확한 리더보드.
@@ -168,4 +168,3 @@ Claw는 온체인 Vault로, 독립적인 에이전트(Verifier) 무리가 다음
 - "Agent" vs "Agent+Token" 트랙 중 무엇으로 제출할까?
 - 크롤링 소스는 무엇이 충분히 안정적인가?
 - MVP에 stake/slashing을 넣을까, points-only로 갈까?
-

@@ -7,3 +7,5 @@ export * from "./ordering.js";
 export * from "./scope.js";
 export * from "./attestation.js";
 export * from "./validate.js";
+export * from "./attestation-verifier.js";
+export * from "./weighted-attestation.js";

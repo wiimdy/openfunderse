@@ -44,3 +44,7 @@ broadcast/
 # Coverage
 coverage/
 .nyc_output/
+
+# Local SQLite artifacts
+packages/relayer/data/
+*.db

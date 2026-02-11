@@ -7,6 +7,7 @@ Claw protocol canonical hashing, EIP-712 typed-data, and shared protocol utiliti
 - Canonical normalization for `ClaimPayload` and `TradeIntent`
 - Hash helpers: `claimHash`, `intentHash`, `snapshotHash`
 - Snapshot ordering helpers: sort/unique/assert order
+- Weighted attestation helpers: validator weight map + weighted threshold checks
 - Scope helpers: `fundId` / `roomId` / `epochId` canonicalization and scope checks
 - Replay helpers: expiry/nonce validation
 - EIP-712 typed data builders:
@@ -57,6 +58,7 @@ import {
 - `recoverClaimAttester`, `recoverIntentAttester`
 - `encodeErc1271IsValidSignatureCall`, `isValidErc1271Result`
 - `isExpired`, `assertNotExpired`, `assertNonceStrictlyIncreases`
+- `buildValidatorWeightMap`, `totalValidatorWeight`, `attestedWeight`, `reachedWeightedThreshold`, `weightedThresholdState`
 
 ## Integration Direction
 

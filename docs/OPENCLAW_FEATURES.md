@@ -71,7 +71,7 @@ v2
 
 ### 4.3 Validation Market (Verifiers)
 MVP
-- Threshold approvals (N-of-M) with unique signer enforcement.
+- Weighted-threshold approvals from onchain validator snapshot with unique signer enforcement.
 - Points-based rewards + leaderboard.
 
 v1
@@ -279,4 +279,3 @@ If you want to operate beyond a demo, prioritize:
   - a data market (claims + validation)
   - a strategy market (intents + validation)
   - a capital pool (vault execution)
-
