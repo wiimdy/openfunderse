@@ -1,4 +1,5 @@
-console.log("[agents] scaffold entry boot");
-console.log(`[agents] strategy key set=${Boolean(process.env.STRATEGY_PRIVATE_KEY)}`);
-console.log(`[agents] verifier key set=${Boolean(process.env.VERIFIER_PRIVATE_KEY)}`);
-console.log(`[agents] crawler key set=${Boolean(process.env.CRAWLER_PRIVATE_KEY)}`);
+export { mineClaim, verifyClaim } from "./skills/participant/index.js";
+export type { MineClaimInput, MineClaimOutput, MineClaimObservation, VerifyClaimInput, VerifyClaimOutput } from "./skills/participant/index.js";
+
+export { proposeIntent } from "./skills/strategy/index.js";
+export type { ProposeIntentInput, ProposeIntentOutput, ProposeDecision, HoldDecision, RiskChecks } from "./skills/strategy/index.js";
