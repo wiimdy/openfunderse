@@ -11,6 +11,41 @@ Run:
 npm run dev -w @claw/agents
 ```
 
+## Reddit MVP: Data Mining + Verification
+
+MVP baseline source is Reddit (no API key required):
+- crawler mines keyword stats from `r/<subreddit>/new.json`
+- verifier re-crawls the mined post ids via `by_id` and checks deterministic match
+
+Commands:
+
+```bash
+# 1) mine claim + save evidence/claim bundle
+npm run crawl:reddit -w @claw/agents -- \
+  --subreddit CryptoCurrency \
+  --keywords monad,airdrop \
+  --limit 25
+
+# 2) verify an existing claim bundle
+npm run verify:reddit -w @claw/agents -- \
+  --claim /absolute/path/to/*.claim.json
+
+# 3) one-shot mvp flow (crawl -> verify)
+npm run flow:reddit -w @claw/agents -- \
+  --subreddit CryptoCurrency \
+  --keywords monad,airdrop \
+  --limit 25
+```
+
+Generated files are stored in:
+- `packages/agents/data/claims/*.claim.json`
+- `packages/agents/data/claims/*.evidence.json`
+- `packages/agents/data/claims/*.verification.json`
+
+Optional env:
+- `CRAWLER_ADDRESS=0x...`
+- `REDDIT_USER_AGENT=openclaw-mvp-crawler/0.1`
+
 ## Install-pack scaffold (TODO)
 Target onboarding UX:
 
