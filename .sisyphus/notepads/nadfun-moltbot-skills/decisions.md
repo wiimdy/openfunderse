@@ -1,0 +1,3 @@
+- 2026-02-11: Implemented `ISnapshotBook` directly inside `ClaimBook.sol` and made `ClaimBook` the interface implementer (no separate SnapshotBook contract).
+- 2026-02-11: Kept weighted attestation configuration aligned with IntentBook (`isVerifier`, `verifierWeight`, `defaultThresholdWeight`, owner-managed verifier updates).
+- 2026-02-11: Chose explicit `finalizeClaim(claimHash)` finalization step (attestation accumulates weight; finalization marks status when threshold is met).
