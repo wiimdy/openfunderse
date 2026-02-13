@@ -38,14 +38,6 @@ function snapshotFromConfig(snapshotId: string, thresholdWeight: bigint): Valida
   };
 }
 
-export function loadClaimValidatorSnapshot(fundId: string, epochId: bigint): ValidatorSnapshot {
-  const cfg = loadRuntimeConfig();
-  const fund = getFundThresholds(fundId);
-  const thresholdWeight = fund?.claimThresholdWeight ?? cfg.claimThresholdWeight;
-  // TODO: replace config-backed snapshot with onchain snapshot reader once registry ABI is finalized.
-  return snapshotFromConfig(`${fundId}:${epochId.toString()}:claim`, thresholdWeight);
-}
-
 export function loadIntentValidatorSnapshot(fundId: string): ValidatorSnapshot {
   const cfg = loadRuntimeConfig();
   const fund = getFundThresholds(fundId);

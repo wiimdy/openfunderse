@@ -3,6 +3,8 @@
 .LSOverride
 Thumbs.db
 
+.sisyphus
+
 .idea/
 .vscode/
 

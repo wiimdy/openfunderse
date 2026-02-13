@@ -28,12 +28,6 @@ if command -v forge >/dev/null 2>&1; then
     fail "forge build"
   fi
 
-  if (cd packages/contracts && forge test --match-contract ClaimBookTest -vv 2>&1 | grep -q "0 failed"); then
-    pass "ClaimBook tests"
-  else
-    fail "ClaimBook tests"
-  fi
-
   if (cd packages/contracts && forge test --match-contract IntentBookTest -vv 2>&1 | grep -q "0 failed"); then
     pass "IntentBook tests"
   else

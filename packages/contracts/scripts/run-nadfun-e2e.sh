@@ -23,9 +23,9 @@ fi
 
 export CHAIN_ID="${CHAIN_ID:-10143}"
 export NADFUN_LENS_ADDRESS="${NADFUN_LENS_ADDRESS:-0xB056d79CA5257589692699a46623F901a3BB76f1}"
-export NADFUN_WMON_ADDRESS="${NADFUN_WMON_ADDRESS:-0x5a4E0bFDeF88C9032CB4d24338C5EB3d3870BfDd}"
-export NADFUN_BONDING_CURVE_ROUTER="${NADFUN_BONDING_CURVE_ROUTER:-0x865054F0F6A288adaAc30261731361EA7E908003}"
-export NADFUN_DEX_ROUTER="${NADFUN_DEX_ROUTER:-0x5D4a4f430cA3B1b2dB86B9cFE48a5316800F5fb2}"
+export NADFUN_WMON_ADDRESS="${NADFUN_WMON_ADDRESS:-0xFb8bE43D65FBC1290D6178C6DbA6E58c6D18fA60}"
+: "${NADFUN_BONDING_CURVE_ROUTER:?NADFUN_BONDING_CURVE_ROUTER is required (set latest Monad testnet NadFun bonding router)}"
+: "${NADFUN_DEX_ROUTER:?NADFUN_DEX_ROUTER is required (set latest Monad testnet NadFun dex router)}"
 export TRADE_AMOUNT_IN="${TRADE_AMOUNT_IN:-10000000000000000}" # 0.01 MON
 export MAX_SLIPPAGE_BPS="${MAX_SLIPPAGE_BPS:-300}"            # 3%
 export INTENT_TTL_SECONDS="${INTENT_TTL_SECONDS:-600}"
@@ -54,14 +54,35 @@ fi
 
 export SNAPSHOT_BOOK_ADDRESS
 SNAPSHOT_BOOK_ADDRESS="$(jq -r '.transactions[] | select(.contractName=="MockSnapshotBook") | .contractAddress' "$RUN_JSON" | tail -n1)"
+
+mapfile -t PROXY_ADDRESSES < <(
+  jq -r '.transactions[]
+    | select(.transactionType=="CREATE" and .contractName=="ERC1967Proxy")
+    | .contractAddress' "$RUN_JSON"
+)
+
+# DeployClawIntentStack.s.sol deploy order:
+# 1) IntentBook proxy, 2) Vault proxy, 3) Core proxy, 4) Adapter proxy
+if [[ "${#PROXY_ADDRESSES[@]}" -lt 4 ]]; then
+  echo "[e2e] expected at least 4 ERC1967Proxy deployments, got ${#PROXY_ADDRESSES[@]}" >&2
+  exit 1
+fi
+
 export INTENT_BOOK_ADDRESS
-INTENT_BOOK_ADDRESS="$(jq -r '.transactions[] | select(.contractName=="IntentBook") | .contractAddress' "$RUN_JSON" | tail -n1)"
+INTENT_BOOK_ADDRESS="${PROXY_ADDRESSES[0]}"
 export VAULT_ADDRESS
-VAULT_ADDRESS="$(jq -r '.transactions[] | select(.contractName=="ClawVault4626") | .contractAddress' "$RUN_JSON" | tail -n1)"
+VAULT_ADDRESS="${PROXY_ADDRESSES[1]}"
 export CORE_ADDRESS
-CORE_ADDRESS="$(jq -r '.transactions[] | select(.contractName=="ClawCore") | .contractAddress' "$RUN_JSON" | tail -n1)"
+CORE_ADDRESS="${PROXY_ADDRESSES[2]}"
 export ADAPTER_ADDRESS
-ADAPTER_ADDRESS="$(jq -r '.transactions[] | select(.contractName=="NadfunExecutionAdapter") | .contractAddress' "$RUN_JSON" | tail -n1)"
+ADAPTER_ADDRESS="${PROXY_ADDRESSES[3]}"
+
+for addr in "$SNAPSHOT_BOOK_ADDRESS" "$INTENT_BOOK_ADDRESS" "$VAULT_ADDRESS" "$CORE_ADDRESS" "$ADAPTER_ADDRESS"; do
+  if [[ ! "$addr" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
+    echo "[e2e] invalid address parsed: $addr" >&2
+    exit 1
+  fi
+done
 
 OUT_ENV="$CONTRACTS_DIR/.claw.e2e.env"
 cat > "$OUT_ENV" <<ENV

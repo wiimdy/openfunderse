@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity ^0.8.28;
+
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 interface ISnapshotBook {
     function isSnapshotFinalized(bytes32 snapshotHash) external view returns (bool);
@@ -7,7 +11,7 @@ interface ISnapshotBook {
 
 /// @title IntentBook v0
 /// @notice Strategy proposes intent; verifiers attest via EIP-712 signatures; threshold turns intent Approved.
-contract IntentBook {
+contract IntentBook is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     struct Constraints {
         bytes32 allowlistHash;
         uint16 maxSlippageBps;
@@ -40,12 +44,15 @@ contract IntentBook {
 
     bytes32 internal constant INTENT_ATTESTATION_TYPEHASH =
         keccak256("IntentAttestation(bytes32 intentHash,address verifier,uint64 expiresAt,uint256 nonce)");
+    uint256 internal constant SECP256K1N_OVER_2 =
+        0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0;
 
-    address public owner;
     address public strategyAgent;
     ISnapshotBook public snapshotBook;
 
     uint256 public defaultThresholdWeight;
+    bool public configFrozen;
+    bool public upgradesFrozen;
 
     mapping(address => bool) public isVerifier;
     mapping(address => uint256) public verifierWeight;
@@ -54,16 +61,16 @@ contract IntentBook {
     mapping(bytes32 => mapping(address => bool)) public hasAttested;
     mapping(address => mapping(uint256 => bool)) public usedNonce;
 
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
     event StrategyAgentUpdated(address indexed strategyAgent);
     event VerifierUpdated(address indexed verifier, bool enabled, uint256 weight);
     event ThresholdWeightUpdated(uint256 thresholdWeight);
+    event ConfigFrozen();
+    event UpgradesFrozen();
 
     event IntentProposed(bytes32 indexed intentHash, string intentURI, bytes32 indexed snapshotHash, address indexed proposer);
     event IntentAttested(bytes32 indexed intentHash, address indexed verifier, uint256 verifierWeight, uint256 attestedWeight);
     event IntentApproved(bytes32 indexed intentHash, uint256 attestedWeight, uint256 thresholdWeight);
 
-    error NotOwner();
     error NotStrategyAgent();
     error InvalidAddress();
     error InvalidThreshold();
@@ -78,57 +85,61 @@ contract IntentBook {
     error SignatureExpired();
     error NonceAlreadyUsed();
     error InvalidSignature();
-
-    modifier onlyOwner() {
-        if (msg.sender != owner) revert NotOwner();
-        _;
-    }
+    error ConfigIsFrozen();
+    error UpgradesAreFrozen();
 
     modifier onlyStrategyAgent() {
         if (msg.sender != strategyAgent) revert NotStrategyAgent();
         _;
     }
 
-    constructor(address owner_, address strategyAgent_, address snapshotBook_, uint256 thresholdWeight_) {
+    modifier whenConfigMutable() {
+        if (configFrozen) revert ConfigIsFrozen();
+        _;
+    }
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address owner_, address strategyAgent_, address snapshotBook_, uint256 thresholdWeight_)
+        external
+        initializer
+    {
         if (owner_ == address(0) || strategyAgent_ == address(0) || snapshotBook_ == address(0)) {
             revert InvalidAddress();
         }
         if (thresholdWeight_ == 0) revert InvalidThreshold();
 
-        owner = owner_;
+        __Ownable_init(owner_);
+
         strategyAgent = strategyAgent_;
         snapshotBook = ISnapshotBook(snapshotBook_);
         defaultThresholdWeight = thresholdWeight_;
 
-        emit OwnershipTransferred(address(0), owner_);
         emit StrategyAgentUpdated(strategyAgent_);
         emit ThresholdWeightUpdated(thresholdWeight_);
     }
 
-    function transferOwnership(address newOwner) external onlyOwner {
-        if (newOwner == address(0)) revert InvalidAddress();
-        emit OwnershipTransferred(owner, newOwner);
-        owner = newOwner;
-    }
-
-    function setStrategyAgent(address newStrategyAgent) external onlyOwner {
+    function setStrategyAgent(address newStrategyAgent) external onlyOwner whenConfigMutable {
         if (newStrategyAgent == address(0)) revert InvalidAddress();
         strategyAgent = newStrategyAgent;
         emit StrategyAgentUpdated(newStrategyAgent);
     }
 
-    function setSnapshotBook(address newSnapshotBook) external onlyOwner {
+    function setSnapshotBook(address newSnapshotBook) external onlyOwner whenConfigMutable {
         if (newSnapshotBook == address(0)) revert InvalidAddress();
         snapshotBook = ISnapshotBook(newSnapshotBook);
     }
 
-    function setDefaultThresholdWeight(uint256 newThresholdWeight) external onlyOwner {
+    function setDefaultThresholdWeight(uint256 newThresholdWeight) external onlyOwner whenConfigMutable {
         if (newThresholdWeight == 0) revert InvalidThreshold();
         defaultThresholdWeight = newThresholdWeight;
         emit ThresholdWeightUpdated(newThresholdWeight);
     }
 
-    function setVerifier(address verifier, bool enabled, uint256 weight) external onlyOwner {
+    function setVerifier(address verifier, bool enabled, uint256 weight) external onlyOwner whenConfigMutable {
         if (verifier == address(0)) revert InvalidAddress();
         if (enabled && weight == 0) revert InvalidThreshold();
 
@@ -136,6 +147,18 @@ contract IntentBook {
         verifierWeight[verifier] = enabled ? weight : 0;
 
         emit VerifierUpdated(verifier, enabled, verifierWeight[verifier]);
+    }
+
+    function freezeConfig() external onlyOwner {
+        if (configFrozen) revert ConfigIsFrozen();
+        configFrozen = true;
+        emit ConfigFrozen();
+    }
+
+    function freezeUpgrades() external onlyOwner {
+        if (upgradesFrozen) revert UpgradesAreFrozen();
+        upgradesFrozen = true;
+        emit UpgradesFrozen();
     }
 
     function proposeIntent(
@@ -278,9 +301,17 @@ contract IntentBook {
             v += 27;
         }
         if (v != 27 && v != 28) revert InvalidSignature();
+        if (r == bytes32(0) || s == bytes32(0)) revert InvalidSignature();
+        if (uint256(s) > SECP256K1N_OVER_2) revert InvalidSignature();
 
         address recovered = ecrecover(digest, v, r, s);
         if (recovered == address(0)) revert InvalidSignature();
         return recovered;
     }
+
+    function _authorizeUpgrade(address) internal view override onlyOwner {
+        if (upgradesFrozen) revert UpgradesAreFrozen();
+    }
+
+    uint256[50] private __gap;
 }
