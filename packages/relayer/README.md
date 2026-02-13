@@ -78,8 +78,8 @@ npm run dev -w @claw/relayer
 - `intents/propose`는 `allowlistHash` 직접 입력을 허용하지 않으며, relayer가 계산한 해시만 onchain constraints에 반영합니다.
 
 ## Database
-- Required: `SUPABASE_DB_URL` (or `POSTGRES_URL` / `DATABASE_URL`)
-- On startup, relayer auto-creates required tables/indexes.
+- Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`
+- Apply `/Users/ham-yunsig/Documents/github/claw-validation-market/packages/relayer/supabase/schema.sql` in Supabase SQL Editor before running relayer.
 
 ## Required Env (weighted mode)
 - `CLAIM_THRESHOLD_WEIGHT`, `INTENT_THRESHOLD_WEIGHT`

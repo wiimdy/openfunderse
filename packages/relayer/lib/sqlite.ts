@@ -1,4 +1,4 @@
-import postgres from "postgres";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export type SubjectType = "CLAIM" | "INTENT";
 export type RecordStatus = "PENDING" | "APPROVED" | "REJECTED";
@@ -82,195 +82,54 @@ export interface ExecutionJobRow {
   updated_at: number;
 }
 
-let sqlSingleton: postgres.Sql | null = null;
-let initPromise: Promise<void> | null = null;
+let supabaseSingleton: SupabaseClient | null = null;
 
-function dbUrl(): string {
-  return (
-    process.env.SUPABASE_DB_URL ||
-    process.env.POSTGRES_URL ||
-    process.env.DATABASE_URL ||
-    ""
-  );
-}
-
-function sql(): postgres.Sql {
-  if (sqlSingleton) return sqlSingleton;
-
-  const url = dbUrl();
-  if (!url) {
-    throw new Error(
-      "missing required env: SUPABASE_DB_URL (or POSTGRES_URL / DATABASE_URL)"
-    );
+function envFirst(...keys: string[]): string {
+  for (const key of keys) {
+    const value = process.env[key];
+    if (value && value.length > 0) return value;
   }
-
-  sqlSingleton = postgres(url, {
-    max: Number(process.env.PG_POOL_MAX ?? 10),
-    idle_timeout: 20,
-    connect_timeout: 10,
-    prepare: true
-  });
-  return sqlSingleton;
+  throw new Error(`missing required env: one of [${keys.join(", ")}]`);
 }
 
-async function initSchema(): Promise<void> {
-  if (initPromise) return initPromise;
+function supabase(): SupabaseClient {
+  if (supabaseSingleton) return supabaseSingleton;
 
-  initPromise = (async () => {
-    const db = sql();
-    await db`
-      CREATE TABLE IF NOT EXISTS funds (
-        id BIGSERIAL PRIMARY KEY,
-        fund_id TEXT NOT NULL UNIQUE,
-        fund_name TEXT NOT NULL,
-        strategy_bot_id TEXT NOT NULL DEFAULT '',
-        strategy_bot_address TEXT NOT NULL DEFAULT '',
-        verifier_threshold_weight TEXT NOT NULL,
-        intent_threshold_weight TEXT NOT NULL,
-        strategy_policy_uri TEXT,
-        telegram_room_id TEXT,
-        created_by TEXT NOT NULL,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL
-      )
-    `;
+  const url = envFirst("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL");
+  const key = envFirst(
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+    "SUPABASE_ANON_KEY"
+  );
 
-    await db`
-      CREATE TABLE IF NOT EXISTS fund_bots (
-        id BIGSERIAL PRIMARY KEY,
-        fund_id TEXT NOT NULL,
-        bot_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        bot_address TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'ACTIVE',
-        policy_uri TEXT,
-        telegram_handle TEXT,
-        registered_by TEXT NOT NULL,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        UNIQUE(fund_id, bot_id)
-      )
-    `;
-
-    await db`
-      CREATE TABLE IF NOT EXISTS attestations (
-        id BIGSERIAL PRIMARY KEY,
-        fund_id TEXT NOT NULL,
-        subject_type TEXT NOT NULL,
-        subject_hash TEXT NOT NULL,
-        epoch_id TEXT,
-        verifier TEXT NOT NULL,
-        expires_at TEXT NOT NULL,
-        nonce TEXT NOT NULL,
-        signature TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'PENDING',
-        tx_hash TEXT,
-        error TEXT,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        UNIQUE(subject_type, subject_hash, verifier)
-      )
-    `;
-
-    await db`
-      CREATE TABLE IF NOT EXISTS subject_state (
-        id BIGSERIAL PRIMARY KEY,
-        fund_id TEXT NOT NULL,
-        subject_type TEXT NOT NULL,
-        subject_hash TEXT NOT NULL,
-        epoch_id TEXT,
-        threshold_weight TEXT NOT NULL DEFAULT '0',
-        attested_weight TEXT NOT NULL DEFAULT '0',
-        status TEXT NOT NULL DEFAULT 'PENDING',
-        tx_hash TEXT,
-        submit_attempts INTEGER NOT NULL DEFAULT 0,
-        last_error TEXT,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        UNIQUE(subject_type, subject_hash)
-      )
-    `;
-
-    await db`
-      CREATE TABLE IF NOT EXISTS claims (
-        id BIGSERIAL PRIMARY KEY,
-        fund_id TEXT NOT NULL,
-        claim_hash TEXT NOT NULL,
-        epoch_id TEXT NOT NULL,
-        payload_json TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'PENDING',
-        created_by TEXT NOT NULL,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        UNIQUE(fund_id, claim_hash)
-      )
-    `;
-
-    await db`
-      CREATE TABLE IF NOT EXISTS snapshots (
-        id BIGSERIAL PRIMARY KEY,
-        fund_id TEXT NOT NULL,
-        epoch_id TEXT NOT NULL,
-        snapshot_hash TEXT NOT NULL,
-        claim_hashes_json TEXT NOT NULL,
-        claim_count INTEGER NOT NULL,
-        finalized_at BIGINT NOT NULL,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        UNIQUE(fund_id, epoch_id)
-      )
-    `;
-
-    await db`
-      CREATE TABLE IF NOT EXISTS intents (
-        id BIGSERIAL PRIMARY KEY,
-        fund_id TEXT NOT NULL,
-        intent_hash TEXT NOT NULL,
-        snapshot_hash TEXT NOT NULL,
-        intent_uri TEXT,
-        intent_json TEXT NOT NULL,
-        execution_route_json TEXT NOT NULL DEFAULT '{}',
-        allowlist_hash TEXT NOT NULL,
-        max_slippage_bps TEXT NOT NULL,
-        max_notional TEXT NOT NULL,
-        deadline TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'PENDING',
-        created_by TEXT NOT NULL,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        UNIQUE(fund_id, intent_hash)
-      )
-    `;
-
-    await db`
-      CREATE TABLE IF NOT EXISTS execution_jobs (
-        id BIGSERIAL PRIMARY KEY,
-        fund_id TEXT NOT NULL,
-        intent_hash TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'READY',
-        attempt_count INTEGER NOT NULL DEFAULT 0,
-        next_run_at BIGINT NOT NULL,
-        tx_hash TEXT,
-        last_error TEXT,
-        created_at BIGINT NOT NULL,
-        updated_at BIGINT NOT NULL,
-        UNIQUE(fund_id, intent_hash)
-      )
-    `;
-
-    await db`CREATE INDEX IF NOT EXISTS idx_attestations_subject ON attestations(subject_type, subject_hash, status)`;
-    await db`CREATE INDEX IF NOT EXISTS idx_fund_bots_fund ON fund_bots(fund_id, status)`;
-    await db`CREATE INDEX IF NOT EXISTS idx_claims_fund_epoch ON claims(fund_id, epoch_id, created_at DESC)`;
-    await db`CREATE INDEX IF NOT EXISTS idx_snapshots_fund_finalized ON snapshots(fund_id, finalized_at DESC)`;
-    await db`CREATE INDEX IF NOT EXISTS idx_intents_fund_snapshot ON intents(fund_id, snapshot_hash, created_at DESC)`;
-    await db`CREATE INDEX IF NOT EXISTS idx_execution_jobs_status_next ON execution_jobs(status, next_run_at, created_at)`;
-  })();
-
-  return initPromise;
+  supabaseSingleton = createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false
+    }
+  });
+  return supabaseSingleton;
 }
 
 function nowMs(): number {
   return Date.now();
+}
+
+function isDuplicateError(error: unknown): boolean {
+  const msg = String((error as { message?: string } | null)?.message ?? error ?? "").toLowerCase();
+  return msg.includes("duplicate") || msg.includes("23505") || msg.includes("unique");
+}
+
+function throwIfError<T>(error: { message?: string; code?: string } | null, data: T): T {
+  if (error) {
+    if (error.code === "PGRST205") {
+      throw new Error(
+        `PGRST205: missing tables. Apply packages/relayer/supabase/schema.sql in Supabase SQL Editor.`
+      );
+    }
+    throw new Error(`${error.code ?? "supabase_error"}: ${error.message ?? "unknown error"}`);
+  }
+  return data;
 }
 
 export async function upsertFund(input: {
@@ -284,56 +143,40 @@ export async function upsertFund(input: {
   telegramRoomId: string | null;
   createdBy: string;
 }) {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const now = nowMs();
-  await db`
-    INSERT INTO funds (
-      fund_id, fund_name, strategy_bot_id, strategy_bot_address, verifier_threshold_weight, intent_threshold_weight,
-      strategy_policy_uri, telegram_room_id, created_by, created_at, updated_at
-    ) VALUES (
-      ${input.fundId}, ${input.fundName}, ${input.strategyBotId}, ${input.strategyBotAddress},
-      ${input.verifierThresholdWeight.toString()}, ${input.intentThresholdWeight.toString()},
-      ${input.strategyPolicyUri}, ${input.telegramRoomId}, ${input.createdBy}, ${now}, ${now}
-    )
-    ON CONFLICT (fund_id) DO UPDATE SET
-      fund_name = EXCLUDED.fund_name,
-      strategy_bot_id = EXCLUDED.strategy_bot_id,
-      strategy_bot_address = EXCLUDED.strategy_bot_address,
-      verifier_threshold_weight = EXCLUDED.verifier_threshold_weight,
-      intent_threshold_weight = EXCLUDED.intent_threshold_weight,
-      strategy_policy_uri = EXCLUDED.strategy_policy_uri,
-      telegram_room_id = EXCLUDED.telegram_room_id,
-      updated_at = EXCLUDED.updated_at
-  `;
+  const { error } = await db.from("funds").upsert(
+    {
+      fund_id: input.fundId,
+      fund_name: input.fundName,
+      strategy_bot_id: input.strategyBotId,
+      strategy_bot_address: input.strategyBotAddress,
+      verifier_threshold_weight: input.verifierThresholdWeight.toString(),
+      intent_threshold_weight: input.intentThresholdWeight.toString(),
+      strategy_policy_uri: input.strategyPolicyUri,
+      telegram_room_id: input.telegramRoomId,
+      created_by: input.createdBy,
+      created_at: now,
+      updated_at: now
+    },
+    {
+      onConflict: "fund_id"
+    }
+  );
+  throwIfError(error, null);
 }
 
 export async function getFund(fundId: string) {
-  await initSchema();
-  const db = sql();
-  const rows = await db`
-    SELECT
-      fund_id, fund_name, strategy_bot_id, strategy_bot_address, verifier_threshold_weight, intent_threshold_weight,
-      strategy_policy_uri, telegram_room_id, created_by, created_at, updated_at
-    FROM funds
-    WHERE fund_id = ${fundId}
-    LIMIT 1
-  `;
-  return rows[0] as
-    | {
-        fund_id: string;
-        fund_name: string;
-        strategy_bot_id: string;
-        strategy_bot_address: string;
-        verifier_threshold_weight: string;
-        intent_threshold_weight: string;
-        strategy_policy_uri: string | null;
-        telegram_room_id: string | null;
-        created_by: string;
-        created_at: number;
-        updated_at: number;
-      }
-    | undefined;
+  const db = supabase();
+  const { data, error } = await db
+    .from("funds")
+    .select(
+      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,created_by,created_at,updated_at"
+    )
+    .eq("fund_id", fundId)
+    .maybeSingle();
+  throwIfError(error, null);
+  return data ?? undefined;
 }
 
 export async function getFundThresholds(
@@ -357,40 +200,39 @@ export async function upsertFundBot(input: {
   telegramHandle: string | null;
   registeredBy: string;
 }) {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const now = nowMs();
-  await db`
-    INSERT INTO fund_bots (
-      fund_id, bot_id, role, bot_address, status,
-      policy_uri, telegram_handle, registered_by, created_at, updated_at
-    ) VALUES (
-      ${input.fundId}, ${input.botId}, ${input.role}, ${input.botAddress}, ${input.status},
-      ${input.policyUri}, ${input.telegramHandle}, ${input.registeredBy}, ${now}, ${now}
-    )
-    ON CONFLICT (fund_id, bot_id) DO UPDATE SET
-      role = EXCLUDED.role,
-      bot_address = EXCLUDED.bot_address,
-      status = EXCLUDED.status,
-      policy_uri = EXCLUDED.policy_uri,
-      telegram_handle = EXCLUDED.telegram_handle,
-      registered_by = EXCLUDED.registered_by,
-      updated_at = EXCLUDED.updated_at
-  `;
+  const { error } = await db.from("fund_bots").upsert(
+    {
+      fund_id: input.fundId,
+      bot_id: input.botId,
+      role: input.role,
+      bot_address: input.botAddress,
+      status: input.status,
+      policy_uri: input.policyUri,
+      telegram_handle: input.telegramHandle,
+      registered_by: input.registeredBy,
+      created_at: now,
+      updated_at: now
+    },
+    {
+      onConflict: "fund_id,bot_id"
+    }
+  );
+  throwIfError(error, null);
 }
 
 export async function listFundBots(fundId: string) {
-  await initSchema();
-  const db = sql();
-  const rows = await db`
-    SELECT
-      fund_id, bot_id, role, bot_address, status,
-      policy_uri, telegram_handle, registered_by, created_at, updated_at
-    FROM fund_bots
-    WHERE fund_id = ${fundId}
-    ORDER BY created_at ASC
-  `;
-  return rows as unknown as Array<{
+  const db = supabase();
+  const { data, error } = await db
+    .from("fund_bots")
+    .select(
+      "fund_id,bot_id,role,bot_address,status,policy_uri,telegram_handle,registered_by,created_at,updated_at"
+    )
+    .eq("fund_id", fundId)
+    .order("created_at", { ascending: true });
+  throwIfError(error, null);
+  return (data ?? []) as Array<{
     fund_id: string;
     bot_id: string;
     role: string;
@@ -414,30 +256,32 @@ export async function insertAttestation(input: {
   nonce: bigint;
   signature: string;
 }): Promise<{ ok: true; id: number } | { ok: false; reason: "DUPLICATE" }> {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const now = nowMs();
-  try {
-    const rows = await db`
-      INSERT INTO attestations (
-        fund_id, subject_type, subject_hash, epoch_id,
-        verifier, expires_at, nonce, signature,
-        status, created_at, updated_at
-      ) VALUES (
-        ${input.fundId}, ${input.subjectType}, ${input.subjectHash.toLowerCase()},
-        ${input.epochId === null ? null : input.epochId.toString()},
-        ${input.verifier.toLowerCase()}, ${input.expiresAt.toString()}, ${input.nonce.toString()}, ${input.signature},
-        'PENDING', ${now}, ${now}
-      )
-      RETURNING id
-    `;
-    return { ok: true, id: Number(rows[0].id) };
-  } catch (error) {
-    if (String(error).includes("duplicate key value")) {
-      return { ok: false, reason: "DUPLICATE" };
-    }
-    throw error;
+  const { data, error } = await db
+    .from("attestations")
+    .insert({
+      fund_id: input.fundId,
+      subject_type: input.subjectType,
+      subject_hash: input.subjectHash.toLowerCase(),
+      epoch_id: input.epochId === null ? null : input.epochId.toString(),
+      verifier: input.verifier.toLowerCase(),
+      expires_at: input.expiresAt.toString(),
+      nonce: input.nonce.toString(),
+      signature: input.signature,
+      status: "PENDING",
+      created_at: now,
+      updated_at: now
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (isDuplicateError(error)) return { ok: false, reason: "DUPLICATE" };
+    throwIfError(error, null);
   }
+
+  return { ok: true, id: Number(data!.id) };
 }
 
 export async function upsertSubjectState(input: {
@@ -447,22 +291,39 @@ export async function upsertSubjectState(input: {
   epochId: bigint | null;
   thresholdWeight: bigint;
 }): Promise<void> {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const now = nowMs();
-  await db`
-    INSERT INTO subject_state (
-      fund_id, subject_type, subject_hash, epoch_id,
-      threshold_weight, attested_weight, status, created_at, updated_at
-    ) VALUES (
-      ${input.fundId}, ${input.subjectType}, ${input.subjectHash.toLowerCase()},
-      ${input.epochId === null ? null : input.epochId.toString()},
-      ${input.thresholdWeight.toString()}, '0', 'PENDING', ${now}, ${now}
-    )
-    ON CONFLICT (subject_type, subject_hash) DO UPDATE SET
-      threshold_weight = EXCLUDED.threshold_weight,
-      updated_at = EXCLUDED.updated_at
-  `;
+  const key = input.subjectHash.toLowerCase();
+  const { data: existing, error: existingError } = await db
+    .from("subject_state")
+    .select("id")
+    .eq("subject_type", input.subjectType)
+    .eq("subject_hash", key)
+    .maybeSingle();
+  throwIfError(existingError, null);
+
+  if (!existing) {
+    const { error } = await db.from("subject_state").insert({
+      fund_id: input.fundId,
+      subject_type: input.subjectType,
+      subject_hash: key,
+      epoch_id: input.epochId === null ? null : input.epochId.toString(),
+      threshold_weight: input.thresholdWeight.toString(),
+      attested_weight: "0",
+      status: "PENDING",
+      created_at: now,
+      updated_at: now
+    });
+    throwIfError(error, null);
+    return;
+  }
+
+  const { error } = await db
+    .from("subject_state")
+    .update({ threshold_weight: input.thresholdWeight.toString(), updated_at: now })
+    .eq("subject_type", input.subjectType)
+    .eq("subject_hash", key);
+  throwIfError(error, null);
 }
 
 export async function incrementSubjectAttestedWeight(
@@ -471,58 +332,63 @@ export async function incrementSubjectAttestedWeight(
   delta: bigint
 ): Promise<bigint> {
   if (delta < BigInt(0)) throw new Error("delta must be non-negative");
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const key = subjectHash.toLowerCase();
 
-  const rows = await db`
-    SELECT attested_weight FROM subject_state
-    WHERE subject_type = ${subjectType} AND subject_hash = ${key}
-    LIMIT 1
-  `;
-  const prev = rows[0] ? BigInt(rows[0].attested_weight) : BigInt(0);
+  const { data: current, error: currentError } = await db
+    .from("subject_state")
+    .select("attested_weight")
+    .eq("subject_type", subjectType)
+    .eq("subject_hash", key)
+    .maybeSingle();
+  throwIfError(currentError, null);
+
+  const prev = current ? BigInt(current.attested_weight) : BigInt(0);
   const next = prev + delta;
 
-  await db`
-    UPDATE subject_state
-    SET attested_weight = ${next.toString()}, updated_at = ${nowMs()}
-    WHERE subject_type = ${subjectType} AND subject_hash = ${key}
-  `;
+  const { error } = await db
+    .from("subject_state")
+    .update({ attested_weight: next.toString(), updated_at: nowMs() })
+    .eq("subject_type", subjectType)
+    .eq("subject_hash", key);
+  throwIfError(error, null);
 
   return next;
 }
 
 export async function getSubjectState(subjectType: SubjectType, subjectHash: string) {
-  await initSchema();
-  const db = sql();
-  const rows = await db`
-    SELECT threshold_weight, attested_weight, status, submit_attempts
-    FROM subject_state
-    WHERE subject_type = ${subjectType} AND subject_hash = ${subjectHash.toLowerCase()}
-    LIMIT 1
-  `;
-  return rows[0] as
+  const db = supabase();
+  const { data, error } = await db
+    .from("subject_state")
+    .select("threshold_weight,attested_weight,status,submit_attempts")
+    .eq("subject_type", subjectType)
+    .eq("subject_hash", subjectHash.toLowerCase())
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as
     | {
         threshold_weight: string;
         attested_weight: string;
         status: RecordStatus;
         submit_attempts: number;
       }
-    | undefined;
+    | null) ?? undefined;
 }
 
 export async function listPendingAttestations(
   subjectType: SubjectType,
   subjectHash: string
 ): Promise<AttestationRow[]> {
-  await initSchema();
-  const db = sql();
-  const rows = await db`
-    SELECT * FROM attestations
-    WHERE subject_type = ${subjectType} AND subject_hash = ${subjectHash.toLowerCase()} AND status = 'PENDING'
-    ORDER BY created_at ASC
-  `;
-  return rows as unknown as AttestationRow[];
+  const db = supabase();
+  const { data, error } = await db
+    .from("attestations")
+    .select("*")
+    .eq("subject_type", subjectType)
+    .eq("subject_hash", subjectHash.toLowerCase())
+    .eq("status", "PENDING")
+    .order("created_at", { ascending: true });
+  throwIfError(error, null);
+  return (data ?? []) as AttestationRow[];
 }
 
 export async function markSubjectApproved(input: {
@@ -530,69 +396,71 @@ export async function markSubjectApproved(input: {
   subjectHash: string;
   txHash: string;
 }): Promise<void> {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const now = nowMs();
   const key = input.subjectHash.toLowerCase();
+  const txHash = input.txHash.toLowerCase();
 
-  await db.begin(async (tx) => {
-    await tx.unsafe(
-      `
-      UPDATE subject_state
-      SET status = 'APPROVED', tx_hash = $1, updated_at = $2
-      WHERE subject_type = $3 AND subject_hash = $4
-      `,
-      [input.txHash.toLowerCase(), now, input.subjectType, key]
+  {
+    const { error } = await db
+      .from("subject_state")
+      .update({ status: "APPROVED", tx_hash: txHash, updated_at: now })
+      .eq("subject_type", input.subjectType)
+      .eq("subject_hash", key);
+    throwIfError(error, null);
+  }
+
+  {
+    const { error } = await db
+      .from("attestations")
+      .update({ status: "APPROVED", tx_hash: txHash, updated_at: now })
+      .eq("subject_type", input.subjectType)
+      .eq("subject_hash", key)
+      .eq("status", "PENDING");
+    throwIfError(error, null);
+  }
+
+  if (input.subjectType === "CLAIM") {
+    const { error } = await db
+      .from("claims")
+      .update({ status: "APPROVED", updated_at: now })
+      .eq("claim_hash", key);
+    throwIfError(error, null);
+    return;
+  }
+
+  {
+    const { error } = await db
+      .from("intents")
+      .update({ status: "APPROVED", updated_at: now })
+      .eq("intent_hash", key);
+    throwIfError(error, null);
+  }
+
+  const { data: intent, error: intentError } = await db
+    .from("intents")
+    .select("fund_id")
+    .eq("intent_hash", key)
+    .maybeSingle();
+  throwIfError(intentError, null);
+
+  if (intent?.fund_id) {
+    const { error } = await db.from("execution_jobs").upsert(
+      {
+        fund_id: intent.fund_id,
+        intent_hash: key,
+        status: "READY",
+        attempt_count: 0,
+        next_run_at: now,
+        created_at: now,
+        updated_at: now
+      },
+      {
+        onConflict: "fund_id,intent_hash"
+      }
     );
-
-    await tx.unsafe(
-      `
-      UPDATE attestations
-      SET status = 'APPROVED', tx_hash = $1, updated_at = $2
-      WHERE subject_type = $3 AND subject_hash = $4 AND status = 'PENDING'
-      `,
-      [input.txHash.toLowerCase(), now, input.subjectType, key]
-    );
-
-    if (input.subjectType === "CLAIM") {
-      await tx.unsafe(
-        `
-        UPDATE claims
-        SET status = 'APPROVED', updated_at = $1
-        WHERE claim_hash = $2
-        `,
-        [now, key]
-      );
-      return;
-    }
-
-    await tx.unsafe(
-      `
-      UPDATE intents
-      SET status = 'APPROVED', updated_at = $1
-      WHERE intent_hash = $2
-      `,
-      [now, key]
-    );
-
-    const intentRows = await tx.unsafe(
-      `SELECT fund_id FROM intents WHERE intent_hash = $1 LIMIT 1`,
-      [key]
-    );
-    const fundId = (intentRows as unknown as Array<{ fund_id: string }>)[0]?.fund_id;
-    if (fundId) {
-      await tx.unsafe(
-        `
-        INSERT INTO execution_jobs (
-          fund_id, intent_hash, status, attempt_count, next_run_at, created_at, updated_at
-        ) VALUES ($1, $2, 'READY', 0, $3, $4, $5)
-        ON CONFLICT (fund_id, intent_hash) DO UPDATE SET
-          status = 'READY', next_run_at = EXCLUDED.next_run_at, updated_at = EXCLUDED.updated_at
-        `,
-        [fundId, key, now, now, now]
-      );
-    }
-  });
+    throwIfError(error, null);
+  }
 }
 
 export async function markSubjectSubmitError(input: {
@@ -600,53 +468,61 @@ export async function markSubjectSubmitError(input: {
   subjectHash: string;
   message: string;
 }): Promise<void> {
-  await initSchema();
-  const db = sql();
-  await db`
-    UPDATE subject_state
-    SET submit_attempts = submit_attempts + 1,
-        last_error = ${input.message},
-        updated_at = ${nowMs()}
-    WHERE subject_type = ${input.subjectType} AND subject_hash = ${input.subjectHash.toLowerCase()}
-  `;
+  const db = supabase();
+  const key = input.subjectHash.toLowerCase();
+  const { data, error: findError } = await db
+    .from("subject_state")
+    .select("submit_attempts")
+    .eq("subject_type", input.subjectType)
+    .eq("subject_hash", key)
+    .maybeSingle();
+  throwIfError(findError, null);
+
+  const submitAttempts = Number(data?.submit_attempts ?? 0) + 1;
+  const { error } = await db
+    .from("subject_state")
+    .update({
+      submit_attempts: submitAttempts,
+      last_error: input.message,
+      updated_at: nowMs()
+    })
+    .eq("subject_type", input.subjectType)
+    .eq("subject_hash", key);
+  throwIfError(error, null);
 }
 
 export async function getStatusSummary(fundId: string) {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
+  const { data, error } = await db
+    .from("subject_state")
+    .select("subject_type,status,threshold_weight,attested_weight")
+    .eq("fund_id", fundId);
+  throwIfError(error, null);
 
-  const claim = await db`
-    SELECT
-      SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END)::bigint AS pending,
-      SUM(CASE WHEN status = 'APPROVED' THEN 1 ELSE 0 END)::bigint AS approved
-    FROM subject_state
-    WHERE fund_id = ${fundId} AND subject_type = 'CLAIM'
-  `;
-
-  const intent = await db`
-    SELECT
-      SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END)::bigint AS pending,
-      SUM(CASE WHEN status = 'APPROVED' THEN 1 ELSE 0 END)::bigint AS approved
-    FROM subject_state
-    WHERE fund_id = ${fundId} AND subject_type = 'INTENT'
-  `;
-
-  const rows = await db`
-    SELECT subject_type, status, threshold_weight, attested_weight
-    FROM subject_state
-    WHERE fund_id = ${fundId}
-  `;
+  let claimsPending = 0;
+  let claimsApproved = 0;
+  let intentsPending = 0;
+  let intentsApproved = 0;
 
   let claimAttestedWeight = BigInt(0);
   let claimThresholdWeight = BigInt(0);
   let intentAttestedWeight = BigInt(0);
   let intentThresholdWeight = BigInt(0);
 
-  for (const row of rows as unknown as Array<{ subject_type: SubjectType; threshold_weight: string; attested_weight: string }>) {
+  for (const row of (data ?? []) as Array<{
+    subject_type: SubjectType;
+    status: RecordStatus;
+    threshold_weight: string;
+    attested_weight: string;
+  }>) {
     if (row.subject_type === "CLAIM") {
+      if (row.status === "PENDING") claimsPending += 1;
+      if (row.status === "APPROVED") claimsApproved += 1;
       claimAttestedWeight += BigInt(row.attested_weight);
       claimThresholdWeight += BigInt(row.threshold_weight);
     } else {
+      if (row.status === "PENDING") intentsPending += 1;
+      if (row.status === "APPROVED") intentsApproved += 1;
       intentAttestedWeight += BigInt(row.attested_weight);
       intentThresholdWeight += BigInt(row.threshold_weight);
     }
@@ -654,14 +530,14 @@ export async function getStatusSummary(fundId: string) {
 
   return {
     claims: {
-      pending: Number(claim[0]?.pending ?? 0),
-      approved: Number(claim[0]?.approved ?? 0),
+      pending: claimsPending,
+      approved: claimsApproved,
       attestedWeight: claimAttestedWeight.toString(),
       thresholdWeight: claimThresholdWeight.toString()
     },
     intents: {
-      pending: Number(intent[0]?.pending ?? 0),
-      approved: Number(intent[0]?.approved ?? 0),
+      pending: intentsPending,
+      approved: intentsApproved,
       attestedWeight: intentAttestedWeight.toString(),
       thresholdWeight: intentThresholdWeight.toString()
     }
@@ -675,26 +551,29 @@ export async function insertClaim(input: {
   payloadJson: string;
   createdBy: string;
 }): Promise<{ ok: true; id: number } | { ok: false; reason: "DUPLICATE" }> {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const now = nowMs();
-  try {
-    const rows = await db`
-      INSERT INTO claims (
-        fund_id, claim_hash, epoch_id, payload_json, status, created_by, created_at, updated_at
-      ) VALUES (
-        ${input.fundId}, ${input.claimHash.toLowerCase()}, ${input.epochId.toString()}, ${input.payloadJson},
-        'PENDING', ${input.createdBy}, ${now}, ${now}
-      )
-      RETURNING id
-    `;
-    return { ok: true, id: Number(rows[0].id) };
-  } catch (error) {
-    if (String(error).includes("duplicate key value")) {
-      return { ok: false, reason: "DUPLICATE" };
-    }
-    throw error;
+  const { data, error } = await db
+    .from("claims")
+    .insert({
+      fund_id: input.fundId,
+      claim_hash: input.claimHash.toLowerCase(),
+      epoch_id: input.epochId.toString(),
+      payload_json: input.payloadJson,
+      status: "PENDING",
+      created_by: input.createdBy,
+      created_at: now,
+      updated_at: now
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (isDuplicateError(error)) return { ok: false, reason: "DUPLICATE" };
+    throwIfError(error, null);
   }
+
+  return { ok: true, id: Number(data!.id) };
 }
 
 export async function listClaimsByFund(input: {
@@ -704,60 +583,62 @@ export async function listClaimsByFund(input: {
   limit: number;
   offset: number;
 }) {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
 
-  const where: string[] = ["c.fund_id = $1"];
-  const params: Array<string | number> = [input.fundId];
-  let idx = 2;
+  const { data: claims, error: claimsError } = await db
+    .from("claims")
+    .select("id,fund_id,claim_hash,epoch_id,payload_json,status,created_by,created_at,updated_at")
+    .eq("fund_id", input.fundId)
+    .order("created_at", { ascending: false });
+  throwIfError(claimsError, null);
 
-  if (input.status) {
-    where.push(`COALESCE(ss.status, c.status) = $${idx++}`);
-    params.push(input.status);
+  const { data: states, error: statesError } = await db
+    .from("subject_state")
+    .select("subject_hash,status,attested_weight,threshold_weight")
+    .eq("fund_id", input.fundId)
+    .eq("subject_type", "CLAIM");
+  throwIfError(statesError, null);
+
+  const { data: att, error: attError } = await db
+    .from("attestations")
+    .select("subject_hash")
+    .eq("subject_type", "CLAIM");
+  throwIfError(attError, null);
+
+  const stateMap = new Map(
+    (states ?? []).map((row) => [String(row.subject_hash).toLowerCase(), row])
+  );
+  const attCount = new Map<string, number>();
+  for (const row of att ?? []) {
+    const key = String(row.subject_hash).toLowerCase();
+    attCount.set(key, (attCount.get(key) ?? 0) + 1);
   }
+
+  let rows = (claims ?? []).map((row) => {
+    const key = String(row.claim_hash).toLowerCase();
+    const state = stateMap.get(key);
+    return {
+      ...row,
+      status: (state?.status ?? row.status) as RecordStatus,
+      attested_weight: String(state?.attested_weight ?? "0"),
+      threshold_weight: String(state?.threshold_weight ?? "0"),
+      attestation_count: attCount.get(key) ?? 0
+    };
+  });
+
   if (input.epochId !== undefined) {
-    where.push(`c.epoch_id = $${idx++}`);
-    params.push(input.epochId.toString());
+    const epoch = input.epochId.toString();
+    rows = rows.filter((row) => String(row.epoch_id) === epoch);
+  }
+  if (input.status) {
+    rows = rows.filter((row) => row.status === input.status);
   }
 
-  const whereClause = where.join(" AND ");
-
-  const rows = await db.unsafe(
-    `
-      SELECT
-        c.id, c.fund_id, c.claim_hash, c.epoch_id, c.payload_json,
-        COALESCE(ss.status, c.status) AS status,
-        COALESCE(ss.attested_weight, '0') AS attested_weight,
-        COALESCE(ss.threshold_weight, '0') AS threshold_weight,
-        (
-          SELECT COUNT(1)
-          FROM attestations a
-          WHERE a.subject_type = 'CLAIM' AND a.subject_hash = c.claim_hash
-        ) AS attestation_count,
-        c.created_by, c.created_at, c.updated_at
-      FROM claims c
-      LEFT JOIN subject_state ss
-        ON ss.subject_type = 'CLAIM' AND ss.subject_hash = c.claim_hash
-      WHERE ${whereClause}
-      ORDER BY c.created_at DESC
-      LIMIT $${idx++} OFFSET $${idx}
-    `,
-    [...params, input.limit, input.offset]
-  );
-
-  const totalRows = await db.unsafe(
-    `
-      SELECT COUNT(1) AS count
-      FROM claims c
-      LEFT JOIN subject_state ss
-        ON ss.subject_type = 'CLAIM' AND ss.subject_hash = c.claim_hash
-      WHERE ${whereClause}
-    `,
-    params
-  );
+  const total = rows.length;
+  const sliced = rows.slice(input.offset, input.offset + input.limit);
 
   return {
-    rows: rows as unknown as Array<{
+    rows: sliced as Array<{
       id: number;
       fund_id: string;
       claim_hash: string;
@@ -771,7 +652,7 @@ export async function listClaimsByFund(input: {
       created_at: number;
       updated_at: number;
     }>,
-    total: Number(totalRows[0]?.count ?? 0)
+    total
   };
 }
 
@@ -781,57 +662,73 @@ export async function upsertSnapshot(input: {
   snapshotHash: string;
   claimHashes: string[];
 }): Promise<void> {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const now = nowMs();
-  await db`
-    INSERT INTO snapshots (
-      fund_id, epoch_id, snapshot_hash, claim_hashes_json, claim_count, finalized_at, created_at, updated_at
-    ) VALUES (
-      ${input.fundId}, ${input.epochId.toString()}, ${input.snapshotHash.toLowerCase()},
-      ${JSON.stringify(input.claimHashes.map((h) => h.toLowerCase()))}, ${input.claimHashes.length}, ${now}, ${now}, ${now}
-    )
-    ON CONFLICT (fund_id, epoch_id) DO UPDATE SET
-      snapshot_hash = EXCLUDED.snapshot_hash,
-      claim_hashes_json = EXCLUDED.claim_hashes_json,
-      claim_count = EXCLUDED.claim_count,
-      finalized_at = EXCLUDED.finalized_at,
-      updated_at = EXCLUDED.updated_at
-  `;
+  const { error } = await db.from("snapshots").upsert(
+    {
+      fund_id: input.fundId,
+      epoch_id: input.epochId.toString(),
+      snapshot_hash: input.snapshotHash.toLowerCase(),
+      claim_hashes_json: JSON.stringify(input.claimHashes.map((h) => h.toLowerCase())),
+      claim_count: input.claimHashes.length,
+      finalized_at: now,
+      created_at: now,
+      updated_at: now
+    },
+    {
+      onConflict: "fund_id,epoch_id"
+    }
+  );
+  throwIfError(error, null);
 }
 
 export async function getLatestSnapshot(fundId: string): Promise<SnapshotRow | undefined> {
-  await initSchema();
-  const db = sql();
-  const rows = await db`
-    SELECT *
-    FROM snapshots
-    WHERE fund_id = ${fundId}
-    ORDER BY finalized_at DESC, id DESC
-    LIMIT 1
-  `;
-  return rows[0] as unknown as SnapshotRow | undefined;
+  const db = supabase();
+  const { data, error } = await db
+    .from("snapshots")
+    .select("*")
+    .eq("fund_id", fundId)
+    .order("finalized_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as SnapshotRow | null) ?? undefined;
 }
 
 export async function getApprovedClaimHashesByFund(
   fundId: string
 ): Promise<Array<{ claimHash: string; epochId: bigint }>> {
-  await initSchema();
-  const db = sql();
-  const rows = await db`
-    SELECT c.claim_hash, c.epoch_id
-    FROM claims c
-    LEFT JOIN subject_state ss
-      ON ss.subject_type = 'CLAIM' AND ss.subject_hash = c.claim_hash
-    WHERE c.fund_id = ${fundId}
-      AND COALESCE(ss.status, c.status) = 'APPROVED'
-    ORDER BY CAST(c.epoch_id as BIGINT) ASC, c.claim_hash ASC
-  `;
+  const db = supabase();
+  const { data: claims, error: claimsError } = await db
+    .from("claims")
+    .select("claim_hash,epoch_id,status")
+    .eq("fund_id", fundId)
+    .order("epoch_id", { ascending: true })
+    .order("claim_hash", { ascending: true });
+  throwIfError(claimsError, null);
 
-  return (rows as unknown as Array<{ claim_hash: string; epoch_id: string }>).map((row) => ({
-    claimHash: row.claim_hash,
-    epochId: BigInt(row.epoch_id)
-  }));
+  const { data: states, error: statesError } = await db
+    .from("subject_state")
+    .select("subject_hash,status")
+    .eq("fund_id", fundId)
+    .eq("subject_type", "CLAIM");
+  throwIfError(statesError, null);
+
+  const stateMap = new Map(
+    (states ?? []).map((row) => [String(row.subject_hash).toLowerCase(), String(row.status)])
+  );
+
+  return (claims ?? [])
+    .filter((row) => {
+      const hash = String(row.claim_hash).toLowerCase();
+      const status = stateMap.get(hash) ?? String(row.status);
+      return status === "APPROVED";
+    })
+    .map((row) => ({
+      claimHash: String(row.claim_hash),
+      epochId: BigInt(String(row.epoch_id))
+    }));
 }
 
 export async function insertIntent(input: {
@@ -847,46 +744,50 @@ export async function insertIntent(input: {
   deadline: bigint;
   createdBy: string;
 }): Promise<{ ok: true; id: number } | { ok: false; reason: "DUPLICATE" }> {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const now = nowMs();
-  try {
-    const rows = await db`
-      INSERT INTO intents (
-        fund_id, intent_hash, snapshot_hash, intent_uri, intent_json, execution_route_json,
-        allowlist_hash, max_slippage_bps, max_notional, deadline,
-        status, created_by, created_at, updated_at
-      ) VALUES (
-        ${input.fundId}, ${input.intentHash.toLowerCase()}, ${input.snapshotHash.toLowerCase()},
-        ${input.intentUri}, ${input.intentJson}, ${input.executionRouteJson},
-        ${input.allowlistHash.toLowerCase()}, ${input.maxSlippageBps.toString()},
-        ${input.maxNotional.toString()}, ${input.deadline.toString()},
-        'PENDING', ${input.createdBy}, ${now}, ${now}
-      )
-      RETURNING id
-    `;
-    return { ok: true, id: Number(rows[0].id) };
-  } catch (error) {
-    if (String(error).includes("duplicate key value")) {
-      return { ok: false, reason: "DUPLICATE" };
-    }
-    throw error;
+  const { data, error } = await db
+    .from("intents")
+    .insert({
+      fund_id: input.fundId,
+      intent_hash: input.intentHash.toLowerCase(),
+      snapshot_hash: input.snapshotHash.toLowerCase(),
+      intent_uri: input.intentUri,
+      intent_json: input.intentJson,
+      execution_route_json: input.executionRouteJson,
+      allowlist_hash: input.allowlistHash.toLowerCase(),
+      max_slippage_bps: input.maxSlippageBps.toString(),
+      max_notional: input.maxNotional.toString(),
+      deadline: input.deadline.toString(),
+      status: "PENDING",
+      created_by: input.createdBy,
+      created_at: now,
+      updated_at: now
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (isDuplicateError(error)) return { ok: false, reason: "DUPLICATE" };
+    throwIfError(error, null);
   }
+
+  return { ok: true, id: Number(data!.id) };
 }
 
 export async function getIntentByHash(
   fundId: string,
   intentHash: string
 ): Promise<IntentRow | undefined> {
-  await initSchema();
-  const db = sql();
-  const rows = await db`
-    SELECT *
-    FROM intents
-    WHERE fund_id = ${fundId} AND intent_hash = ${intentHash.toLowerCase()}
-    LIMIT 1
-  `;
-  return rows[0] as unknown as IntentRow | undefined;
+  const db = supabase();
+  const { data, error } = await db
+    .from("intents")
+    .select("*")
+    .eq("fund_id", fundId)
+    .eq("intent_hash", intentHash.toLowerCase())
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as IntentRow | null) ?? undefined;
 }
 
 export async function listExecutionJobs(input: {
@@ -895,96 +796,58 @@ export async function listExecutionJobs(input: {
   limit: number;
   offset: number;
 }) {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
 
-  const where: string[] = [];
-  const params: Array<string | number> = [];
-  let idx = 1;
+  let query = db.from("execution_jobs").select("*", { count: "exact" });
+  if (input.fundId) query = query.eq("fund_id", input.fundId);
+  if (input.status) query = query.eq("status", input.status);
 
-  if (input.fundId) {
-    where.push(`fund_id = $${idx++}`);
-    params.push(input.fundId);
-  }
-  if (input.status) {
-    where.push(`status = $${idx++}`);
-    params.push(input.status);
-  }
-
-  const whereClause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
-
-  const rows = await db.unsafe(
-    `
-      SELECT *
-      FROM execution_jobs
-      ${whereClause}
-      ORDER BY created_at DESC
-      LIMIT $${idx++} OFFSET $${idx}
-    `,
-    [...params, input.limit, input.offset]
-  );
-
-  const totalRows = await db.unsafe(
-    `
-      SELECT COUNT(1) AS count
-      FROM execution_jobs
-      ${whereClause}
-    `,
-    params
-  );
+  const from = input.offset;
+  const to = input.offset + input.limit - 1;
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to);
+  throwIfError(error, null);
 
   return {
-    rows: rows as unknown as ExecutionJobRow[],
-    total: Number(totalRows[0]?.count ?? 0)
+    rows: (data ?? []) as ExecutionJobRow[],
+    total: Number(count ?? 0)
   };
 }
 
-export async function claimReadyExecutionJobs(
-  limit: number
-): Promise<ExecutionJobRow[]> {
-  await initSchema();
-  const db = sql();
+export async function claimReadyExecutionJobs(limit: number): Promise<ExecutionJobRow[]> {
+  const db = supabase();
   const now = nowMs();
 
-  return db.begin(async (tx) => {
-    const rows = await tx.unsafe(
-      `
-      SELECT *
-      FROM execution_jobs
-      WHERE status IN ('READY', 'FAILED_RETRYABLE') AND next_run_at <= $1
-      ORDER BY created_at ASC
-      LIMIT $2
-      FOR UPDATE SKIP LOCKED
-      `,
-      [now, limit]
-    );
+  const { data, error } = await db
+    .from("execution_jobs")
+    .select("*")
+    .in("status", ["READY", "FAILED_RETRYABLE"])
+    .lte("next_run_at", now)
+    .order("created_at", { ascending: true })
+    .limit(limit);
+  throwIfError(error, null);
 
-    for (const row of rows as unknown as Array<{ id: number }>) {
-      await tx.unsafe(
-        `
-        UPDATE execution_jobs
-        SET status = 'RUNNING', updated_at = $1
-        WHERE id = $2
-        `,
-        [now, row.id]
-      );
-    }
+  const rows = (data ?? []) as ExecutionJobRow[];
+  for (const row of rows) {
+    const { error: updateError } = await db
+      .from("execution_jobs")
+      .update({ status: "RUNNING", updated_at: now })
+      .eq("id", row.id);
+    throwIfError(updateError, null);
+    row.status = "RUNNING";
+  }
 
-    return (rows as unknown as ExecutionJobRow[]).map((row) => ({
-      ...row,
-      status: "RUNNING"
-    }));
-  });
+  return rows;
 }
 
 export async function markExecutionJobExecuted(id: number, txHash: string): Promise<void> {
-  await initSchema();
-  const db = sql();
-  await db`
-    UPDATE execution_jobs
-    SET status = 'EXECUTED', tx_hash = ${txHash.toLowerCase()}, updated_at = ${nowMs()}
-    WHERE id = ${id}
-  `;
+  const db = supabase();
+  const { error } = await db
+    .from("execution_jobs")
+    .update({ status: "EXECUTED", tx_hash: txHash.toLowerCase(), updated_at: nowMs() })
+    .eq("id", id);
+  throwIfError(error, null);
 }
 
 export async function markExecutionJobFailed(input: {
@@ -994,17 +857,18 @@ export async function markExecutionJobFailed(input: {
   maxAttempts: number;
   error: string;
 }): Promise<void> {
-  await initSchema();
-  const db = sql();
+  const db = supabase();
   const now = nowMs();
   const final = input.attemptCount >= input.maxAttempts;
-  await db`
-    UPDATE execution_jobs
-    SET status = ${final ? "FAILED_FINAL" : "FAILED_RETRYABLE"},
-        attempt_count = ${input.attemptCount},
-        next_run_at = ${now + input.retryDelayMs},
-        last_error = ${input.error},
-        updated_at = ${now}
-    WHERE id = ${input.id}
-  `;
+  const { error } = await db
+    .from("execution_jobs")
+    .update({
+      status: final ? "FAILED_FINAL" : "FAILED_RETRYABLE",
+      attempt_count: input.attemptCount,
+      next_run_at: now + input.retryDelayMs,
+      last_error: input.error,
+      updated_at: now
+    })
+    .eq("id", input.id);
+  throwIfError(error, null);
 }
