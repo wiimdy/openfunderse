@@ -6,10 +6,13 @@
     "node": ">=20"
   },
   "scripts": {
+    "prebuild": "npm --prefix ../sdk run build",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "smoke:fund-bootstrap": "node scripts/smoke-fund-bootstrap.mjs",
+    "smoke:all-apis": "node scripts/smoke-all-apis.mjs"
   },
   "dependencies": {
     "@claw/protocol-sdk": "file:../sdk",
@@ -22,6 +25,7 @@
     "geist": "^1.2.0",
     "next": "^16.1.6",
     "next-auth": "^5.0.0-beta.30",
+    "@supabase/supabase-js": "^2.49.1",
     "postgres": "^3.4.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

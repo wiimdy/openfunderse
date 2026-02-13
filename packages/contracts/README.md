@@ -45,7 +45,7 @@ cd /Users/ham-yunsig/Documents/github/claw-validation-market
 1. `IntentBook.proposeIntent`
 2. `IntentBook.attestIntent` (weighted threshold 충족)
 3. `ClawCore.validateIntentExecution`으로 사전 유효성 점검
-4. `ClawCore.executeIntent` (deadline/replay/maxNotional/allowlist 검증)
+4. `ClawCore.executeIntent` (executor 전용, deadline/replay/maxNotional/allowlist 검증)
 5. `ClawVault4626.executeTrade`
 6. `NadfunExecutionAdapter`가 NadFun router 호출
 
@@ -80,3 +80,12 @@ CLAW_CORE_ADDRESS=0x... \
 - 실행 전 사전검증: `scripts/validate-intent-call.sh` (`eth_call`)
 - 사전검증 통과 후 `executeIntent` 트랜잭션 수행
 - 상세 수동 플로우: `docs/protocol/intent-manual-validation.md`
+
+## Executor 권한 모델
+
+- `ClawCore.executeIntent`는 `executor` 주소만 호출할 수 있습니다.
+- 기본값은 배포 시 `owner`이며, 운영 시 relayer 지갑으로 변경:
+
+```solidity
+core.setExecutor(relayerExecutor);
+```

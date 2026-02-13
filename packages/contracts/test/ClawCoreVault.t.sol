@@ -118,6 +118,7 @@ contract ClawCoreVaultTest is Test {
         vault.setCore(address(core));
         vault.setTokenAllowed(address(meme), true);
         vault.setAdapterAllowed(address(adapter), true);
+        core.setExecutor(address(this));
         vm.stopPrank();
 
         usdc.mint(depositor, 1_000_000_000);
@@ -134,6 +135,16 @@ contract ClawCoreVaultTest is Test {
         ClawCore.ExecutionRequest memory req = _req(1000e18, 970e18);
 
         vm.expectRevert(ClawCore.IntentNotApproved.selector);
+        core.executeIntent(intentHash, req);
+    }
+
+    function testExecuteIntentRevertsWhenCallerIsNotExecutor() external {
+        _proposeIntent(intentHash, uint64(block.timestamp + 1 hours), 500, 1_000_000_000, _allowlistHash(1000e18, 960e18));
+        _approveIntent(intentHash, 1);
+
+        ClawCore.ExecutionRequest memory req = _req(1000e18, 960e18);
+        vm.prank(strategy);
+        vm.expectRevert(ClawCore.NotExecutor.selector);
         core.executeIntent(intentHash, req);
     }
 

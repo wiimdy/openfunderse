@@ -16,6 +16,27 @@ npm install
 npm run dev -w @claw/relayer
 ```
 
+Quick one-shot smoke (session -> fund create with full input/output logs):
+```bash
+cd /Users/ham-yunsig/Documents/github/claw-validation-market
+ADMIN_LOGIN_ID=admin \
+ADMIN_LOGIN_PASSWORD=change_me \
+FUND_ID=demo-fund \
+npm run smoke:fund-bootstrap -w @claw/relayer
+```
+
+Full API smoke (login -> fund -> bots -> claims -> attest -> snapshot -> intent -> attest -> status/metrics):
+```bash
+cd /Users/ham-yunsig/Documents/github/claw-validation-market
+ADMIN_LOGIN_ID=admin \
+ADMIN_LOGIN_PASSWORD=change_me \
+VERIFIER_PRIVATE_KEY=0x... \
+CHAIN_ID=10143 \
+CLAIM_BOOK_ADDRESS=0x... \
+INTENT_BOOK_ADDRESS=0x... \
+npm run smoke:all-apis -w @claw/relayer
+```
+
 Required env in relayer `.env`:
 - `ADMIN_LOGIN_ID`
 - `ADMIN_LOGIN_PASSWORD` (or `ADMIN_LOGIN_PASSWORD_HASH`)
@@ -60,13 +81,17 @@ And prints Postman environment values to copy:
    - includes `strategyBotId` + `strategyBotAddress` (single strategy bot for fund)
 3. `POST /api/v1/funds/{fundId}/bots/register` (strategy bot registers participant bot)
 4. `GET /api/v1/funds/{fundId}/bots/register` (strategy bot verifies registry)
-5. `POST /api/v1/funds/{fundId}/attestations` (valid claim signature)
-6. `POST /api/v1/funds/{fundId}/intents/attestations/batch` (valid intent signature)
-7. Re-check `GET /api/v1/funds/{fundId}/status` and `GET /api/v1/metrics`
+5. `POST /api/v1/funds/{fundId}/claims` (crawler submits canonical claim payload)
+6. `POST /api/v1/funds/{fundId}/attestations` (verifier attests claim)
+7. `GET /api/v1/funds/{fundId}/snapshots/latest` (auto-build latest snapshot from approved claims)
+8. `POST /api/v1/funds/{fundId}/intents/propose` (strategy proposes intent with required `executionRoute`)
+9. `POST /api/v1/funds/{fundId}/intents/attestations/batch` (verifier attests intent)
+10. Re-check `GET /api/v1/funds/{fundId}/status` and `GET /api/v1/metrics`
 
 ## Notes
 - Admin endpoints require NextAuth admin-id session; collection includes `admin_auth_cookie` placeholder.
 - Get admin cookie by signing in at `/login` with `ADMIN_LOGIN_ID` / password, then copy browser cookie into Postman.
 - Participant bot registration endpoint is strategy-only (`bots.register` scope).
 - For weighted pass condition, the signer address must be present in `VERIFIER_WEIGHT_SNAPSHOT` with positive weight.
+- `POST /intents/propose` does not accept direct `allowlistHash`; relayer computes it from `executionRoute` only.
 - If you only want quick negative-path testing, use the `bad signature` requests in the collection.

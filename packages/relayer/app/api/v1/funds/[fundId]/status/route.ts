@@ -20,7 +20,7 @@ export async function GET(
       status: "OK",
       endpoint: "GET /api/v1/funds/{fundId}/status",
       fundId,
-      summary: getStatusSummary(fundId),
+      summary: await getStatusSummary(fundId),
       weightedConfig: {
         claimThresholdWeight: cfg.claimThresholdWeight.toString(),
         intentThresholdWeight: cfg.intentThresholdWeight.toString(),

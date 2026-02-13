@@ -4,6 +4,7 @@ import {
   buildCanonicalClaimRecord,
   buildCanonicalIntentRecord,
   buildCanonicalSnapshotRecord,
+  buildCoreExecutionRequestFromIntent,
   buildIntentAllowlistHashFromRoute,
   intentExecutionCallHash
 } from "../dist/index.js";
@@ -101,4 +102,33 @@ test("buildIntentAllowlistHashFromRoute requires adapterData*", () => {
       }),
     /adapterData/
   );
+});
+
+test("buildCoreExecutionRequestFromIntent validates route consistency", () => {
+  const intent = {
+    intentVersion: "v1",
+    vault: "0x00000000000000000000000000000000000000a1",
+    action: "BUY",
+    tokenIn: "0x00000000000000000000000000000000000000b2",
+    tokenOut: "0x00000000000000000000000000000000000000c3",
+    amountIn: 1000n,
+    minAmountOut: 900n,
+    deadline: 9999999999n,
+    maxSlippageBps: 300n,
+    snapshotHash: "0x2222222222222222222222222222222222222222222222222222222222222222"
+  };
+
+  const req = buildCoreExecutionRequestFromIntent({
+    intent,
+    executionRoute: {
+      tokenIn: intent.tokenIn,
+      tokenOut: intent.tokenOut,
+      quoteAmountOut: 950n,
+      minAmountOut: intent.minAmountOut,
+      adapter: "0x00000000000000000000000000000000000000d4",
+      adapterData: "0x1234"
+    }
+  });
+  assert.equal(req.amountIn, 1000n);
+  assert.equal(req.adapterData, "0x1234");
 });
