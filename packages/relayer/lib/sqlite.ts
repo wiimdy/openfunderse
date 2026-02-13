@@ -23,6 +23,47 @@ export interface AttestationRow {
   updated_at: number;
 }
 
+export interface ClaimRow {
+  id: number;
+  fund_id: string;
+  claim_hash: string;
+  epoch_id: string;
+  payload_json: string;
+  status: RecordStatus;
+  created_by: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface SnapshotRow {
+  id: number;
+  fund_id: string;
+  epoch_id: string;
+  snapshot_hash: string;
+  claim_hashes_json: string;
+  claim_count: number;
+  finalized_at: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface IntentRow {
+  id: number;
+  fund_id: string;
+  intent_hash: string;
+  snapshot_hash: string;
+  intent_uri: string | null;
+  intent_json: string;
+  allowlist_hash: string;
+  max_slippage_bps: string;
+  max_notional: string;
+  deadline: string;
+  status: RecordStatus;
+  created_by: string;
+  created_at: number;
+  updated_at: number;
+}
+
 let dbSingleton: Database.Database | null = null;
 
 function initSchema(db: Database.Database): void {
@@ -92,11 +133,64 @@ function initSchema(db: Database.Database): void {
       UNIQUE(subject_type, subject_hash)
     );
 
+    CREATE TABLE IF NOT EXISTS claims (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fund_id TEXT NOT NULL,
+      claim_hash TEXT NOT NULL,
+      epoch_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      created_by TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(fund_id, claim_hash)
+    );
+
+    CREATE TABLE IF NOT EXISTS snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fund_id TEXT NOT NULL,
+      epoch_id TEXT NOT NULL,
+      snapshot_hash TEXT NOT NULL,
+      claim_hashes_json TEXT NOT NULL,
+      claim_count INTEGER NOT NULL,
+      finalized_at INTEGER NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(fund_id, epoch_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS intents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fund_id TEXT NOT NULL,
+      intent_hash TEXT NOT NULL,
+      snapshot_hash TEXT NOT NULL,
+      intent_uri TEXT,
+      intent_json TEXT NOT NULL,
+      allowlist_hash TEXT NOT NULL,
+      max_slippage_bps TEXT NOT NULL,
+      max_notional TEXT NOT NULL,
+      deadline TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'PENDING',
+      created_by TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      UNIQUE(fund_id, intent_hash)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_attestations_subject
       ON attestations(subject_type, subject_hash, status);
 
     CREATE INDEX IF NOT EXISTS idx_fund_bots_fund
       ON fund_bots(fund_id, status);
+
+    CREATE INDEX IF NOT EXISTS idx_claims_fund_epoch
+      ON claims(fund_id, epoch_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_snapshots_fund_finalized
+      ON snapshots(fund_id, finalized_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_intents_fund_snapshot
+      ON intents(fund_id, snapshot_hash, created_at DESC);
   `);
 
   // Backward-compatible migration for existing local DBs from count-threshold schema.
@@ -211,6 +305,18 @@ export function getFund(fundId: string) {
         updated_at: number;
       }
     | undefined;
+}
+
+export function getFundThresholds(fundId: string):
+  | { claimThresholdWeight: bigint; intentThresholdWeight: bigint }
+  | null {
+  const fund = getFund(fundId);
+  if (!fund) return null;
+
+  return {
+    claimThresholdWeight: BigInt(fund.verifier_threshold_weight),
+    intentThresholdWeight: BigInt(fund.intent_threshold_weight)
+  };
 }
 
 export function upsertFundBot(input: {
@@ -443,6 +549,20 @@ export function markSubjectApproved(input: {
       SET status = 'APPROVED', tx_hash = ?, updated_at = ?
       WHERE subject_type = ? AND subject_hash = ? AND status = 'PENDING'
     `).run(input.txHash, now, input.subjectType, input.subjectHash);
+
+    if (input.subjectType === "CLAIM") {
+      db.prepare(`
+        UPDATE claims
+        SET status = 'APPROVED', updated_at = ?
+        WHERE claim_hash = ?
+      `).run(now, input.subjectHash.toLowerCase());
+    } else {
+      db.prepare(`
+        UPDATE intents
+        SET status = 'APPROVED', updated_at = ?
+        WHERE intent_hash = ?
+      `).run(now, input.subjectHash.toLowerCase());
+    }
   });
 
   tx();
@@ -532,4 +652,238 @@ export function getStatusSummary(fundId: string) {
       thresholdWeight: intentThresholdWeight.toString()
     }
   };
+}
+
+export function insertClaim(input: {
+  fundId: string;
+  claimHash: string;
+  epochId: bigint;
+  payloadJson: string;
+  createdBy: string;
+}): { ok: true; id: number } | { ok: false; reason: "DUPLICATE" } {
+  const db = getDb();
+  const now = Date.now();
+  try {
+    const result = db
+      .prepare(
+        `
+      INSERT INTO claims (
+        fund_id, claim_hash, epoch_id, payload_json, status, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'PENDING', ?, ?, ?)
+    `
+      )
+      .run(
+        input.fundId,
+        input.claimHash.toLowerCase(),
+        input.epochId.toString(),
+        input.payloadJson,
+        input.createdBy,
+        now,
+        now
+      );
+
+    return { ok: true, id: Number(result.lastInsertRowid) };
+  } catch (error) {
+    const message = String(error);
+    if (message.includes("UNIQUE constraint failed")) {
+      return { ok: false, reason: "DUPLICATE" };
+    }
+    throw error;
+  }
+}
+
+export function listClaimsByFund(input: {
+  fundId: string;
+  status?: RecordStatus;
+  epochId?: bigint;
+  limit: number;
+  offset: number;
+}) {
+  const db = getDb();
+  const where = ["c.fund_id = @fundId"];
+  const params: Record<string, unknown> = {
+    fundId: input.fundId,
+    limit: input.limit,
+    offset: input.offset
+  };
+
+  if (input.status) {
+    where.push("COALESCE(ss.status, c.status) = @status");
+    params.status = input.status;
+  }
+  if (input.epochId !== undefined) {
+    where.push("c.epoch_id = @epochId");
+    params.epochId = input.epochId.toString();
+  }
+
+  const whereClause = where.join(" AND ");
+
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        c.id, c.fund_id, c.claim_hash, c.epoch_id, c.payload_json,
+        COALESCE(ss.status, c.status) AS status,
+        COALESCE(ss.attested_weight, '0') AS attested_weight,
+        COALESCE(ss.threshold_weight, '0') AS threshold_weight,
+        (
+          SELECT COUNT(1)
+          FROM attestations a
+          WHERE a.subject_type = 'CLAIM' AND a.subject_hash = c.claim_hash
+        ) AS attestation_count,
+        c.created_by, c.created_at, c.updated_at
+      FROM claims c
+      LEFT JOIN subject_state ss
+        ON ss.subject_type = 'CLAIM' AND ss.subject_hash = c.claim_hash
+      WHERE ${whereClause}
+      ORDER BY c.created_at DESC
+      LIMIT @limit OFFSET @offset
+    `
+    )
+    .all(params) as Array<{
+    id: number;
+    fund_id: string;
+    claim_hash: string;
+    epoch_id: string;
+    payload_json: string;
+    status: RecordStatus;
+    attested_weight: string;
+    threshold_weight: string;
+    attestation_count: number;
+    created_by: string;
+    created_at: number;
+    updated_at: number;
+  }>;
+
+  const total = db
+    .prepare(
+      `
+      SELECT COUNT(1) AS count
+      FROM claims c
+      LEFT JOIN subject_state ss
+        ON ss.subject_type = 'CLAIM' AND ss.subject_hash = c.claim_hash
+      WHERE ${whereClause}
+    `
+    )
+    .get(params) as { count: number };
+
+  return { rows, total: total.count };
+}
+
+export function upsertSnapshot(input: {
+  fundId: string;
+  epochId: bigint;
+  snapshotHash: string;
+  claimHashes: string[];
+}): void {
+  const db = getDb();
+  const now = Date.now();
+  db.prepare(
+    `
+    INSERT INTO snapshots (
+      fund_id, epoch_id, snapshot_hash, claim_hashes_json, claim_count, finalized_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(fund_id, epoch_id) DO UPDATE SET
+      snapshot_hash = excluded.snapshot_hash,
+      claim_hashes_json = excluded.claim_hashes_json,
+      claim_count = excluded.claim_count,
+      finalized_at = excluded.finalized_at,
+      updated_at = excluded.updated_at
+  `
+  ).run(
+    input.fundId,
+    input.epochId.toString(),
+    input.snapshotHash.toLowerCase(),
+    JSON.stringify(input.claimHashes.map((h) => h.toLowerCase())),
+    input.claimHashes.length,
+    now,
+    now,
+    now
+  );
+}
+
+export function getLatestSnapshot(fundId: string): SnapshotRow | undefined {
+  const db = getDb();
+  return db
+    .prepare(
+      `
+      SELECT *
+      FROM snapshots
+      WHERE fund_id = ?
+      ORDER BY finalized_at DESC, id DESC
+      LIMIT 1
+    `
+    )
+    .get(fundId) as SnapshotRow | undefined;
+}
+
+export function getApprovedClaimHashesByFund(fundId: string): Array<{ claimHash: string; epochId: bigint }> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `
+      SELECT c.claim_hash, c.epoch_id
+      FROM claims c
+      LEFT JOIN subject_state ss
+        ON ss.subject_type = 'CLAIM' AND ss.subject_hash = c.claim_hash
+      WHERE c.fund_id = ?
+        AND COALESCE(ss.status, c.status) = 'APPROVED'
+      ORDER BY CAST(c.epoch_id as INTEGER) ASC, c.claim_hash ASC
+    `
+    )
+    .all(fundId) as Array<{ claim_hash: string; epoch_id: string }>;
+
+  return rows.map((row) => ({
+    claimHash: row.claim_hash as `0x${string}`,
+    epochId: BigInt(row.epoch_id)
+  }));
+}
+
+export function insertIntent(input: {
+  fundId: string;
+  intentHash: string;
+  snapshotHash: string;
+  intentUri: string | null;
+  intentJson: string;
+  allowlistHash: string;
+  maxSlippageBps: bigint;
+  maxNotional: bigint;
+  deadline: bigint;
+  createdBy: string;
+}): { ok: true; id: number } | { ok: false; reason: "DUPLICATE" } {
+  const db = getDb();
+  const now = Date.now();
+  try {
+    const result = db
+      .prepare(
+        `
+      INSERT INTO intents (
+        fund_id, intent_hash, snapshot_hash, intent_uri, intent_json,
+        allowlist_hash, max_slippage_bps, max_notional, deadline,
+        status, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
+    `
+      )
+      .run(
+        input.fundId,
+        input.intentHash.toLowerCase(),
+        input.snapshotHash.toLowerCase(),
+        input.intentUri,
+        input.intentJson,
+        input.allowlistHash.toLowerCase(),
+        input.maxSlippageBps.toString(),
+        input.maxNotional.toString(),
+        input.deadline.toString(),
+        input.createdBy,
+        now,
+        now
+      );
+    return { ok: true, id: Number(result.lastInsertRowid) };
+  } catch (error) {
+    const message = String(error);
+    if (message.includes("UNIQUE constraint failed")) {
+      return { ok: false, reason: "DUPLICATE" };
+    }
+    throw error;
+  }
 }

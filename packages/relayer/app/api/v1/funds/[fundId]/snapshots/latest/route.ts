@@ -1,17 +1,61 @@
 import { NextResponse } from "next/server";
+import { buildCanonicalSnapshotRecord } from "@claw/protocol-sdk";
+import {
+  getApprovedClaimHashesByFund,
+  getLatestSnapshot,
+  upsertSnapshot
+} from "@/lib/sqlite";
 
 export async function GET(
   _request: Request,
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
+
+  let snapshot = getLatestSnapshot(fundId);
+
+  if (!snapshot) {
+    const approved = getApprovedClaimHashesByFund(fundId);
+    if (approved.length > 0) {
+      const latestEpoch = approved.reduce(
+        (max, row) => (row.epochId > max ? row.epochId : max),
+        approved[0].epochId
+      );
+      const claimHashes = approved
+        .filter((row) => row.epochId === latestEpoch)
+        .map((row) => row.claimHash as `0x${string}`);
+
+      const built = buildCanonicalSnapshotRecord({
+        epochId: latestEpoch,
+        claimHashes
+      });
+
+      upsertSnapshot({
+        fundId,
+        epochId: built.epochId,
+        snapshotHash: built.snapshotHash,
+        claimHashes
+      });
+
+      snapshot = getLatestSnapshot(fundId);
+    }
+  }
+
   return NextResponse.json(
     {
-      status: "TODO",
+      status: "OK",
       endpoint: "GET /api/v1/funds/{fundId}/snapshots/latest",
       fundId: fundId,
-      message: "Latest snapshot read model is not implemented yet."
+      snapshot: snapshot
+        ? {
+            epochId: snapshot.epoch_id,
+            snapshotHash: snapshot.snapshot_hash,
+            claimHashes: JSON.parse(snapshot.claim_hashes_json),
+            claimCount: snapshot.claim_count,
+            finalizedAt: snapshot.finalized_at
+          }
+        : null
     },
-    { status: 501 }
+    { status: 200 }
   );
 }

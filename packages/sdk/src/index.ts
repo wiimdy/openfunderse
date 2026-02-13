@@ -11,3 +11,4 @@ export * from "./validate.js";
 export * from "./attestation-verifier.js";
 export * from "./weighted-attestation.js";
 export * from "./execution-data.js";
+export * from "./relayer-utils.js";
