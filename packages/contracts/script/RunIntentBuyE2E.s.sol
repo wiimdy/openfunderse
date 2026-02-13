@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity ^0.8.28;
 
 import "forge-std/Script.sol";
 import "forge-std/console2.sol";
@@ -50,7 +50,7 @@ contract RunIntentBuyE2E is Script {
 
         IntentBook book = IntentBook(c.intentBookAddr);
         ClawCore core = ClawCore(c.coreAddr);
-        ClawVault4626 vault = ClawVault4626(c.vaultAddr);
+        ClawVault4626 vault = ClawVault4626(payable(c.vaultAddr));
 
         vm.startBroadcast(c.deployerPk);
 

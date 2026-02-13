@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IntentBook, ISnapshotBook} from "../src/IntentBook.sol";
 
 contract MockSnapshotBook is ISnapshotBook {
@@ -31,17 +32,30 @@ contract IntentBookTest is Test {
 
     bytes32 internal snapshotHash = keccak256("snapshot-1");
     bytes32 internal intentHash = keccak256("intent-1");
+    uint256 internal constant SECP256K1N =
+        0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141;
 
     function setUp() external {
         snapshots = new MockSnapshotBook();
         snapshots.setFinalized(snapshotHash, true);
 
-        book = new IntentBook(owner, strategy, address(snapshots), 5);
+        book = _deployIntentBook(owner, strategy, address(snapshots), 5);
 
         vm.startPrank(owner);
         book.setVerifier(verifier1, true, 3);
         book.setVerifier(verifier2, true, 2);
         vm.stopPrank();
+    }
+
+    function _deployIntentBook(address owner_, address strategy_, address snapshotBook_, uint256 threshold)
+        internal
+        returns (IntentBook deployed)
+    {
+        IntentBook impl = new IntentBook();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(impl), abi.encodeCall(IntentBook.initialize, (owner_, strategy_, snapshotBook_, threshold))
+        );
+        deployed = IntentBook(address(proxy));
     }
 
     function _constraints(uint64 deadline) internal pure returns (IntentBook.Constraints memory c) {
@@ -83,6 +97,22 @@ contract IntentBookTest is Test {
     function _sign(uint256 pk, bytes32 digest) internal pure returns (bytes memory) {
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, digest);
         return abi.encodePacked(r, s, v);
+    }
+
+    function _toHighS(bytes memory sig) internal pure returns (bytes memory) {
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := mload(add(sig, 32))
+            s := mload(add(sig, 64))
+            v := byte(0, mload(add(sig, 96)))
+        }
+
+        uint8 fixedV = v < 27 ? v + 27 : v;
+        uint8 highV = fixedV == 27 ? 28 : 27;
+        bytes32 highS = bytes32(SECP256K1N - uint256(s));
+        return abi.encodePacked(r, highS, highV);
     }
 
     function testProposeIntentEmitsAndStores() external {
@@ -323,6 +353,23 @@ contract IntentBookTest is Test {
             nonce: 42,
             signature: _sign(PK_V2, _digest(intentHash, verifier1, expiresAt, 42))
         });
+
+        vm.expectRevert(IntentBook.InvalidSignature.selector);
+        book.attestIntent(intentHash, verifiers, atts);
+    }
+
+    function testAttestIntentRevertsOnHighSSignature() external {
+        vm.prank(strategy);
+        book.proposeIntent(intentHash, "ipfs://intent", snapshotHash, _constraints(uint64(block.timestamp + 1 hours)));
+
+        address[] memory verifiers = new address[](1);
+        IntentBook.IntentAttestation[] memory atts = new IntentBook.IntentAttestation[](1);
+        uint64 expiresAt = uint64(block.timestamp + 10 minutes);
+        uint256 nonce = 222;
+
+        verifiers[0] = verifier1;
+        bytes memory lowSig = _sign(PK_V1, _digest(intentHash, verifier1, expiresAt, nonce));
+        atts[0] = IntentBook.IntentAttestation({expiresAt: expiresAt, nonce: nonce, signature: _toHighS(lowSig)});
 
         vm.expectRevert(IntentBook.InvalidSignature.selector);
         book.attestIntent(intentHash, verifiers, atts);

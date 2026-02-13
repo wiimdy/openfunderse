@@ -12,7 +12,7 @@
 ## 2. Required Env
 
 ```bash
-cd /Users/ham-yunsig/Documents/github/claw-validation-market
+cd <repo-root>
 source .env
 export RPC_URL=https://testnet-rpc.monad.xyz
 export CHAIN_ID=10143
@@ -34,7 +34,7 @@ export MAX_SLIPPAGE_BPS=200
 ## 3. Build SDK
 
 ```bash
-cd /Users/ham-yunsig/Documents/github/claw-validation-market/packages/sdk
+cd <repo-root>/packages/sdk
 npm run build
 ```
 
@@ -93,7 +93,7 @@ EOF
 ## 5. Propose Intent
 
 ```bash
-cd /Users/ham-yunsig/Documents/github/claw-validation-market
+cd <repo-root>
 cast send $INTENT_BOOK_ADDRESS "proposeIntent(bytes32,string,bytes32,(bytes32,uint16,uint256,uint64))" "$INTENT_HASH" "ipfs://intent-demo" "$SNAPSHOT_HASH" "($ALLOWLIST_HASH,$MAX_SLIPPAGE_BPS,$AMOUNT_IN,$DEADLINE)" --rpc-url $RPC_URL --private-key $STRATEGY_PRIVATE_KEY
 ```
 
@@ -153,7 +153,7 @@ export MIN_AMOUNT_OUT=$MIN_AMOUNT_OUT
 export ADAPTER=$ADAPTER
 export ADAPTER_DATA=$ADAPTER_DATA
 export CLAW_CORE_ADDRESS=$CLAW_CORE_ADDRESS
-/Users/ham-yunsig/Documents/github/claw-validation-market/packages/contracts/scripts/validate-intent-call.sh
+./packages/contracts/scripts/validate-intent-call.sh
 ```
 
 기대값:
@@ -163,6 +163,17 @@ export CLAW_CORE_ADDRESS=$CLAW_CORE_ADDRESS
 - `withinNotional = true`
 - `slippageOk = true`
 - `allowlistOk = true`
+
+## 8-1. Dry-run Validation (Quote + Failure Code)
+
+```bash
+./packages/contracts/scripts/dry-run-intent-call.sh
+```
+
+체크 포인트:
+- `failureCode == "OK"`
+- `quoteOk == true`
+- `expectedAmountOut >= MIN_AMOUNT_OUT`
 
 ## 9. Approved Status Check
 

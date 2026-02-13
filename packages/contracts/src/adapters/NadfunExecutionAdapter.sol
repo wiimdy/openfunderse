@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity ^0.8.28;
 
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {IExecutionAdapter} from "../interfaces/IExecutionAdapter.sol";
+import {IExecutionAdapterQuote} from "../interfaces/IExecutionAdapterQuote.sol";
+import {INadFunLens} from "../interfaces/INadFunLens.sol";
+import {INadFunRouter} from "../interfaces/INadFunRouter.sol";
 
 interface IWMon {
     function withdraw(uint256 amount) external;
@@ -14,30 +20,9 @@ interface IERC20Balance {
     function approve(address spender, uint256 amount) external returns (bool);
 }
 
-interface INadFunRouter {
-    struct BuyParams {
-        uint256 amountOutMin;
-        address token;
-        address to;
-        uint256 deadline;
-    }
-
-    function buy(BuyParams calldata params) external payable;
-
-    struct SellParams {
-        uint256 amountIn;
-        uint256 amountOutMin;
-        address token;
-        address to;
-        uint256 deadline;
-    }
-
-    function sell(SellParams calldata params) external;
-}
-
 /// @title NadfunExecutionAdapter
 /// @notice Real execution adapter for NadFun router buy path using WMON->MON unwrap.
-contract NadfunExecutionAdapter is IExecutionAdapter {
+contract NadfunExecutionAdapter is Initializable, OwnableUpgradeable, UUPSUpgradeable, IExecutionAdapter, IExecutionAdapterQuote {
     struct NadfunExecutionDataV1 {
         uint8 version;
         uint8 action; // 1=BUY, 2=SELL (MVP supports BUY only)
@@ -50,11 +35,13 @@ contract NadfunExecutionAdapter is IExecutionAdapter {
         bytes extra;
     }
 
-    address public immutable wmon;
-    address public immutable bondingCurveRouter;
-    address public immutable dexRouter;
+    address public wmon;
+    address public bondingCurveRouter;
+    address public dexRouter;
+    bool public upgradesFrozen;
 
     event NadfunBuyExecuted(address indexed router, address indexed token, uint256 amountIn, uint256 amountOut, address indexed recipient);
+    event UpgradesFrozen();
 
     error UnsupportedAction();
     error InvalidExecutionData();
@@ -62,14 +49,37 @@ contract NadfunExecutionAdapter is IExecutionAdapter {
     error InvalidTokenIn();
     error UnsupportedRouter();
     error WrapFailed();
+    error UpgradesAreFrozen();
 
-    constructor(address wmon_, address bondingCurveRouter_, address dexRouter_) {
+    bytes32 private constant QUOTE_OK = "OK";
+    bytes32 private constant QUOTE_INVALID_DATA = "INVALID_DATA";
+    bytes32 private constant QUOTE_EXPIRED = "EXPIRED";
+    bytes32 private constant QUOTE_INVALID_TOKEN_IN = "INVALID_TOKEN_IN";
+    bytes32 private constant QUOTE_UNSUPPORTED_ROUTER = "UNSUPPORTED_ROUTER";
+    bytes32 private constant QUOTE_ROUTER_MISMATCH = "ROUTER_MISMATCH";
+    bytes32 private constant QUOTE_AMOUNT_OUT_MIN_NOT_MET = "AMOUNT_OUT_MIN_NOT_MET";
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address owner_, address wmon_, address bondingCurveRouter_, address dexRouter_) external initializer {
         if (wmon_ == address(0) || bondingCurveRouter_ == address(0) || dexRouter_ == address(0)) {
             revert InvalidExecutionData();
         }
+
+        __Ownable_init(owner_);
+
         wmon = wmon_;
         bondingCurveRouter = bondingCurveRouter_;
         dexRouter = dexRouter_;
+    }
+
+    function freezeUpgrades() external onlyOwner {
+        if (upgradesFrozen) revert UpgradesAreFrozen();
+        upgradesFrozen = true;
+        emit UpgradesFrozen();
     }
 
     receive() external payable {}
@@ -87,6 +97,47 @@ contract NadfunExecutionAdapter is IExecutionAdapter {
         } else {
             revert UnsupportedAction();
         }
+    }
+
+    function quote(address lens, address tokenIn, address tokenOut, uint256 amountIn, bytes calldata data)
+        external
+        view
+        returns (bool ok, uint256 expectedAmountOut, bytes32 reasonCode)
+    {
+        NadfunExecutionDataV1 memory decoded = _decode(data);
+        if (decoded.version != 1) {
+            return (false, 0, QUOTE_INVALID_DATA);
+        }
+        if (decoded.deadline < block.timestamp) {
+            return (false, 0, QUOTE_EXPIRED);
+        }
+        if (decoded.router != bondingCurveRouter && decoded.router != dexRouter) {
+            return (false, 0, QUOTE_UNSUPPORTED_ROUTER);
+        }
+
+        if (decoded.action == 1) {
+            if (tokenIn != wmon) return (false, 0, QUOTE_INVALID_TOKEN_IN);
+            if (decoded.token != tokenOut) return (false, 0, QUOTE_INVALID_DATA);
+
+            (address router, uint256 amountOut) = INadFunLens(lens).getAmountOut(tokenOut, amountIn, true);
+            if (router != decoded.router) return (false, amountOut, QUOTE_ROUTER_MISMATCH);
+            if (amountOut < decoded.amountOutMin) return (false, amountOut, QUOTE_AMOUNT_OUT_MIN_NOT_MET);
+
+            return (true, amountOut, QUOTE_OK);
+        }
+
+        if (decoded.action == 2) {
+            if (tokenOut != wmon) return (false, 0, QUOTE_INVALID_TOKEN_IN);
+            if (decoded.token != tokenIn) return (false, 0, QUOTE_INVALID_DATA);
+
+            (address router, uint256 amountOut) = INadFunLens(lens).getAmountOut(tokenIn, amountIn, false);
+            if (router != decoded.router) return (false, amountOut, QUOTE_ROUTER_MISMATCH);
+            if (amountOut < decoded.amountOutMin) return (false, amountOut, QUOTE_AMOUNT_OUT_MIN_NOT_MET);
+
+            return (true, amountOut, QUOTE_OK);
+        }
+
+        return (false, 0, QUOTE_INVALID_DATA);
     }
 
     function _executeBuy(address vault, address tokenIn, address tokenOut, uint256 amountIn, NadfunExecutionDataV1 memory decoded)
@@ -173,4 +224,10 @@ contract NadfunExecutionAdapter is IExecutionAdapter {
             extra: extra
         });
     }
+
+    function _authorizeUpgrade(address) internal view override onlyOwner {
+        if (upgradesFrozen) revert UpgradesAreFrozen();
+    }
+
+    uint256[50] private __gap;
 }

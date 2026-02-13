@@ -6,7 +6,7 @@ Supabase(Postgres) 저장소 기준으로 동작합니다.
 ## Purpose
 - Claim/Intent 검증 서명 수집 API 게이트웨이
 - `@claw/protocol-sdk` 기반 canonical hash/EIP-712 검증 진입점
-- 컨트랙트(`ClaimBook`/`IntentBook`/`ClawVault`) 제출 오케스트레이션
+- 컨트랙트(`IntentBook`/`ClawVault`) 제출 오케스트레이션
 
 ## Run
 ```bash

@@ -73,16 +73,13 @@ export function loadRuntimeConfig() {
   const chainId = BigInt(env("CHAIN_ID"));
   const rpcUrl = env("RPC_URL");
   const signerKey = env("RELAYER_SIGNER_PRIVATE_KEY") as Hex;
-  const claimBookAddress = env("CLAIM_BOOK_ADDRESS") as Address;
   const intentBookAddress = env("INTENT_BOOK_ADDRESS") as Address;
 
   return {
     chainId,
     rpcUrl,
     signerKey,
-    claimBookAddress,
     intentBookAddress,
-    claimThresholdWeight: envBigInt("CLAIM_THRESHOLD_WEIGHT", BigInt(3)),
     intentThresholdWeight: envBigInt("INTENT_THRESHOLD_WEIGHT", BigInt(5)),
     maxSubmitRetries: envNumber("MAX_SUBMIT_RETRIES", 3),
     allowlist: new Set(parseCsv(process.env.VERIFIER_ALLOWLIST).map((v) => v.toLowerCase())),
@@ -92,7 +89,6 @@ export function loadRuntimeConfig() {
 
 export function loadReadOnlyRuntimeConfig() {
   return {
-    claimThresholdWeight: envBigInt("CLAIM_THRESHOLD_WEIGHT", BigInt(3)),
     intentThresholdWeight: envBigInt("INTENT_THRESHOLD_WEIGHT", BigInt(5)),
     validatorWeights: parseWeightCsv(process.env.VERIFIER_WEIGHT_SNAPSHOT)
   };

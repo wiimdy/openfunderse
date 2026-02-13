@@ -25,6 +25,7 @@ import {
   loadIntentValidatorSnapshot,
   verifierWeight
 } from "@/lib/validator-snapshot";
+import { relayerEvents } from "@/lib/event-emitter";
 
 interface ClaimInput {
   fundId: string;

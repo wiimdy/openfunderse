@@ -39,9 +39,29 @@ if [[ ! -f "$RUN_JSON" ]]; then
   exit 1
 fi
 
-VAULT_ADDRESS=$(jq -r '.transactions[] | select(.contractName=="ClawVault4626") | .contractAddress' "$RUN_JSON" | tail -n1)
-CORE_ADDRESS=$(jq -r '.transactions[] | select(.contractName=="ClawCore") | .contractAddress' "$RUN_JSON" | tail -n1)
-ADAPTER_ADDRESS=$(jq -r '.transactions[] | select(.contractName=="NadfunExecutionAdapter") | .contractAddress' "$RUN_JSON" | tail -n1)
+mapfile -t PROXY_ADDRESSES < <(
+  jq -r '.transactions[]
+    | select(.transactionType=="CREATE" and .contractName=="ERC1967Proxy")
+    | .contractAddress' "$RUN_JSON"
+)
+
+# DeployClawCoreStack.s.sol deploy order:
+# 1) Vault proxy, 2) Core proxy, 3) Adapter proxy
+if [[ "${#PROXY_ADDRESSES[@]}" -lt 3 ]]; then
+  echo "[deploy] expected at least 3 ERC1967Proxy deployments, got ${#PROXY_ADDRESSES[@]}" >&2
+  exit 1
+fi
+
+VAULT_ADDRESS="${PROXY_ADDRESSES[0]}"
+CORE_ADDRESS="${PROXY_ADDRESSES[1]}"
+ADAPTER_ADDRESS="${PROXY_ADDRESSES[2]}"
+
+for addr in "$VAULT_ADDRESS" "$CORE_ADDRESS" "$ADAPTER_ADDRESS"; do
+  if [[ ! "$addr" =~ ^0x[0-9a-fA-F]{40}$ ]]; then
+    echo "[deploy] invalid proxy address parsed: $addr" >&2
+    exit 1
+  fi
+done
 
 OUT_ENV="$CONTRACTS_DIR/.clawcore.deploy.env"
 cat > "$OUT_ENV" <<ENV

@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity ^0.8.28;
 
 import "forge-std/Test.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IntentBook, ISnapshotBook} from "../src/IntentBook.sol";
 import {ClawCore} from "../src/ClawCore.sol";
 import {ClawVault4626} from "../src/ClawVault4626.sol";
 import {IExecutionAdapter} from "../src/interfaces/IExecutionAdapter.sol";
+import {IExecutionAdapterQuote} from "../src/interfaces/IExecutionAdapterQuote.sol";
 
 contract MockSnapshotBookForCore is ISnapshotBook {
     mapping(bytes32 => bool) public finalized;
@@ -64,8 +66,10 @@ contract MockERC20 {
     }
 }
 
-contract MockExecutionAdapter is IExecutionAdapter {
+contract MockExecutionAdapter is IExecutionAdapter, IExecutionAdapterQuote {
     uint256 public nextAmountOut;
+    bool public quoteOk = true;
+    bytes32 public quoteReasonCode = "OK";
 
     function setNextAmountOut(uint256 amountOut) external {
         nextAmountOut = amountOut;
@@ -77,6 +81,19 @@ contract MockExecutionAdapter is IExecutionAdapter {
     {
         amountOut = nextAmountOut;
         MockERC20(tokenOut).mint(vault, amountOut);
+    }
+
+    function setQuote(bool ok, bytes32 reasonCode) external {
+        quoteOk = ok;
+        quoteReasonCode = reasonCode;
+    }
+
+    function quote(address, address, address, uint256, bytes calldata)
+        external
+        view
+        returns (bool ok, uint256 expectedAmountOut, bytes32 reasonCode)
+    {
+        return (quoteOk, nextAmountOut, quoteReasonCode);
     }
 }
 
@@ -104,20 +121,21 @@ contract ClawCoreVaultTest is Test {
         snapshots = new MockSnapshotBookForCore();
         snapshots.setFinalized(snapshotHash, true);
 
-        book = new IntentBook(owner, strategy, address(snapshots), 3);
+        book = _deployIntentBook(owner, strategy, address(snapshots), 3);
 
         usdc = new MockERC20("USD Coin", "USDC", 6);
         meme = new MockERC20("Meme", "MEME", 18);
         adapter = new MockExecutionAdapter();
 
-        vault = new ClawVault4626(owner, address(usdc), "Claw Vault", "CLAW");
-        core = new ClawCore(owner, address(book), address(vault));
+        vault = _deployVault(owner, address(usdc), "Claw Vault", "CLAW");
+        core = _deployCore(owner, address(book), address(vault));
 
         vm.startPrank(owner);
         book.setVerifier(verifier, true, 3);
         vault.setCore(address(core));
         vault.setTokenAllowed(address(meme), true);
         vault.setAdapterAllowed(address(adapter), true);
+        core.setNadfunLens(makeAddr("nadfun-lens"));
         core.setExecutor(address(this));
         vm.stopPrank();
 
@@ -128,6 +146,34 @@ contract ClawCoreVaultTest is Test {
         vault.deposit(500_000_000, depositor);
 
         adapter.setNextAmountOut(2_000e18);
+    }
+
+    function _deployIntentBook(address owner_, address strategy_, address snapshotBook_, uint256 threshold)
+        internal
+        returns (IntentBook deployed)
+    {
+        IntentBook impl = new IntentBook();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(impl), abi.encodeCall(IntentBook.initialize, (owner_, strategy_, snapshotBook_, threshold))
+        );
+        deployed = IntentBook(address(proxy));
+    }
+
+    function _deployVault(address owner_, address asset_, string memory name_, string memory symbol_)
+        internal
+        returns (ClawVault4626 deployed)
+    {
+        ClawVault4626 impl = new ClawVault4626();
+        ERC1967Proxy proxy =
+            new ERC1967Proxy(address(impl), abi.encodeCall(ClawVault4626.initialize, (owner_, asset_, name_, symbol_)));
+        deployed = ClawVault4626(payable(address(proxy)));
+    }
+
+    function _deployCore(address owner_, address intentBook_, address vault_) internal returns (ClawCore deployed) {
+        ClawCore impl = new ClawCore();
+        ERC1967Proxy proxy =
+            new ERC1967Proxy(address(impl), abi.encodeCall(ClawCore.initialize, (owner_, intentBook_, vault_)));
+        deployed = ClawCore(address(proxy));
     }
 
     function testExecuteIntentRevertsBeforeApproval() external {
@@ -224,6 +270,40 @@ contract ClawCoreVaultTest is Test {
         assertEq(out, 2_000e18);
         assertEq(afterMeme - beforeMeme, 2_000e18);
         assertTrue(core.executedIntent(intentHash));
+    }
+
+    function testDryRunIntentExecutionReturnsOkForExecutablePath() external {
+        _proposeIntent(intentHash, uint64(block.timestamp + 1 hours), 500, 1_000_000_000, _allowlistHash(1000e18, 960e18));
+        _approveIntent(intentHash, 1);
+
+        ClawCore.ExecutionRequest memory req = _req(1000e18, 960e18);
+        ClawCore.DryRunResult memory r = core.dryRunIntentExecution(intentHash, req);
+
+        assertEq(r.failureCode, bytes32("OK"));
+        assertTrue(r.quoteOk);
+        assertEq(r.expectedAmountOut, 2_000e18);
+    }
+
+    function testDryRunIntentExecutionReturnsQuoteBelowMin() external {
+        _proposeIntent(intentHash, uint64(block.timestamp + 1 hours), 500, 1_000_000_000, _allowlistHash(1000e18, 960e18));
+        _approveIntent(intentHash, 1);
+        adapter.setNextAmountOut(800e18);
+
+        ClawCore.ExecutionRequest memory req = _req(1000e18, 960e18);
+        ClawCore.DryRunResult memory r = core.dryRunIntentExecution(intentHash, req);
+
+        assertEq(r.failureCode, bytes32("QUOTE_BELOW_MIN"));
+        assertEq(r.expectedAmountOut, 800e18);
+    }
+
+    function testDryRunIntentExecutionReturnsIntentNotApproved() external {
+        _proposeIntent(intentHash, uint64(block.timestamp + 1 hours), 500, 1_000_000_000, _allowlistHash(1000e18, 960e18));
+
+        ClawCore.ExecutionRequest memory req = _req(1000e18, 960e18);
+        ClawCore.DryRunResult memory r = core.dryRunIntentExecution(intentHash, req);
+
+        assertEq(r.failureCode, bytes32("INTENT_NOT_APPROVED"));
+        assertEq(r.quoteReasonCode, bytes32("QUOTE_SKIPPED"));
     }
 
     function _proposeIntent(
