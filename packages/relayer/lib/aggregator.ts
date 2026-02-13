@@ -6,6 +6,7 @@ import {
   type Eip712DomainInput,
   type Hex
 } from "@claw/protocol-sdk";
+import { relayerEvents } from "@/lib/event-emitter";
 import { incCounter } from "@/lib/metrics";
 import {
   getSubjectState,
@@ -206,7 +207,24 @@ export async function ingestClaimAttestation(input: ClaimInput) {
 
   incCounter("verify_success");
   const attestedWeight = await incrementSubjectAttestedWeight("CLAIM", input.claimHash, weight);
+
+  relayerEvents.emitEvent("claim:attested", {
+    fundId: input.fundId,
+    claimHash: input.claimHash,
+    verifier: input.verifier,
+    weight: weight.toString(),
+    attestedWeight: attestedWeight.toString(),
+    thresholdWeight: snapshot.thresholdWeight.toString()
+  });
   const submit = await maybeSubmitOnchain("CLAIM", input.claimHash);
+
+  if (submit.submitted) {
+    relayerEvents.emitEvent("snapshot:finalized", {
+      fundId: input.fundId,
+      claimHash: input.claimHash,
+      txHash: submit.txHash
+    });
+  }
 
   return {
     ok: true as const,
@@ -290,6 +308,15 @@ export async function ingestIntentAttestation(input: IntentInput) {
 
   incCounter("verify_success");
   const attestedWeight = await incrementSubjectAttestedWeight("INTENT", input.intentHash, weight);
+
+  relayerEvents.emitEvent("intent:attested", {
+    fundId: input.fundId,
+    intentHash: input.intentHash,
+    verifier: input.verifier,
+    weight: weight.toString(),
+    attestedWeight: attestedWeight.toString(),
+    thresholdWeight: snapshot.thresholdWeight.toString()
+  });
   const submit = await maybeSubmitOnchain("INTENT", input.intentHash);
 
   return {

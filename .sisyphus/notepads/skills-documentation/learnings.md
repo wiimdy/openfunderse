@@ -1,0 +1,5 @@
+- Successfully converted Korean prompt templates into structured SKILL.md specifications.
+- Strategy MoltBot focuses on proposing intents from finalized snapshots with strict risk policy checks.
+- Participant MoltBot handles both mining (claims) and verification (attestations) modes.
+- Excluded Mode C (Intent Judgment Vote) from Participant MoltBot as per instructions.
+- Used YAML frontmatter to define skill metadata and environment requirements.

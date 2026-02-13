@@ -1,0 +1,1 @@
+- 2026-02-11: Potential integration follow-up: relayer currently forwards `bytes[] sigs` from off-chain signatures; ClaimBook expects each `bytes` item to carry encoded attestation metadata `(expiresAt, nonce, signature)` for on-chain replay protection.

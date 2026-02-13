@@ -1,0 +1,3 @@
+- 2026-02-11: ClaimBook follows IntentBook EIP-712 pattern with `NAME="ClawClaimBook"`, `VERSION="1"`, and digest `keccak256("\x19\x01" || domainSeparator || structHash)`.
+- 2026-02-11: Claim attestation payload is decoded as `abi.encode(uint64 expiresAt, uint256 nonce, bytes signature)` from each `bytes` element in `attestClaim`.
+- 2026-02-11: Snapshot finalization must enforce strictly increasing `orderedClaimHashes` and epoch consistency with each finalized claim.
