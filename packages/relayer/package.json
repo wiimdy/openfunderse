@@ -6,6 +6,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "prebuild": "npm --prefix ../sdk run build",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
