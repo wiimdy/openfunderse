@@ -9,7 +9,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "smoke:fund-bootstrap": "node scripts/smoke-fund-bootstrap.mjs",
+    "smoke:all-apis": "node scripts/smoke-all-apis.mjs"
   },
   "dependencies": {
     "@claw/protocol-sdk": "file:../sdk",

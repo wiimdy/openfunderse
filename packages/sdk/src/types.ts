@@ -100,6 +100,16 @@ export interface IntentExecutionRouteInput {
   adapterDataHash?: Hex;
 }
 
+export interface CoreExecutionRequestInput {
+  tokenIn: Address;
+  tokenOut: Address;
+  amountIn: bigint;
+  quoteAmountOut: bigint;
+  minAmountOut: bigint;
+  adapter: Address;
+  adapterData: Hex;
+}
+
 export interface CanonicalClaimRecord {
   payload: ClaimPayload;
   epochId: bigint;

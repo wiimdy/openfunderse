@@ -186,7 +186,7 @@
           }
         },
         {
-          "name": "POST claims (scaffold)",
+          "name": "POST claims",
           "request": {
             "method": "POST",
             "header": [
@@ -205,7 +205,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sourceType\": \"WEB\",\n  \"sourceRef\": \"https://example.com\"\n}"
+              "raw": "{\n  \"epochId\": \"{{epoch_id}}\",\n  \"claimPayload\": {\n    \"schemaId\": \"price_signal_v1\",\n    \"sourceType\": \"WEB\",\n    \"sourceRef\": \"https://example.com/tokens/{{token_out}}\",\n    \"selector\": \"$.signal\",\n    \"extracted\": \"BUY\",\n    \"extractedType\": \"string\",\n    \"timestamp\": \"1739940000\",\n    \"responseHash\": \"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n    \"evidenceType\": \"url\",\n    \"evidenceURI\": \"https://example.com/evidence/1\",\n    \"crawler\": \"{{crawler_address}}\",\n    \"notes\": \"demo claim\"\n  }\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/claims",
@@ -220,11 +220,11 @@
                 "claims"
               ]
             },
-            "description": "Expected 501 scaffold with valid crawler bot auth."
+            "description": "Submit canonical claim payload. Expected 200 on first insert, 409 on duplicate."
           }
         },
         {
-          "name": "GET claims (scaffold)",
+          "name": "GET claims",
           "request": {
             "method": "GET",
             "header": [],
@@ -241,7 +241,7 @@
                 "claims"
               ]
             },
-            "description": "Expected 501 scaffold."
+            "description": "List claims for the fund. Supports status/epochId/limit/offset query."
           }
         },
         {
@@ -326,7 +326,7 @@
       "name": "Intent APIs",
       "item": [
         {
-          "name": "POST intents/propose (scaffold)",
+          "name": "POST intents/propose",
           "request": {
             "method": "POST",
             "header": [
@@ -345,7 +345,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"intentHash\": \"{{intent_hash}}\",\n  \"snapshotHash\": \"{{snapshot_hash}}\"\n}"
+              "raw": "{\n  \"intent\": {\n    \"intentVersion\": \"v1\",\n    \"vault\": \"{{vault_address}}\",\n    \"action\": \"BUY\",\n    \"tokenIn\": \"{{token_in}}\",\n    \"tokenOut\": \"{{token_out}}\",\n    \"amountIn\": \"{{intent_amount_in}}\",\n    \"minAmountOut\": \"{{intent_min_amount_out}}\",\n    \"deadline\": \"{{intent_deadline}}\",\n    \"maxSlippageBps\": \"{{intent_max_slippage_bps}}\",\n    \"snapshotHash\": \"{{snapshot_hash}}\"\n  },\n  \"maxNotional\": \"{{intent_max_notional}}\",\n  \"executionRoute\": {\n    \"tokenIn\": \"{{token_in}}\",\n    \"tokenOut\": \"{{token_out}}\",\n    \"quoteAmountOut\": \"{{route_quote_amount_out}}\",\n    \"minAmountOut\": \"{{intent_min_amount_out}}\",\n    \"adapter\": \"{{adapter_address}}\",\n    \"adapterData\": \"{{adapter_data}}\"\n  }\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/intents/propose",
@@ -361,7 +361,7 @@
                 "propose"
               ]
             },
-            "description": "Expected 501 scaffold with valid strategy bot auth."
+            "description": "Strategy bot only. executionRoute is required; server computes allowlistHash for onchain constraints."
           }
         },
         {
@@ -445,7 +445,7 @@
           }
         },
         {
-          "name": "GET snapshots/latest (scaffold)",
+          "name": "GET snapshots/latest",
           "request": {
             "method": "GET",
             "header": [],
@@ -463,7 +463,7 @@
                 "latest"
               ]
             },
-            "description": "Expected 501 scaffold."
+            "description": "Returns latest snapshot. If absent, relayer auto-builds from latest approved claims."
           }
         }
       ]

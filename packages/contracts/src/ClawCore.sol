@@ -51,6 +51,7 @@ contract ClawCore {
 
     address public owner;
     address public guardian;
+    address public executor;
     IIntentBookExecutionView public intentBook;
     ClawVault4626 public vault;
     bool public paused;
@@ -61,6 +62,7 @@ contract ClawCore {
     event IntentBookUpdated(address indexed intentBook);
     event VaultUpdated(address indexed vault);
     event GuardianUpdated(address indexed guardian);
+    event ExecutorUpdated(address indexed executor);
     event PauseUpdated(bool paused);
     event IntentExecuted(
         bytes32 indexed intentHash,
@@ -76,6 +78,7 @@ contract ClawCore {
     error NotOwner();
     error InvalidAddress();
     error NotGuardian();
+    error NotExecutor();
     error IntentNotFound();
     error IntentNotApproved();
     error IntentExpired();
@@ -96,16 +99,23 @@ contract ClawCore {
         _;
     }
 
+    modifier onlyExecutor() {
+        if (msg.sender != executor) revert NotExecutor();
+        _;
+    }
+
     constructor(address owner_, address intentBook_, address vault_) {
         if (owner_ == address(0) || intentBook_ == address(0) || vault_ == address(0)) revert InvalidAddress();
 
         owner = owner_;
         guardian = owner_;
+        executor = owner_;
         intentBook = IIntentBookExecutionView(intentBook_);
         vault = ClawVault4626(vault_);
 
         emit OwnershipTransferred(address(0), owner_);
         emit GuardianUpdated(owner_);
+        emit ExecutorUpdated(owner_);
         emit IntentBookUpdated(intentBook_);
         emit VaultUpdated(vault_);
     }
@@ -134,6 +144,12 @@ contract ClawCore {
         emit GuardianUpdated(newGuardian);
     }
 
+    function setExecutor(address newExecutor) external onlyOwner {
+        if (newExecutor == address(0)) revert InvalidAddress();
+        executor = newExecutor;
+        emit ExecutorUpdated(newExecutor);
+    }
+
     function setPaused(bool paused_) external onlyOwnerOrGuardian {
         paused = paused_;
         emit PauseUpdated(paused_);
@@ -142,7 +158,7 @@ contract ClawCore {
     function executeIntent(
         bytes32 intentHash,
         ExecutionRequest calldata req
-    ) external returns (uint256 amountOut) {
+    ) external onlyExecutor returns (uint256 amountOut) {
         if (paused) revert CorePaused();
         ExecutionValidation memory v = validateIntentExecution(intentHash, req);
         if (!v.exists) revert IntentNotFound();

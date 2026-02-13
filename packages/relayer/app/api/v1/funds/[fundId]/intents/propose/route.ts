@@ -23,7 +23,7 @@ export async function POST(
     return botAuth.response;
   }
 
-  const fund = getFund(fundId);
+  const fund = await getFund(fundId);
   if (!fund) {
     return NextResponse.json(
       { error: "NOT_FOUND", message: `fund not found: ${fundId}` },
@@ -54,9 +54,6 @@ export async function POST(
   }
 
   const intent = (body.intent ?? body.tradeIntent) as TradeIntent | undefined;
-  const providedAllowlistHash = body.allowlistHash
-    ? (String(body.allowlistHash) as `0x${string}`)
-    : null;
   const executionRoute = body.executionRoute as
     | Record<string, unknown>
     | undefined;
@@ -68,17 +65,17 @@ export async function POST(
       { status: 400 }
     );
   }
-  if (!providedAllowlistHash && !executionRoute) {
+  if (!executionRoute) {
     return NextResponse.json(
       {
         error: "BAD_REQUEST",
-        message: "allowlistHash or executionRoute is required"
+        message: "executionRoute is required"
       },
       { status: 400 }
     );
   }
 
-  const latestSnapshot = getLatestSnapshot(fundId);
+  const latestSnapshot = await getLatestSnapshot(fundId);
   if (!latestSnapshot) {
     return NextResponse.json(
       { error: "BAD_REQUEST", message: "no finalized snapshot available for fund" },
@@ -98,71 +95,61 @@ export async function POST(
     );
   }
 
-  let computedAllowlistHash: `0x${string}` | null = null;
-  if (executionRoute) {
-    try {
-      const route: IntentExecutionRouteInput = {
-        tokenIn: String(executionRoute.tokenIn) as `0x${string}`,
-        tokenOut: String(executionRoute.tokenOut) as `0x${string}`,
-        quoteAmountOut: BigInt(String(executionRoute.quoteAmountOut)),
-        minAmountOut: BigInt(String(executionRoute.minAmountOut)),
-        adapter: String(executionRoute.adapter) as `0x${string}`,
-        adapterData: executionRoute.adapterData
-          ? (String(executionRoute.adapterData) as `0x${string}`)
-          : undefined,
-        adapterDataHash: executionRoute.adapterDataHash
-          ? (String(executionRoute.adapterDataHash) as `0x${string}`)
-          : undefined
-      };
+  let allowlistHash: `0x${string}`;
+  let normalizedExecutionRoute: IntentExecutionRouteInput;
+  try {
+    const route: IntentExecutionRouteInput = {
+      tokenIn: String(executionRoute.tokenIn) as `0x${string}`,
+      tokenOut: String(executionRoute.tokenOut) as `0x${string}`,
+      quoteAmountOut: BigInt(String(executionRoute.quoteAmountOut)),
+      minAmountOut: BigInt(String(executionRoute.minAmountOut)),
+      adapter: String(executionRoute.adapter) as `0x${string}`,
+      adapterData: executionRoute.adapterData
+        ? (String(executionRoute.adapterData) as `0x${string}`)
+        : undefined,
+      adapterDataHash: executionRoute.adapterDataHash
+        ? (String(executionRoute.adapterDataHash) as `0x${string}`)
+        : undefined
+    };
 
-      if (
-        route.tokenIn.toLowerCase() !== intent.tokenIn.toLowerCase() ||
-        route.tokenOut.toLowerCase() !== intent.tokenOut.toLowerCase() ||
-        route.minAmountOut !== intent.minAmountOut
-      ) {
-        return NextResponse.json(
-          {
-            error: "BAD_REQUEST",
-            message:
-              "executionRoute tokenIn/tokenOut/minAmountOut must match intent"
-          },
-          { status: 400 }
-        );
-      }
-
-      computedAllowlistHash = buildIntentAllowlistHashFromRoute(route);
-    } catch (error) {
+    if (!route.adapterData) {
       return NextResponse.json(
         {
           error: "BAD_REQUEST",
-          message:
-            error instanceof Error
-              ? `invalid executionRoute: ${error.message}`
-              : "invalid executionRoute"
+          message: "executionRoute.adapterData is required"
         },
         { status: 400 }
       );
     }
-  }
 
-  if (
-    providedAllowlistHash &&
-    computedAllowlistHash &&
-    providedAllowlistHash.toLowerCase() !== computedAllowlistHash.toLowerCase()
-  ) {
+    if (
+      route.tokenIn.toLowerCase() !== intent.tokenIn.toLowerCase() ||
+      route.tokenOut.toLowerCase() !== intent.tokenOut.toLowerCase() ||
+      route.minAmountOut !== intent.minAmountOut
+    ) {
+      return NextResponse.json(
+        {
+          error: "BAD_REQUEST",
+          message: "executionRoute tokenIn/tokenOut/minAmountOut must match intent"
+        },
+        { status: 400 }
+      );
+    }
+
+    allowlistHash = buildIntentAllowlistHashFromRoute(route);
+    normalizedExecutionRoute = route;
+  } catch (error) {
     return NextResponse.json(
       {
         error: "BAD_REQUEST",
-        message: "allowlistHash mismatch with computed executionRoute hash",
-        providedAllowlistHash,
-        computedAllowlistHash
+        message:
+          error instanceof Error
+            ? `invalid executionRoute: ${error.message}`
+            : "invalid executionRoute"
       },
       { status: 400 }
     );
   }
-
-  const allowlistHash =
-    (computedAllowlistHash ?? providedAllowlistHash) as `0x${string}`;
 
   let built;
   try {
@@ -181,12 +168,15 @@ export async function POST(
     );
   }
 
-  const inserted = insertIntent({
+  const inserted = await insertIntent({
     fundId,
     intentHash: built.intentHash,
     snapshotHash: built.intent.snapshotHash,
     intentUri,
     intentJson: JSON.stringify(built.intent),
+    executionRouteJson: JSON.stringify(normalizedExecutionRoute, (_, value) =>
+      typeof value === "bigint" ? value.toString() : value
+    ),
     allowlistHash: built.constraints.allowlistHash,
     maxSlippageBps: built.constraints.maxSlippageBps,
     maxNotional: built.constraints.maxNotional,
@@ -205,7 +195,7 @@ export async function POST(
     );
   }
 
-  upsertSubjectState({
+  await upsertSubjectState({
     fundId,
     subjectType: "INTENT",
     subjectHash: built.intentHash,

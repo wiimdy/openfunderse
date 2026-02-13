@@ -21,7 +21,7 @@ export async function POST(
     return botAuth.response;
   }
 
-  const fund = getFund(fundId);
+  const fund = await getFund(fundId);
   if (!fund) {
     return NextResponse.json(
       { error: "NOT_FOUND", message: `fund not found: ${fundId}` },
@@ -63,7 +63,7 @@ export async function POST(
     );
   }
 
-  const inserted = insertClaim({
+  const inserted = await insertClaim({
     fundId,
     claimHash: record.claimHash,
     epochId: record.epochId,
@@ -82,7 +82,7 @@ export async function POST(
     );
   }
 
-  upsertSubjectState({
+  await upsertSubjectState({
     fundId,
     subjectType: "CLAIM",
     subjectHash: record.claimHash,
@@ -131,7 +131,7 @@ export async function GET(
     }
   }
 
-  const result = listClaimsByFund({
+  const result = await listClaimsByFund({
     fundId,
     status: status as "PENDING" | "APPROVED" | "REJECTED" | undefined,
     epochId,

@@ -7,7 +7,10 @@ type CounterKey =
   | "duplicate_rejected"
   | "threshold_met"
   | "onchain_submit_success"
-  | "onchain_submit_fail";
+  | "onchain_submit_fail"
+  | "execution_success"
+  | "execution_fail"
+  | "execution_preflight_fail";
 
 const counters: Record<CounterKey, number> = {
   requests_total: 0,
@@ -18,7 +21,10 @@ const counters: Record<CounterKey, number> = {
   duplicate_rejected: 0,
   threshold_met: 0,
   onchain_submit_success: 0,
-  onchain_submit_fail: 0
+  onchain_submit_fail: 0,
+  execution_success: 0,
+  execution_fail: 0,
+  execution_preflight_fail: 0
 };
 
 export function incCounter(key: CounterKey, delta = 1): void {
