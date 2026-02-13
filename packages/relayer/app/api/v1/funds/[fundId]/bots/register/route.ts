@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireBotAuth } from "@/lib/bot-auth";
-import { getFund, listFundBots, upsertFundBot } from "@/lib/sqlite";
+import { getFund, listFundBots, upsertFundBot } from "@/lib/supabase";
 
 const ALLOWED_ROLES = new Set(["crawler", "verifier"]);
 

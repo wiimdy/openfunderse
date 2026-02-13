@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminSession } from "@/lib/authz";
-import { getFund, upsertFund, upsertFundBot } from "@/lib/sqlite";
+import { getFund, upsertFund, upsertFundBot } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   const admin = await requireAdminSession();

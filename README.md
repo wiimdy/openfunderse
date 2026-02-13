@@ -8,6 +8,16 @@ Openfunderse is an agent-driven fund protocol for Monad: data claims are atteste
 - `packages/agents`: crawler/verifier/strategy agent runtime
 - `packages/sdk`: shared hashing + EIP-712 utilities
 
+## Package roles
+| Package | Primary role | Owns | Docs |
+| --- | --- | --- | --- |
+| `packages/contracts` | Onchain execution and fund governance | UUPS contracts, deployment scripts, Foundry tests | [`packages/contracts/README.md`](packages/contracts/README.md) |
+| `packages/relayer` | Offchain API and orchestration | v1 API, attest/intent aggregation, execution jobs, storage integration | [`packages/relayer/README.md`](packages/relayer/README.md) |
+| `packages/agents` | Runtime bots for crawling/verifying/strategy | Reddit MVP crawler/verifier flow, bot runtime exports | [`packages/agents/README.md`](packages/agents/README.md) |
+| `packages/sdk` | Canonical protocol utilities | Hashing, EIP-712 verification, weighted-threshold helpers | [`packages/sdk/README.md`](packages/sdk/README.md) |
+| `packages/openfunderse` | Codex skill-pack installer/distribution | `openfunderse` install CLI, pack manifests/prompts/skills | [`packages/openfunderse/README.md`](packages/openfunderse/README.md) |
+| `packages/indexer` | Deferred read-model/indexing layer | Placeholder scaffold for future event indexing | [`packages/indexer/README.md`](packages/indexer/README.md) |
+
 ## Quick start
 ```bash
 nvm use

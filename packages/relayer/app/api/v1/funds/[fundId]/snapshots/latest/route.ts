@@ -4,7 +4,7 @@ import {
   getApprovedClaimHashesByFund,
   getLatestSnapshot,
   upsertSnapshot
-} from "@/lib/sqlite";
+} from "@/lib/supabase";
 
 export async function GET(
   _request: Request,

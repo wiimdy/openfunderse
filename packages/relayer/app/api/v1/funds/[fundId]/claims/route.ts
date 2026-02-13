@@ -9,7 +9,7 @@ import {
   insertClaim,
   listClaimsByFund,
   upsertSubjectState
-} from "@/lib/sqlite";
+} from "@/lib/supabase";
 
 export async function POST(
   request: Request,

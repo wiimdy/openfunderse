@@ -2,6 +2,10 @@
 
 This package is intentionally **last priority** for MVP.
 
+## Role
+- Future indexing/read-model package for event-driven queries.
+- Currently a deferred scaffold and not on the critical runtime path.
+
 Reason:
 - MVP can move faster with direct source APIs and relayer/agent flow first.
 - Dedicated indexing daemon + hosting is additional infra overhead.

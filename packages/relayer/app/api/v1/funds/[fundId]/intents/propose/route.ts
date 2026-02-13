@@ -11,7 +11,7 @@ import {
   getLatestSnapshot,
   insertIntent,
   upsertSubjectState
-} from "@/lib/sqlite";
+} from "@/lib/supabase";
 
 export async function POST(
   request: Request,

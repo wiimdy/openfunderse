@@ -62,6 +62,26 @@ export interface IntentRow {
   updated_at: number;
 }
 
+export interface FundDeploymentRow {
+  id: number;
+  fund_id: string;
+  chain_id: string;
+  factory_address: string;
+  onchain_fund_id: string;
+  intent_book_address: string;
+  claw_core_address: string;
+  claw_vault_address: string;
+  fund_owner_address: string;
+  strategy_agent_address: string;
+  snapshot_book_address: string;
+  asset_address: string;
+  deploy_tx_hash: string;
+  deploy_block_number: string;
+  deployer_address: string;
+  created_at: number;
+  updated_at: number;
+}
+
 export type ExecutionJobStatus =
   | "READY"
   | "RUNNING"
@@ -188,6 +208,63 @@ export async function getFundThresholds(
     claimThresholdWeight: BigInt(fund.verifier_threshold_weight),
     intentThresholdWeight: BigInt(fund.intent_threshold_weight)
   };
+}
+
+export async function upsertFundDeployment(input: {
+  fundId: string;
+  chainId: bigint;
+  factoryAddress: string;
+  onchainFundId: bigint;
+  intentBookAddress: string;
+  clawCoreAddress: string;
+  clawVaultAddress: string;
+  fundOwnerAddress: string;
+  strategyAgentAddress: string;
+  snapshotBookAddress: string;
+  assetAddress: string;
+  deployTxHash: string;
+  deployBlockNumber: bigint;
+  deployerAddress: string;
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const { error } = await db.from("fund_deployments").upsert(
+    {
+      fund_id: input.fundId,
+      chain_id: input.chainId.toString(),
+      factory_address: input.factoryAddress.toLowerCase(),
+      onchain_fund_id: input.onchainFundId.toString(),
+      intent_book_address: input.intentBookAddress.toLowerCase(),
+      claw_core_address: input.clawCoreAddress.toLowerCase(),
+      claw_vault_address: input.clawVaultAddress.toLowerCase(),
+      fund_owner_address: input.fundOwnerAddress.toLowerCase(),
+      strategy_agent_address: input.strategyAgentAddress.toLowerCase(),
+      snapshot_book_address: input.snapshotBookAddress.toLowerCase(),
+      asset_address: input.assetAddress.toLowerCase(),
+      deploy_tx_hash: input.deployTxHash.toLowerCase(),
+      deploy_block_number: input.deployBlockNumber.toString(),
+      deployer_address: input.deployerAddress.toLowerCase(),
+      created_at: now,
+      updated_at: now
+    },
+    {
+      onConflict: "fund_id"
+    }
+  );
+  throwIfError(error, null);
+}
+
+export async function getFundDeployment(fundId: string): Promise<FundDeploymentRow | undefined> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("fund_deployments")
+    .select(
+      "id,fund_id,chain_id,factory_address,onchain_fund_id,intent_book_address,claw_core_address,claw_vault_address,fund_owner_address,strategy_agent_address,snapshot_book_address,asset_address,deploy_tx_hash,deploy_block_number,deployer_address,created_at,updated_at"
+    )
+    .eq("fund_id", fundId)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as FundDeploymentRow | null) ?? undefined;
 }
 
 export async function upsertFundBot(input: {
