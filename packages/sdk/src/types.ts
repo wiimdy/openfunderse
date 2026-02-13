@@ -82,3 +82,32 @@ export interface NadfunExecutionDataV1 {
   amountOutMin: bigint;
   extra: Hex;
 }
+
+export interface IntentConstraints {
+  allowlistHash: Hex;
+  maxSlippageBps: bigint;
+  maxNotional: bigint;
+  deadline: bigint;
+}
+
+export interface IntentExecutionRouteInput {
+  tokenIn: Address;
+  tokenOut: Address;
+  quoteAmountOut: bigint;
+  minAmountOut: bigint;
+  adapter: Address;
+  adapterData?: Hex;
+  adapterDataHash?: Hex;
+}
+
+export interface CanonicalClaimRecord {
+  payload: ClaimPayload;
+  epochId: bigint;
+  claimHash: Hex;
+}
+
+export interface CanonicalIntentRecord {
+  intent: TradeIntent;
+  intentHash: Hex;
+  constraints: IntentConstraints;
+}

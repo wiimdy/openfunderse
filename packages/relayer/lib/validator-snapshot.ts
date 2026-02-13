@@ -5,6 +5,7 @@ import {
   type ValidatorWeight
 } from "@claw/protocol-sdk";
 import { loadRuntimeConfig } from "@/lib/config";
+import { getFundThresholds } from "@/lib/sqlite";
 
 export interface ValidatorSnapshot {
   snapshotId: string;
@@ -39,14 +40,18 @@ function snapshotFromConfig(snapshotId: string, thresholdWeight: bigint): Valida
 
 export function loadClaimValidatorSnapshot(fundId: string, epochId: bigint): ValidatorSnapshot {
   const cfg = loadRuntimeConfig();
+  const fund = getFundThresholds(fundId);
+  const thresholdWeight = fund?.claimThresholdWeight ?? cfg.claimThresholdWeight;
   // TODO: replace config-backed snapshot with onchain snapshot reader once registry ABI is finalized.
-  return snapshotFromConfig(`${fundId}:${epochId.toString()}:claim`, cfg.claimThresholdWeight);
+  return snapshotFromConfig(`${fundId}:${epochId.toString()}:claim`, thresholdWeight);
 }
 
 export function loadIntentValidatorSnapshot(fundId: string): ValidatorSnapshot {
   const cfg = loadRuntimeConfig();
+  const fund = getFundThresholds(fundId);
+  const thresholdWeight = fund?.intentThresholdWeight ?? cfg.intentThresholdWeight;
   // TODO: replace config-backed snapshot with onchain snapshot reader once registry ABI is finalized.
-  return snapshotFromConfig(`${fundId}:intent`, cfg.intentThresholdWeight);
+  return snapshotFromConfig(`${fundId}:intent`, thresholdWeight);
 }
 
 export function verifierWeight(snapshot: ValidatorSnapshot, verifier: Address): bigint {
