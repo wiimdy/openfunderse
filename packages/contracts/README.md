@@ -27,11 +27,11 @@ forge test
 
 ## Minimal execution flow
 1. `IntentBook.proposeIntent`
-2. `IntentBook.attestIntent` (threshold reached)
-3. `ClawCore.validateIntentExecution`
-4. `ClawCore.dryRunIntentExecution`
-5. `ClawCore.executeIntent`
-6. `ClawVault4626.executeTrade` via adapter
+2. `IntentBook.attestIntent` (weighted threshold reached)
+3. `ClawCore.validateIntentExecution` for preflight checks
+4. `ClawCore.dryRunIntentExecution` for quote/reason diagnostics
+5. `ClawCore.executeIntent` (executor-only, deadline/replay/maxNotional/allowlist checks)
+6. `ClawVault4626.executeTrade` via `NadfunExecutionAdapter`
 
 ## Script entrypoints
 - Deploy fund factory (admin): `./packages/contracts/scripts/deploy-fund-factory.sh`
@@ -56,3 +56,17 @@ Detailed script docs:
 - `ClawVault4626` proxy
 
 It configures initial verifiers/token allowlist/adapter allowlist and then transfers ownership to the fund owner.
+
+## Recommended test flow
+- Unit/integration: `forge test`
+- Pre-execution validation: `scripts/validate-intent-call.sh` (`eth_call`)
+- Submit `executeIntent` only after preflight passes
+- Manual runbook: `docs/protocol/intent-manual-validation.md`
+
+## Executor authorization model
+- `ClawCore.executeIntent` is callable only by `executor`.
+- Default executor is `owner` at deployment. For operations, set your relayer wallet:
+
+```solidity
+core.setExecutor(relayerExecutor);
+```

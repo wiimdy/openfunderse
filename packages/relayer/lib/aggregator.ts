@@ -77,11 +77,11 @@ async function maybeSubmitOnchain(subjectType: SubjectType, subjectHash: Hex): P
   txHash?: Hex;
   error?: string;
 }> {
-  const state = getSubjectState(subjectType, subjectHash);
+  const state = await getSubjectState(subjectType, subjectHash);
   if (!state) return { submitted: false };
   if (state.status === "APPROVED") return { submitted: false };
 
-  const rows = listPendingAttestations(subjectType, subjectHash);
+  const rows = await listPendingAttestations(subjectType, subjectHash);
   if (rows.length === 0) return { submitted: false };
 
   const fundId = rows[0]?.fund_id;
@@ -89,8 +89,8 @@ async function maybeSubmitOnchain(subjectType: SubjectType, subjectHash: Hex): P
 
   const snapshot =
     subjectType === "CLAIM"
-      ? loadClaimValidatorSnapshot(fundId, BigInt(rows[0].epoch_id ?? "0"))
-      : loadIntentValidatorSnapshot(fundId);
+      ? await loadClaimValidatorSnapshot(fundId, BigInt(rows[0].epoch_id ?? "0"))
+      : await loadIntentValidatorSnapshot(fundId);
 
   const verifiers = rows.map((row) => row.verifier as Address);
   if (!reachedWeightedThreshold(verifiers, snapshot.weightMap, snapshot.thresholdWeight)) {
@@ -115,7 +115,7 @@ async function maybeSubmitOnchain(subjectType: SubjectType, subjectHash: Hex): P
             signatures
           });
 
-    markSubjectApproved({
+    await markSubjectApproved({
       subjectType,
       subjectHash,
       txHash
@@ -129,7 +129,7 @@ async function maybeSubmitOnchain(subjectType: SubjectType, subjectHash: Hex): P
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    markSubjectSubmitError({
+    await markSubjectSubmitError({
       subjectType,
       subjectHash,
       message
@@ -172,13 +172,13 @@ export async function ingestClaimAttestation(input: ClaimInput) {
     };
   }
 
-  const snapshot = loadClaimValidatorSnapshot(input.fundId, input.epochId);
+  const snapshot = await loadClaimValidatorSnapshot(input.fundId, input.epochId);
   const weight = verifierWeight(snapshot, input.verifier);
   if (weight <= BigInt(0)) {
     return { ok: false as const, status: 403, error: "verifier is not in validator snapshot" };
   }
 
-  upsertSubjectState({
+  await upsertSubjectState({
     fundId: input.fundId,
     subjectType: "CLAIM",
     subjectHash: input.claimHash,
@@ -186,7 +186,7 @@ export async function ingestClaimAttestation(input: ClaimInput) {
     thresholdWeight: snapshot.thresholdWeight
   });
 
-  const inserted = insertAttestation({
+  const inserted = await insertAttestation({
     fundId: input.fundId,
     subjectType: "CLAIM",
     subjectHash: input.claimHash,
@@ -207,7 +207,7 @@ export async function ingestClaimAttestation(input: ClaimInput) {
   }
 
   incCounter("verify_success");
-  const attestedWeight = incrementSubjectAttestedWeight("CLAIM", input.claimHash, weight);
+  const attestedWeight = await incrementSubjectAttestedWeight("CLAIM", input.claimHash, weight);
 
   relayerEvents.emitEvent("claim:attested", {
     fundId: input.fundId,
@@ -217,7 +217,6 @@ export async function ingestClaimAttestation(input: ClaimInput) {
     attestedWeight: attestedWeight.toString(),
     thresholdWeight: snapshot.thresholdWeight.toString()
   });
-
   const submit = await maybeSubmitOnchain("CLAIM", input.claimHash);
 
   if (submit.submitted) {
@@ -274,13 +273,13 @@ export async function ingestIntentAttestation(input: IntentInput) {
     };
   }
 
-  const snapshot = loadIntentValidatorSnapshot(input.fundId);
+  const snapshot = await loadIntentValidatorSnapshot(input.fundId);
   const weight = verifierWeight(snapshot, input.verifier);
   if (weight <= BigInt(0)) {
     return { ok: false as const, status: 403, error: "verifier is not in validator snapshot" };
   }
 
-  upsertSubjectState({
+  await upsertSubjectState({
     fundId: input.fundId,
     subjectType: "INTENT",
     subjectHash: input.intentHash,
@@ -288,7 +287,7 @@ export async function ingestIntentAttestation(input: IntentInput) {
     thresholdWeight: snapshot.thresholdWeight
   });
 
-  const inserted = insertAttestation({
+  const inserted = await insertAttestation({
     fundId: input.fundId,
     subjectType: "INTENT",
     subjectHash: input.intentHash,
@@ -309,7 +308,7 @@ export async function ingestIntentAttestation(input: IntentInput) {
   }
 
   incCounter("verify_success");
-  const attestedWeight = incrementSubjectAttestedWeight("INTENT", input.intentHash, weight);
+  const attestedWeight = await incrementSubjectAttestedWeight("INTENT", input.intentHash, weight);
 
   relayerEvents.emitEvent("intent:attested", {
     fundId: input.fundId,
@@ -319,7 +318,6 @@ export async function ingestIntentAttestation(input: IntentInput) {
     attestedWeight: attestedWeight.toString(),
     thresholdWeight: snapshot.thresholdWeight.toString()
   });
-
   const submit = await maybeSubmitOnchain("INTENT", input.intentHash);
 
   return {

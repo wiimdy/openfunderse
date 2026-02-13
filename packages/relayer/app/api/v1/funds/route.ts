@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const existing = getFund(fundId);
+  const existing = await getFund(fundId);
   if (existing && existing.strategy_bot_id && existing.strategy_bot_id !== strategyBotId) {
     return NextResponse.json(
       {
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
     );
   }
 
-  upsertFund({
+  await upsertFund({
     fundId,
     fundName,
     strategyBotId,
@@ -83,7 +83,7 @@ export async function POST(request: Request) {
   });
 
   // Ensure strategy bot appears in bot registry as the unique room operator for this fund.
-  upsertFundBot({
+  await upsertFundBot({
     fundId,
     botId: strategyBotId,
     role: "strategy",

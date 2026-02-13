@@ -10,6 +10,7 @@ import type {
   CanonicalClaimRecord,
   CanonicalIntentRecord,
   ClaimPayload,
+  CoreExecutionRequestInput,
   Hex,
   IntentExecutionRouteInput,
   IntentConstraints,
@@ -133,4 +134,38 @@ export function buildIntentAllowlistHashFromRoute(
     route.adapter,
     adapterDataHash
   );
+}
+
+export function buildCoreExecutionRequestFromIntent(input: {
+  intent: TradeIntent;
+  executionRoute: IntentExecutionRouteInput;
+}): CoreExecutionRequestInput {
+  const { intent, executionRoute } = input;
+  assertPositive(intent.amountIn, "amountIn");
+  assertPositive(intent.minAmountOut, "minAmountOut");
+  assertPositive(executionRoute.quoteAmountOut, "quoteAmountOut");
+  assertPositive(executionRoute.minAmountOut, "route.minAmountOut");
+
+  if (executionRoute.tokenIn.toLowerCase() !== intent.tokenIn.toLowerCase()) {
+    throw new Error("executionRoute.tokenIn must match intent.tokenIn");
+  }
+  if (executionRoute.tokenOut.toLowerCase() !== intent.tokenOut.toLowerCase()) {
+    throw new Error("executionRoute.tokenOut must match intent.tokenOut");
+  }
+  if (executionRoute.minAmountOut !== intent.minAmountOut) {
+    throw new Error("executionRoute.minAmountOut must match intent.minAmountOut");
+  }
+  if (!executionRoute.adapterData) {
+    throw new Error("executionRoute.adapterData is required for execution");
+  }
+
+  return {
+    tokenIn: executionRoute.tokenIn,
+    tokenOut: executionRoute.tokenOut,
+    amountIn: intent.amountIn,
+    quoteAmountOut: executionRoute.quoteAmountOut,
+    minAmountOut: executionRoute.minAmountOut,
+    adapter: executionRoute.adapter,
+    adapterData: executionRoute.adapterData
+  };
 }

@@ -80,6 +80,7 @@ contract ClawCore is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     address public guardian;
+    address public executor;
     IIntentBookExecutionView public intentBook;
     ClawVault4626 public vault;
     address public nadfunLens;
@@ -93,6 +94,7 @@ contract ClawCore is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event VaultUpdated(address indexed vault);
     event NadfunLensUpdated(address indexed lens);
     event GuardianUpdated(address indexed guardian);
+    event ExecutorUpdated(address indexed executor);
     event PauseUpdated(bool paused);
     event ConfigFrozen();
     event UpgradesFrozen();
@@ -109,6 +111,7 @@ contract ClawCore is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     error InvalidAddress();
     error NotGuardian();
+    error NotExecutor();
     error IntentNotFound();
     error IntentNotApproved();
     error IntentExpired();
@@ -150,6 +153,11 @@ contract ClawCore is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         _;
     }
 
+    modifier onlyExecutor() {
+        if (msg.sender != executor) revert NotExecutor();
+        _;
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -161,10 +169,12 @@ contract ClawCore is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         __Ownable_init(owner_);
 
         guardian = owner_;
+        executor = owner_;
         intentBook = IIntentBookExecutionView(intentBook_);
         vault = ClawVault4626(payable(vault_));
 
         emit GuardianUpdated(owner_);
+        emit ExecutorUpdated(owner_);
         emit IntentBookUpdated(intentBook_);
         emit VaultUpdated(vault_);
     }
@@ -193,6 +203,12 @@ contract ClawCore is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         emit GuardianUpdated(newGuardian);
     }
 
+    function setExecutor(address newExecutor) external onlyOwner {
+        if (newExecutor == address(0)) revert InvalidAddress();
+        executor = newExecutor;
+        emit ExecutorUpdated(newExecutor);
+    }
+
     function setPaused(bool paused_) external onlyOwnerOrGuardian {
         paused = paused_;
         emit PauseUpdated(paused_);
@@ -213,7 +229,7 @@ contract ClawCore is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     function executeIntent(
         bytes32 intentHash,
         ExecutionRequest calldata req
-    ) external returns (uint256 amountOut) {
+    ) external onlyExecutor returns (uint256 amountOut) {
         if (paused) revert CorePaused();
         ExecutionValidation memory v = validateIntentExecution(intentHash, req);
         if (!v.exists) revert IntentNotFound();

@@ -1,7 +1,7 @@
 # @claw/relayer
 
-Next.js 기반의 Claw relayer 서버 스캐폴드입니다.  
-현재는 `nextjs-postgres-auth-starter` 템플릿 위에, Claw MVP에 필요한 relayer API 골격(TODO 501)을 추가한 상태입니다.
+Next.js 기반의 Claw relayer 서버입니다.
+Supabase(Postgres) 저장소 기준으로 동작합니다.
 
 ## Purpose
 - Claim/Intent 검증 서명 수집 API 게이트웨이
@@ -35,12 +35,17 @@ npm run dev -w @claw/relayer
   - 최신 finalized snapshot 조회
 - `POST /api/v1/funds/{fundId}/intents/propose`
   - strategy intent 접수/검증(snapshotHash 연계)
+  - `executionRoute` 필수 입력으로 `allowlistHash`를 서버에서 계산/고정
 - `POST /api/v1/funds/{fundId}/intents/attestations/batch`
   - intent attestation batch 제출(중복 제거, EIP-712 검증, weighted threshold 충족 시 onchain `attestIntent`)
 - `GET /api/v1/funds/{fundId}/status`
   - SQLite 기반 pending/approved 요약 + in-memory metrics 카운터 조회
 - `GET /api/v1/metrics`
   - 요청/검증/중복/온체인 제출 성공/실패 카운터 조회
+- `POST /api/v1/cron/execute-intents`
+  - Vercel cron/worker가 승인된 intent 실행 잡 처리
+- `GET /api/v1/executions`
+  - 실행 잡 상태 조회
 
 ## Access model (scaffold)
 - `admin`:
@@ -70,6 +75,11 @@ npm run dev -w @claw/relayer
 - `/register`는 비활성화(단일 관리자 계정 모델).
 - 집계 기준은 온체인 snapshot 기반 weighted threshold 단일 모델입니다.
 - weighted 계산 유틸은 `@claw/protocol-sdk`에 구현되어 있으며, relayer 온체인 snapshot 로더/연동 고도화가 남아 있습니다.
+- `intents/propose`는 `allowlistHash` 직접 입력을 허용하지 않으며, relayer가 계산한 해시만 onchain constraints에 반영합니다.
+
+## Database
+- Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`
+- Apply `/Users/ham-yunsig/Documents/github/claw-validation-market/packages/relayer/supabase/schema.sql` in Supabase SQL Editor before running relayer.
 
 ## Required Env (weighted mode)
 - `CLAIM_THRESHOLD_WEIGHT`, `INTENT_THRESHOLD_WEIGHT`

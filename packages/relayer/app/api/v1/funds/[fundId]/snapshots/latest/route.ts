@@ -12,10 +12,10 @@ export async function GET(
 ) {
   const { fundId } = await context.params;
 
-  let snapshot = getLatestSnapshot(fundId);
+  let snapshot = await getLatestSnapshot(fundId);
 
   if (!snapshot) {
-    const approved = getApprovedClaimHashesByFund(fundId);
+    const approved = await getApprovedClaimHashesByFund(fundId);
     if (approved.length > 0) {
       const latestEpoch = approved.reduce(
         (max, row) => (row.epochId > max ? row.epochId : max),
@@ -30,14 +30,14 @@ export async function GET(
         claimHashes
       });
 
-      upsertSnapshot({
+      await upsertSnapshot({
         fundId,
         epochId: built.epochId,
         snapshotHash: built.snapshotHash,
         claimHashes
       });
 
-      snapshot = getLatestSnapshot(fundId);
+      snapshot = await getLatestSnapshot(fundId);
     }
   }
 

@@ -18,6 +18,11 @@ function envNumber(name: string, fallback: number): number {
   return num;
 }
 
+function envOptional(name: string): string | undefined {
+  const value = process.env[name];
+  return value && value.length > 0 ? value : undefined;
+}
+
 function envBigInt(name: string, fallback?: bigint): bigint {
   const value = process.env[name];
   if (!value) {
@@ -91,4 +96,28 @@ export function loadReadOnlyRuntimeConfig() {
 
 export function relayerDbPath(): string {
   return process.env.RELAYER_DB_PATH ?? "./data/relayer.db";
+}
+
+export function loadExecutionConfig() {
+  const chainId = BigInt(env("CHAIN_ID"));
+  const rpcUrl = env("RPC_URL");
+  const coreAddress = env("CLAW_CORE_ADDRESS") as Address;
+  const signerKey =
+    (envOptional("EXECUTOR_PRIVATE_KEY") ??
+      envOptional("RELAYER_SIGNER_PRIVATE_KEY")) as Hex | undefined;
+  if (!signerKey) {
+    throw new Error(
+      "missing required env: EXECUTOR_PRIVATE_KEY (or RELAYER_SIGNER_PRIVATE_KEY fallback)"
+    );
+  }
+
+  return {
+    chainId,
+    rpcUrl,
+    coreAddress,
+    signerKey,
+    batchLimit: envNumber("EXECUTION_BATCH_LIMIT", 5),
+    maxAttempts: envNumber("EXECUTION_MAX_ATTEMPTS", 5),
+    cronSecret: envOptional("CRON_SECRET")
+  };
 }

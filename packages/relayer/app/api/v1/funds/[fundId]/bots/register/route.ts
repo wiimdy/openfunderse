@@ -45,7 +45,7 @@ export async function POST(
     );
   }
 
-  const fund = getFund(fundId);
+  const fund = await getFund(fundId);
   if (!fund) {
     return NextResponse.json(
       {
@@ -67,7 +67,7 @@ export async function POST(
     );
   }
 
-  upsertFundBot({
+  await upsertFundBot({
     fundId,
     botId,
     role,
@@ -107,7 +107,7 @@ export async function GET(
     return botAuth.response;
   }
 
-  const fund = getFund(fundId);
+  const fund = await getFund(fundId);
   if (!fund) {
     return NextResponse.json(
       {
@@ -129,7 +129,7 @@ export async function GET(
     );
   }
 
-  const bots = listFundBots(fundId);
+  const bots = await listFundBots(fundId);
 
   return NextResponse.json(
     {
