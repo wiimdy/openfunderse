@@ -2,6 +2,10 @@
 
 Runtime entry for crawler/verifier/strategy MoltBots.
 
+## Role
+- Monorepo bot runtime package (execution code), not installer/distribution.
+- Owns crawl/verify/propose runtime flows used by local smoke/E2E paths.
+
 Shared protocol utilities:
 - `@claw/protocol-sdk` from `packages/sdk`
 
@@ -46,21 +50,23 @@ Optional env:
 - `CRAWLER_ADDRESS=0x...`
 - `REDDIT_USER_AGENT=openclaw-mvp-crawler/0.1`
 
-## Install-pack scaffold (TODO)
+## Install-pack canonical source
 Target onboarding UX:
 
 ```bash
 npx @wiimdy/openfunderse@latest install openfunderse
 ```
 
-Scaffold files for future packaging are prepared at:
-- `config/setup-manifest.json`
-- `skills/strategy/SKILL.md`
-- `skills/participant/SKILL.md`
-- `skills/relayer/SKILL.md`
-- `prompts/strategy/system.md`
-- `prompts/participant/system.md`
-- `prompts/relayer/system.md`
+Canonical pack files are maintained at:
+- `packages/openfunderse/packs/openfunderse/config/setup-manifest.json`
+- `packages/openfunderse/packs/openfunderse/skills/strategy/SKILL.md`
+- `packages/openfunderse/packs/openfunderse/skills/participant/SKILL.md`
+- `packages/openfunderse/packs/openfunderse/skills/relayer/SKILL.md`
+- `packages/openfunderse/packs/openfunderse/prompts/strategy/system.md`
+- `packages/openfunderse/packs/openfunderse/prompts/participant/system.md`
+- `packages/openfunderse/packs/openfunderse/prompts/relayer/system.md`
+
+`packages/agents` keeps runtime code only (`src/*`, `dist/*`).
 
 Prompt references from docs:
 - `docs/jupyter-notebook/openclaw-agent-prompt-book.ipynb`

@@ -13,7 +13,7 @@ import {
   getIntentByHash,
   markExecutionJobExecuted,
   markExecutionJobFailed
-} from "@/lib/sqlite";
+} from "@/lib/supabase";
 import { loadExecutionConfig } from "@/lib/config";
 
 const CORE_ABI = parseAbi([

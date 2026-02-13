@@ -17,7 +17,7 @@ import {
   markSubjectSubmitError,
   upsertSubjectState,
   type SubjectType
-} from "@/lib/sqlite";
+} from "@/lib/supabase";
 import { loadRuntimeConfig } from "@/lib/config";
 import { submitClaimAttestationsOnchain, submitIntentAttestationsOnchain } from "@/lib/onchain";
 import {
@@ -25,7 +25,6 @@ import {
   loadIntentValidatorSnapshot,
   verifierWeight
 } from "@/lib/validator-snapshot";
-import { relayerEvents } from "@/lib/event-emitter";
 
 interface ClaimInput {
   fundId: string;

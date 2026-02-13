@@ -3,6 +3,10 @@
 Next.js 기반의 Claw relayer 서버입니다.
 Supabase(Postgres) 저장소 기준으로 동작합니다.
 
+## Role
+- Monorepo offchain control-plane/API gateway.
+- Owns fund/bot/claim/intent API, weighted attestation aggregation, and execution orchestration.
+
 ## Purpose
 - Claim/Intent 검증 서명 수집 API 게이트웨이
 - `@claw/protocol-sdk` 기반 canonical hash/EIP-712 검증 진입점
@@ -21,6 +25,8 @@ npm run dev -w @claw/relayer
 
 - `POST /api/v1/funds` (admin only)
   - 펀드 생성/업데이트 (threshold weight, policy, metadata, single strategy bot binding)
+- `POST /api/v1/funds/bootstrap` (admin only)
+  - `deployConfig` struct payload로 `ClawFundFactory.createFund` 실행 + relayer metadata + onchain deployment metadata 동시 저장
 - `POST /api/v1/funds/{fundId}/bots/register` (strategy bot only)
   - 유저 봇(crawler/verifier) 등록
 - `GET /api/v1/funds/{fundId}/bots/register` (strategy bot only)
@@ -39,7 +45,7 @@ npm run dev -w @claw/relayer
 - `POST /api/v1/funds/{fundId}/intents/attestations/batch`
   - intent attestation batch 제출(중복 제거, EIP-712 검증, weighted threshold 충족 시 onchain `attestIntent`)
 - `GET /api/v1/funds/{fundId}/status`
-  - SQLite 기반 pending/approved 요약 + in-memory metrics 카운터 조회
+  - DB 기반 pending/approved 요약 + in-memory metrics 카운터 조회
 - `GET /api/v1/metrics`
   - 요청/검증/중복/온체인 제출 성공/실패 카운터 조회
 - `POST /api/v1/cron/execute-intents`
@@ -84,3 +90,43 @@ npm run dev -w @claw/relayer
 ## Required Env (weighted mode)
 - `CLAIM_THRESHOLD_WEIGHT`, `INTENT_THRESHOLD_WEIGHT`
 - `VERIFIER_WEIGHT_SNAPSHOT` (`address:weight,address:weight,...`)
+- `CLAW_FUND_FACTORY_ADDRESS` (for `POST /api/v1/funds/bootstrap`)
+
+## Web2 viem example (factory struct payload)
+```bash
+# repo root
+npm run -w @claw/relayer factory:create-fund
+```
+
+Script path:
+- `scripts/factory-create-fund.mjs`
+
+Bootstrap API payload example:
+```json
+{
+  "fundId": "fund-monad-001",
+  "fundName": "Monad Meme Momentum",
+  "strategyBotId": "bot-strategy-1",
+  "strategyBotAddress": "0x1111111111111111111111111111111111111111",
+  "verifierThresholdWeight": "3",
+  "intentThresholdWeight": "5",
+  "deployConfig": {
+    "fundOwner": "0x2222222222222222222222222222222222222222",
+    "strategyAgent": "0x3333333333333333333333333333333333333333",
+    "snapshotBook": "0x4444444444444444444444444444444444444444",
+    "asset": "0x5555555555555555555555555555555555555555",
+    "vaultName": "Fund Vault Share",
+    "vaultSymbol": "FVS",
+    "intentThresholdWeight": "5",
+    "nadfunLens": "0x0000000000000000000000000000000000000000",
+    "initialVerifiers": [
+      "0x6666666666666666666666666666666666666666"
+    ],
+    "initialVerifierWeights": ["5"],
+    "initialAllowedTokens": [
+      "0x5555555555555555555555555555555555555555"
+    ],
+    "initialAllowedAdapters": []
+  }
+}
+```

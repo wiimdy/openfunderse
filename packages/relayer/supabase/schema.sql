@@ -28,6 +28,26 @@ create table if not exists fund_bots (
   unique (fund_id, bot_id)
 );
 
+create table if not exists fund_deployments (
+  id bigserial primary key,
+  fund_id text not null unique,
+  chain_id text not null,
+  factory_address text not null,
+  onchain_fund_id text not null,
+  intent_book_address text not null,
+  claw_core_address text not null,
+  claw_vault_address text not null,
+  fund_owner_address text not null,
+  strategy_agent_address text not null,
+  snapshot_book_address text not null,
+  asset_address text not null,
+  deploy_tx_hash text not null,
+  deploy_block_number text not null,
+  deployer_address text not null,
+  created_at bigint not null,
+  updated_at bigint not null
+);
+
 create table if not exists attestations (
   id bigserial primary key,
   fund_id text not null,
@@ -124,6 +144,7 @@ create table if not exists execution_jobs (
 
 create index if not exists idx_attestations_subject on attestations(subject_type, subject_hash, status);
 create index if not exists idx_fund_bots_fund on fund_bots(fund_id, status);
+create index if not exists idx_fund_deployments_chain on fund_deployments(chain_id, onchain_fund_id);
 create index if not exists idx_claims_fund_epoch on claims(fund_id, epoch_id, created_at desc);
 create index if not exists idx_snapshots_fund_finalized on snapshots(fund_id, finalized_at desc);
 create index if not exists idx_intents_fund_snapshot on intents(fund_id, snapshot_hash, created_at desc);
