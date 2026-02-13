@@ -14,6 +14,8 @@ cp .env.example .env.local
 set -a
 source .env.local
 set +a
+forge install --no-git OpenZeppelin/openzeppelin-contracts@v5.5.0
+forge install --no-git OpenZeppelin/openzeppelin-contracts-upgradeable@v5.5.0
 ```
 
 ## Build and test
