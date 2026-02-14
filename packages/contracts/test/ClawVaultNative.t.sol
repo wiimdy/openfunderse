@@ -122,6 +122,7 @@ contract ClawVaultNativeTest is Test {
     address internal owner = makeAddr("owner");
     address internal alice = makeAddr("alice");
     address internal feeRecipient = makeAddr("feeRecipient");
+    address internal gasWallet = makeAddr("gasWallet");
 
     MockWMON internal wmon;
     MockERC20ForVault internal meme;
@@ -213,6 +214,42 @@ contract ClawVaultNativeTest is Test {
         assertEq(assetValue, 1.2 ether);
         assertEq(userPrincipal, 1 ether);
         assertEq(userPnl, int256(0.2 ether));
+    }
+
+    function testDepositNativeAppliesGasFeeBps() external {
+        vm.prank(owner);
+        vault.setGasFeeConfig(20, 0, gasWallet); // 0.20%
+        vm.prank(owner);
+        vault.setGasReserveTarget(type(uint256).max);
+
+        vm.prank(alice);
+        uint256 shares = vault.depositNative{value: 10 ether}(alice);
+
+        uint256 expectedFee = 0.02 ether;
+        uint256 expectedNet = 10 ether - expectedFee;
+
+        assertEq(shares, expectedNet);
+        assertEq(vault.balanceOf(alice), expectedNet);
+        assertEq(vault.gasReserve(), expectedFee);
+        assertEq(wmon.balanceOf(address(vault)), 10 ether);
+    }
+
+    function testDepositNativeAppliesGasFeeCap() external {
+        vm.prank(owner);
+        vault.setGasFeeConfig(200, 0.05 ether, gasWallet); // 2% with 0.05 WMON cap
+        vm.prank(owner);
+        vault.setGasReserveTarget(type(uint256).max);
+
+        vm.prank(alice);
+        uint256 shares = vault.depositNative{value: 10 ether}(alice);
+
+        uint256 expectedFee = 0.05 ether; // capped from 0.2 ether
+        uint256 expectedNet = 10 ether - expectedFee;
+
+        assertEq(shares, expectedNet);
+        assertEq(vault.balanceOf(alice), expectedNet);
+        assertEq(vault.gasReserve(), expectedFee);
+        assertEq(wmon.balanceOf(address(vault)), 10 ether);
     }
 
     function testRealizedProfitMintsPerformanceFeeShares() external {
@@ -364,6 +401,62 @@ contract ClawVaultNativeTest is Test {
         assertGt(vault.balanceOf(alice), beforeShares);
         (,,, , uint8 statusAfter) = vault.pendingDeposits(requestId);
         assertEq(statusAfter, vault.DEPOSIT_REQUEST_SETTLED());
+    }
+
+    function testQueueDepositSettleAlsoAppliesGasFee() external {
+        vm.prank(owner);
+        vault.setGasFeeConfig(1000, 0, gasWallet); // 10%
+        vm.prank(owner);
+        vault.setGasReserveTarget(type(uint256).max);
+
+        wmon.mint(alice, 1 ether);
+        vm.prank(alice);
+        wmon.approve(address(vault), 1 ether);
+
+        vm.prank(alice);
+        uint256 requestId = vault.queueDeposit(1 ether, alice);
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = requestId;
+        vault.settleQueuedDeposits(ids);
+
+        assertEq(vault.balanceOf(alice), 0.9 ether);
+        assertEq(vault.gasReserve(), 0.1 ether);
+        assertEq(wmon.balanceOf(address(vault)), 1 ether);
+    }
+
+    function testGasReserveStopsSkimAfterTargetReached() external {
+        vm.prank(owner);
+        vault.setGasFeeConfig(1000, 0, gasWallet); // 10%
+        vm.prank(owner);
+        vault.setGasReserveTarget(0.05 ether);
+
+        vm.prank(alice);
+        uint256 sharesFirst = vault.depositNative{value: 1 ether}(alice);
+        assertEq(sharesFirst, 0.95 ether);
+        assertEq(vault.gasReserve(), 0.05 ether);
+
+        vm.prank(alice);
+        uint256 sharesSecond = vault.depositNative{value: 1 ether}(alice);
+        assertEq(sharesSecond, 1 ether);
+        assertEq(vault.gasReserve(), 0.05 ether);
+    }
+
+    function testTopUpStrategyGasSpendsReserveAndSendsNative() external {
+        vm.prank(owner);
+        vault.setGasFeeConfig(1000, 0, gasWallet); // 10%
+        vm.prank(owner);
+        vault.setGasReserveTarget(1 ether);
+
+        vm.prank(alice);
+        vault.depositNative{value: 1 ether}(alice); // reserve += 0.1 ether
+
+        uint256 beforeNative = gasWallet.balance;
+        vm.prank(owner);
+        vault.topUpStrategyGas(0.06 ether);
+
+        assertEq(vault.gasReserve(), 0.04 ether);
+        assertEq(gasWallet.balance, beforeNative + 0.06 ether);
     }
 
     function testSettleQueuedDepositsRevertsWhenOpenPositions() external {

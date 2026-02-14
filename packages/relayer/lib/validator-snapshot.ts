@@ -5,7 +5,7 @@ import {
   type ValidatorWeight
 } from "@claw/protocol-sdk";
 import { loadRuntimeConfig } from "@/lib/config";
-import { getFundThresholds } from "@/lib/sqlite";
+import { getFundThresholds } from "@/lib/supabase";
 
 export interface ValidatorSnapshot {
   snapshotId: string;

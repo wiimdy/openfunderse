@@ -59,6 +59,12 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     // Performance fee (on realized profit), minted as shares to avoid immediate asset outflow.
     uint16 public performanceFeeBps;
     address public performanceFeeRecipient;
+    // Deposit-time gas reserve fee for strategy AA operations.
+    uint16 public gasFeeBps;
+    uint256 public gasFeeCapPerDeposit;
+    address public strategySmartAccount;
+    uint256 public gasReserve;
+    uint256 public gasReserveTarget;
     uint256 public openPositionCount;
     uint256 public pendingPerformanceFeeAssets;
     uint256 public nextDepositRequestId;
@@ -79,6 +85,8 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event AdapterAllowed(address indexed adapter, bool allowed);
     event PerformanceFeeUpdated(uint16 bps);
     event PerformanceFeeRecipientUpdated(address indexed recipient);
+    event GasFeeConfigUpdated(uint16 bps, uint256 capPerDeposit, address indexed strategySmartAccount);
+    event GasReserveTargetUpdated(uint256 targetAssets);
     event ConfigFrozen();
     event UpgradesFrozen();
 
@@ -109,6 +117,10 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event DepositQueued(uint256 indexed requestId, address indexed owner, address indexed receiver, uint256 assets);
     event DepositQueueCancelled(uint256 indexed requestId, address indexed owner);
     event DepositQueueSettled(uint256 indexed requestId, address indexed owner, address indexed receiver, uint256 assets, uint256 shares);
+    event GasFeeCollected(
+        address indexed payer, address indexed receiver, uint256 grossAssets, uint256 feeAssets, uint256 netAssets, uint256 reserveAfter
+    );
+    event GasReserveToppedUp(address indexed strategySmartAccount, uint256 assetSpent, uint256 reserveAfter);
     event VaultBalanceUpdated(address indexed token, uint256 tokenBalance, uint256 assetBalance, uint256 shareSupply);
 
     error NotOwner();
@@ -171,6 +183,7 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         name = name_;
         symbol = symbol_;
         performanceFeeRecipient = owner_;
+        strategySmartAccount = owner_;
         nextDepositRequestId = 1;
         locked = 1;
 
@@ -179,6 +192,8 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         emit GuardianUpdated(owner_);
         emit TokenAllowed(asset_, true);
         emit PerformanceFeeRecipientUpdated(owner_);
+        emit GasFeeConfigUpdated(0, 0, owner_);
+        emit GasReserveTargetUpdated(0);
     }
 
     receive() external payable {
@@ -226,6 +241,44 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         emit PerformanceFeeRecipientUpdated(recipient);
     }
 
+    function setGasFeeConfig(uint16 bps, uint256 capPerDeposit, address wallet) external onlyOwner whenConfigMutable {
+        if (bps > BPS_DENOMINATOR) revert InvalidFeeBps();
+        if (bps > 0 && wallet == address(0)) revert InvalidAddress();
+        gasFeeBps = bps;
+        gasFeeCapPerDeposit = capPerDeposit;
+        strategySmartAccount = wallet;
+        emit GasFeeConfigUpdated(bps, capPerDeposit, wallet);
+    }
+
+    function setGasReserveTarget(uint256 targetAssets) external onlyOwner whenConfigMutable {
+        gasReserveTarget = targetAssets;
+        emit GasReserveTargetUpdated(targetAssets);
+    }
+
+    function topUpStrategyGas(uint256 amountAssets) external onlyOwnerOrGuardian nonReentrant {
+        address recipient = strategySmartAccount;
+        if (recipient == address(0)) revert InvalidAddress();
+
+        uint256 reserve = gasReserve;
+        if (reserve == 0) revert InvalidAmount();
+
+        uint256 spend = amountAssets;
+        if (spend == 0 || spend > reserve) {
+            spend = reserve;
+        }
+
+        gasReserve = reserve - spend;
+
+        (bool ok,) = asset.call(abi.encodeWithSignature("withdraw(uint256)", spend));
+        if (!ok) revert NativeOperationUnsupported();
+
+        (bool sent,) = recipient.call{value: spend}("");
+        if (!sent) revert TransferFailed();
+
+        emit GasReserveToppedUp(recipient, spend, gasReserve);
+        emit VaultBalanceUpdated(asset, IERC20Minimal(asset).balanceOf(address(this)), totalAssets(), totalSupply);
+    }
+
     function freezeConfig() external onlyOwner {
         if (configFrozen) revert ConfigIsFrozen();
         configFrozen = true;
@@ -239,7 +292,10 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function totalAssets() public view returns (uint256) {
-        return IERC20Minimal(asset).balanceOf(address(this));
+        uint256 gross = IERC20Minimal(asset).balanceOf(address(this));
+        uint256 reserve = gasReserve;
+        if (reserve >= gross) return 0;
+        return gross - reserve;
     }
 
     function convertToShares(uint256 assets) public view returns (uint256) {
@@ -402,19 +458,21 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
                 continue;
             }
 
-            uint256 shares = _previewDepositGiven(d.assets, totalSupply, totalAssets());
-            if (shares == 0) shares = d.assets;
+            (uint256 feeAssets, uint256 netAssets) = _depositFeeAndNet(d.assets);
+            uint256 shares = _previewDepositGiven(netAssets, totalSupply, totalAssets());
+            if (shares == 0) shares = netAssets;
 
             if (!IERC20Minimal(asset).transferFrom(d.owner, address(this), d.assets)) revert TransferFailed();
+            _accrueGasReserve(d.owner, d.receiver, d.assets, feeAssets, netAssets);
 
             _mintShares(d.receiver, shares);
-            _increasePrincipal(d.receiver, d.assets);
+            _increasePrincipal(d.receiver, netAssets);
 
             d.status = DEPOSIT_REQUEST_SETTLED;
             settledCount += 1;
 
-            emit Deposit(d.owner, d.receiver, d.assets, shares);
-            emit DepositQueueSettled(requestId, d.owner, d.receiver, d.assets, shares);
+            emit Deposit(d.owner, d.receiver, netAssets, shares);
+            emit DepositQueueSettled(requestId, d.owner, d.receiver, netAssets, shares);
             emit VaultBalanceUpdated(asset, IERC20Minimal(asset).balanceOf(address(this)), totalAssets(), totalSupply);
         }
     }
@@ -511,7 +569,14 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         if (tokenIn != asset && tokenOut != asset) revert UnsupportedTradePath();
 
         uint256 tokenInBalance = IERC20Minimal(tokenIn).balanceOf(address(this));
-        if (tokenInBalance < amountIn) revert InsufficientTokenBalance();
+        if (tokenIn == asset) {
+            uint256 reserve = gasReserve;
+            if (tokenInBalance <= reserve || tokenInBalance - reserve < amountIn) {
+                revert InsufficientTokenBalance();
+            }
+        } else if (tokenInBalance < amountIn) {
+            revert InsufficientTokenBalance();
+        }
 
         uint256 beforeOut = IERC20Minimal(tokenOut).balanceOf(address(this));
 
@@ -662,38 +727,77 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
 
     function _depositAsset(uint256 assets, address receiver, address caller) internal returns (uint256 shares) {
         if (assets == 0) revert InvalidAmount();
+        (uint256 feeAssets, uint256 netAssets) = _depositFeeAndNet(assets);
 
         uint256 supply = totalSupply;
         uint256 managedAssets = totalAssets();
-        shares = _previewDepositGiven(assets, supply, managedAssets);
-        if (shares == 0) shares = assets;
+        shares = _previewDepositGiven(netAssets, supply, managedAssets);
+        if (shares == 0) shares = netAssets;
 
         if (!IERC20Minimal(asset).transferFrom(caller, address(this), assets)) revert TransferFailed();
+        _accrueGasReserve(caller, receiver, assets, feeAssets, netAssets);
 
         _mintShares(receiver, shares);
-        _increasePrincipal(receiver, assets);
+        _increasePrincipal(receiver, netAssets);
 
-        emit Deposit(caller, receiver, assets, shares);
+        emit Deposit(caller, receiver, netAssets, shares);
         emit VaultBalanceUpdated(asset, IERC20Minimal(asset).balanceOf(address(this)), totalAssets(), totalSupply);
     }
 
     function _depositNative(uint256 assets, address receiver, address caller) internal returns (uint256 shares) {
         if (assets == 0) revert InvalidAmount();
+        (uint256 feeAssets, uint256 netAssets) = _depositFeeAndNet(assets);
 
         uint256 supply = totalSupply;
         uint256 managedAssets = totalAssets();
-        shares = _previewDepositGiven(assets, supply, managedAssets);
-        if (shares == 0) shares = assets;
+        shares = _previewDepositGiven(netAssets, supply, managedAssets);
+        if (shares == 0) shares = netAssets;
 
         (bool ok,) = asset.call{value: assets}(abi.encodeWithSignature("deposit()"));
         if (!ok) revert NativeOperationUnsupported();
+        _accrueGasReserve(caller, receiver, assets, feeAssets, netAssets);
 
         _mintShares(receiver, shares);
-        _increasePrincipal(receiver, assets);
+        _increasePrincipal(receiver, netAssets);
 
-        emit Deposit(caller, receiver, assets, shares);
+        emit Deposit(caller, receiver, netAssets, shares);
         emit NativeDeposit(caller, receiver, assets, shares);
         emit VaultBalanceUpdated(asset, IERC20Minimal(asset).balanceOf(address(this)), totalAssets(), totalSupply);
+    }
+
+    function _depositFeeAndNet(uint256 grossAssets) internal view returns (uint256 feeAssets, uint256 netAssets) {
+        netAssets = grossAssets;
+        if (gasFeeBps == 0 || strategySmartAccount == address(0)) {
+            return (0, netAssets);
+        }
+
+        uint256 target = gasReserveTarget;
+        uint256 reserve = gasReserve;
+        if (target == 0 || reserve >= target) {
+            return (0, netAssets);
+        }
+
+        feeAssets = (grossAssets * gasFeeBps) / BPS_DENOMINATOR;
+        uint256 cap = gasFeeCapPerDeposit;
+        if (cap > 0 && feeAssets > cap) {
+            feeAssets = cap;
+        }
+        uint256 deficit = target - reserve;
+        if (feeAssets > deficit) {
+            feeAssets = deficit;
+        }
+
+        if (feeAssets == 0) return (0, netAssets);
+        if (feeAssets >= grossAssets) revert InvalidAmount();
+        netAssets = grossAssets - feeAssets;
+    }
+
+    function _accrueGasReserve(address payer, address receiver, uint256 grossAssets, uint256 feeAssets, uint256 netAssets)
+        internal
+    {
+        if (feeAssets == 0) return;
+        gasReserve += feeAssets;
+        emit GasFeeCollected(payer, receiver, grossAssets, feeAssets, netAssets, gasReserve);
     }
 
     function _previewDepositGiven(uint256 assets, uint256 supply, uint256 managedAssets) internal pure returns (uint256) {
@@ -719,5 +823,5 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         if (upgradesFrozen) revert UpgradesAreFrozen();
     }
 
-    uint256[50] private __gap;
+    uint256[45] private __gap;
 }

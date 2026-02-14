@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import {
   listExecutionJobs,
   type ExecutionJobStatus
-} from "@/lib/sqlite";
+} from "@/lib/supabase";
 
 const ALLOWED: ReadonlySet<string> = new Set([
   "READY",
+  "READY_FOR_ONCHAIN",
   "RUNNING",
   "EXECUTED",
   "FAILED_RETRYABLE",

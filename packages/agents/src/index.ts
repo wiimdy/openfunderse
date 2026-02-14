@@ -1,17 +1,83 @@
-import { runRedditMvpCli } from "./reddit-mvp.js";
+import { runRedditMvpCli } from './reddit-mvp.js';
+import { runParticipantCli } from './participant-cli.js';
+import { runStrategyCli } from './strategy-cli.js';
 
-export { mineClaim, verifyClaim } from "./skills/participant/index.js";
-export type { MineClaimInput, MineClaimOutput, MineClaimObservation, VerifyClaimInput, VerifyClaimOutput } from "./skills/participant/index.js";
+export { createRelayerClient, RelayerClient } from './lib/relayer-client.js';
+export type {
+  ClaimAttestationInput,
+  ClaimQuery,
+  ClaimTemplateInput,
+  IntentAttestationInput,
+  IntentOnchainBundleItem,
+  IntentOnchainBundleResponse,
+  ReadyExecutionPayloadItem,
+  RelayerProposeIntentInput,
+  RelayerClientOptions,
+  RelayerHttpErrorShape,
+  SseEvent,
+  SseHandlers,
+  SseSubscription
+} from './lib/relayer-client.js';
 
-export { proposeIntent } from "./skills/strategy/index.js";
-export type { ProposeIntentInput, ProposeIntentOutput, ProposeDecision, HoldDecision, RiskChecks } from "./skills/strategy/index.js";
+export { createBotSigner, BotSigner } from './lib/signer.js';
+export type {
+  BotSignerOptions,
+  SignedClaimAttestation,
+  SignedIntentAttestation
+} from './lib/signer.js';
 
-console.log("[agents] boot");
+export { StrategyAaClient } from './lib/aa-client.js';
+export type {
+  ExecuteViaAaInput,
+  StrategyAaClientConfig,
+  UserOperationResult
+} from './lib/aa-client.js';
+
+export {
+  attestClaim,
+  mineClaim,
+  submitMinedClaim,
+  verifyClaim
+} from './skills/participant/index.js';
+export type {
+  AttestClaimInput,
+  AttestClaimOutput,
+  MineClaimInput,
+  MineClaimOutput,
+  MineClaimObservation,
+  SubmitMinedClaimInput,
+  SubmitMinedClaimOutput,
+  VerifyClaimInput,
+  VerifyClaimOutput
+} from './skills/participant/index.js';
+
+export { proposeIntent } from './skills/strategy/index.js';
+export type {
+  ProposeIntentInput,
+  ProposeIntentOutput,
+  ProposeDecision,
+  HoldDecision,
+  RiskChecks
+} from './skills/strategy/index.js';
+
+console.log('[agents] boot');
 console.log(`[agents] strategy key set=${Boolean(process.env.STRATEGY_PRIVATE_KEY)}`);
 console.log(`[agents] verifier key set=${Boolean(process.env.VERIFIER_PRIVATE_KEY)}`);
 console.log(`[agents] crawler key set=${Boolean(process.env.CRAWLER_PRIVATE_KEY)}`);
 
-runRedditMvpCli(process.argv.slice(2)).catch((error: unknown) => {
+const main = async (): Promise<void> => {
+  const argv = process.argv.slice(2);
+  const handledByStrategy = await runStrategyCli(argv);
+  if (handledByStrategy) {
+    return;
+  }
+  const handledByParticipant = await runParticipantCli(argv);
+  if (!handledByParticipant) {
+    await runRedditMvpCli(argv);
+  }
+};
+
+main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`[agents] error: ${message}`);
   process.exitCode = 1;

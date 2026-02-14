@@ -1,15 +1,7 @@
 # skills scaffold
 
-This folder is a scaffold for MoltBot skills that will be distributed via:
+Skill pack source of truth moved to:
 
-`npx @wiimdy/openfunderse@latest install openfunderse`
+`/Users/wiimdy/agent/packages/openfunderse/packs/openfunderse/skills`
 
-Planned bundles:
-- `strategy`
-- `participant`
-- `relayer`
-
-Each bundle should include:
-- `SKILL.md` with runtime instructions and tool contracts
-- referenced prompt files in `../prompts/*`
-- test fixtures for installation validation
+This directory is kept only as a local pointer so `packages/agents` can focus on runtime code.

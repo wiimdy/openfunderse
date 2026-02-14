@@ -2,6 +2,10 @@
 
 Claw의 공통 프로토콜 SDK (최소 범위):
 
+## Role
+- Monorepo canonical utility layer shared by contracts tests, relayer, and agents.
+- Owns protocol hashing/typed-data rules so all components use identical verification logic.
+
 - canonical hashing (`claimHash`, `intentHash`, `snapshotHash`)
 - EIP-712 attestation typed data + verify/recover
 - weighted threshold 유틸

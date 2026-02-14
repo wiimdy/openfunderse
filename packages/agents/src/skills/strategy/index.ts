@@ -1,5 +1,7 @@
+import { createPublicClient, getAddress, http, isAddress, parseAbi } from 'viem';
+
 export interface ProposeIntentInput {
-  taskType: "propose_intent";
+  taskType: 'propose_intent';
   fundId: string;
   roomId: string;
   epochId: number;
@@ -13,6 +15,7 @@ export interface ProposeIntentInput {
     nadfunCurveState: Record<string, unknown>;
     liquidity: Record<string, unknown>;
     volatility: Record<string, unknown>;
+    positions?: StrategyTokenPositionInput[];
   };
   riskPolicy: {
     maxNotional: string;
@@ -20,6 +23,13 @@ export interface ProposeIntentInput {
     allowlistTokens: string[];
     allowlistVenues: string[];
   };
+}
+
+export interface StrategyTokenPositionInput {
+  token: string;
+  quantity: string | number | bigint;
+  costBasisAsset?: string | number | bigint;
+  openedAt?: string | number | bigint;
 }
 
 export interface RiskChecks {
@@ -30,18 +40,18 @@ export interface RiskChecks {
 }
 
 export interface ProposeDecision {
-  status: "OK";
-  taskType: "propose_intent";
+  status: 'OK';
+  taskType: 'propose_intent';
   fundId: string;
   epochId: number;
-  decision: "PROPOSE";
+  decision: 'PROPOSE';
   intent: {
     intentVersion: string;
     fundId: string;
     roomId: string;
     epochId: number;
     vault: string;
-    action: "BUY" | "SELL";
+    action: 'BUY' | 'SELL';
     tokenIn: string;
     tokenOut: string;
     amountIn: string;
@@ -57,12 +67,12 @@ export interface ProposeDecision {
 }
 
 export interface HoldDecision {
-  status: "OK";
-  taskType: "propose_intent";
+  status: 'OK';
+  taskType: 'propose_intent';
   fundId: string;
   roomId: string;
   epochId: number;
-  decision: "HOLD";
+  decision: 'HOLD';
   reason: string;
   confidence: number;
   assumptions: string[];
@@ -70,96 +80,807 @@ export interface HoldDecision {
 
 export type ProposeIntentOutput = ProposeDecision | HoldDecision;
 
-function nowSeconds(): number {
-  return Math.floor(Date.now() / 1000);
+interface NadfunNetworkConfig {
+  chainId: number;
+  bondingRouter: `0x${string}`;
+  dexRouter: `0x${string}`;
+  lens: `0x${string}`;
+  wmon: `0x${string}`;
 }
+
+interface BuyCandidate {
+  token: `0x${string}`;
+  router: `0x${string}`;
+  amountIn: bigint;
+  quoteAmountOut: bigint;
+  minAmountOut: bigint;
+  impactBps: number;
+  score: number;
+}
+
+interface PositionState {
+  quantity: bigint;
+  costBasisAsset: bigint | null;
+  openedAt: number | null;
+}
+
+type SellTrigger = 'TAKE_PROFIT' | 'STOP_LOSS' | 'TIME_EXIT';
+
+interface SellCandidate {
+  token: `0x${string}`;
+  router: `0x${string}`;
+  amountIn: bigint;
+  quoteAmountOut: bigint;
+  minAmountOut: bigint;
+  pnlBps: number | null;
+  ageSeconds: number | null;
+  trigger: SellTrigger;
+  urgency: number;
+}
+
+const NADFUN_NETWORKS: Record<number, NadfunNetworkConfig> = {
+  10143: {
+    chainId: 10143,
+    bondingRouter: '0x865054F0F6A288adaAc30261731361EA7E908003',
+    dexRouter: '0x5D4a4f430cA3B1b2dB86B9cFE48a5316800F5fb2',
+    lens: '0xB056d79CA5257589692699a46623F901a3BB76f1',
+    wmon: '0x5a4E0bFDeF88C9032CB4d24338C5EB3d3870BfDd'
+  },
+  143: {
+    chainId: 143,
+    bondingRouter: '0x6F6B8F1a20703309951a5127c45B49b1CD981A22',
+    dexRouter: '0x0B79d71AE99528D1dB24A4148b5f4F865cc2b137',
+    lens: '0x7e78A8DE94f21804F7a17F4E8BF9EC2c872187ea',
+    wmon: '0x3bd359C1119dA7Da1D913D1C4D2B7c461115433A'
+  }
+};
+
+const LENS_ABI = parseAbi([
+  'function getAmountOut(address token, uint256 amountIn, bool isBuy) view returns (address router, uint256 amountOut)'
+]);
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+
+const DEFAULT_MIN_DEADLINE_SECONDS = 600;
+const DEFAULT_BASE_DEADLINE_SECONDS = 900;
+const DEFAULT_MAX_DEADLINE_SECONDS = 3600;
+const DEFAULT_PER_CLAIM_DEADLINE_SECONDS = 20;
+const DEFAULT_MAX_IMPACT_BPS = 60;
+const DEFAULT_SELL_TAKE_PROFIT_BPS = 2000;
+const DEFAULT_SELL_STOP_LOSS_BPS = 600;
+const DEFAULT_SELL_MAX_HOLD_SECONDS = 5400;
+
+const nowSeconds = (): number => {
+  return Math.floor(Date.now() / 1000);
+};
+
+const clampInt = (value: number, min: number, max: number): number => {
+  return Math.max(min, Math.min(max, value));
+};
+
+const envPositiveInt = (name: string, fallback: number): number => {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+
+  return Math.floor(parsed);
+};
+
+const computeDeadlineTtlSeconds = (claimCount: number): number => {
+  const minTtl = envPositiveInt(
+    'STRATEGY_DEADLINE_MIN_SECONDS',
+    DEFAULT_MIN_DEADLINE_SECONDS
+  );
+  const baseTtl = envPositiveInt(
+    'STRATEGY_DEADLINE_BASE_SECONDS',
+    DEFAULT_BASE_DEADLINE_SECONDS
+  );
+  const maxTtl = envPositiveInt(
+    'STRATEGY_DEADLINE_MAX_SECONDS',
+    DEFAULT_MAX_DEADLINE_SECONDS
+  );
+  const perClaim = envPositiveInt(
+    'STRATEGY_DEADLINE_PER_CLAIM_SECONDS',
+    DEFAULT_PER_CLAIM_DEADLINE_SECONDS
+  );
+
+  const rawTtl = baseTtl + Math.max(claimCount, 0) * perClaim;
+  return clampInt(rawTtl, minTtl, Math.max(minTtl, maxTtl));
+};
+
+const holdDecision = (
+  input: ProposeIntentInput,
+  reason: string,
+  assumptions: string[] = []
+): HoldDecision => {
+  return {
+    status: 'OK',
+    taskType: 'propose_intent',
+    fundId: input.fundId,
+    roomId: input.roomId,
+    epochId: input.epochId,
+    decision: 'HOLD',
+    reason,
+    confidence: 0.95,
+    assumptions
+  };
+};
+
+const asObject = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+};
+
+const normalizedAddressSet = (values: string[]): Set<string> => {
+  const set = new Set<string>();
+  for (const value of values) {
+    if (isAddress(value)) {
+      set.add(getAddress(value).toLowerCase());
+    }
+  }
+  return set;
+};
+
+const normalizedAddressList = (values: string[]): `0x${string}`[] => {
+  const result: `0x${string}`[] = [];
+  const seen = new Set<string>();
+
+  for (const value of values) {
+    if (!isAddress(value)) continue;
+    const normalized = getAddress(value) as `0x${string}`;
+    const lowered = normalized.toLowerCase();
+    if (seen.has(lowered)) continue;
+    seen.add(lowered);
+    result.push(normalized);
+  }
+
+  return result;
+};
+
+const parsePositiveBigInt = (value: string): bigint | null => {
+  try {
+    const parsed = BigInt(value);
+    if (parsed <= 0n) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+};
+
+const parseBigIntValue = (value: unknown): bigint | null => {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) return null;
+    return BigInt(value);
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    try {
+      return BigInt(value.trim());
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
+const parseTimestamp = (value: unknown): number | null => {
+  const normalize = (raw: number): number => {
+    // Heuristic: timestamps >= 1e12 are treated as milliseconds.
+    if (raw >= 1_000_000_000_000) {
+      return Math.floor(raw / 1000);
+    }
+    return Math.floor(raw);
+  };
+
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value <= 0) return null;
+    const normalized = normalize(value);
+    return normalized > 0 ? normalized : null;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value.trim());
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    const normalized = normalize(parsed);
+    return normalized > 0 ? normalized : null;
+  }
+  if (typeof value === 'bigint') {
+    if (value <= 0n) return null;
+    const asNumber = Number(value);
+    if (!Number.isFinite(asNumber) || asNumber <= 0) return null;
+    const normalized = normalize(asNumber);
+    return normalized > 0 ? normalized : null;
+  }
+  return null;
+};
+
+const usesNadfunVenue = (venues: string[]): boolean => {
+  if (venues.length === 0) return true;
+  return venues.some((venue) => venue.trim().toLowerCase() === 'nadfun');
+};
+
+const isNonNull = <T>(value: T | null): value is T => value !== null;
+
+const readBigIntField = (
+  source: Record<string, unknown>,
+  keys: string[],
+  positiveOnly: boolean
+): bigint | null => {
+  for (const key of keys) {
+    const raw = source[key];
+    const parsed = parseBigIntValue(raw);
+    if (parsed === null) continue;
+    if (positiveOnly && parsed <= 0n) continue;
+    if (!positiveOnly && parsed < 0n) continue;
+    return parsed;
+  }
+  return null;
+};
+
+const readTimestampField = (
+  source: Record<string, unknown>,
+  keys: string[]
+): number | null => {
+  for (const key of keys) {
+    const parsed = parseTimestamp(source[key]);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+};
+
+const parsePositionNode = (value: unknown): PositionState | null => {
+  const obj = asObject(value);
+  if (!obj) return null;
+
+  const quantity = readBigIntField(
+    obj,
+    ['quantity', 'balance', 'amount', 'tokenAmount', 'tokenBalance'],
+    true
+  );
+  if (!quantity) return null;
+
+  const costBasis = readBigIntField(
+    obj,
+    ['costBasisAsset', 'costBasis', 'cost', 'entryNotional', 'notional'],
+    false
+  );
+  const openedAt = readTimestampField(obj, [
+    'openedAt',
+    'enteredAt',
+    'entryTimestamp',
+    'lastBuyAt',
+    'createdAt'
+  ]);
+
+  return {
+    quantity,
+    costBasisAsset: costBasis && costBasis > 0n ? costBasis : null,
+    openedAt
+  };
+};
+
+const tokenFromNode = (value: unknown): string | null => {
+  const obj = asObject(value);
+  if (!obj) return null;
+
+  const rawToken =
+    obj.token ?? obj.tokenAddress ?? obj.asset ?? obj.assetAddress ?? obj.address;
+  if (typeof rawToken !== 'string' || !isAddress(rawToken)) return null;
+  return getAddress(rawToken).toLowerCase();
+};
+
+const matchPositionInCollection = (
+  collection: unknown,
+  tokenLower: string
+): PositionState | null => {
+  const obj = asObject(collection);
+  if (obj) {
+    for (const [key, value] of Object.entries(obj)) {
+      if (isAddress(key) && getAddress(key).toLowerCase() === tokenLower) {
+        const parsed = parsePositionNode(value);
+        if (parsed) return parsed;
+      }
+
+      const nodeToken = tokenFromNode(value);
+      if (nodeToken === tokenLower) {
+        const direct = parsePositionNode(value);
+        if (direct) return direct;
+
+        const nestedObj = asObject(value);
+        if (nestedObj) {
+          const nested =
+            parsePositionNode(nestedObj.position) ??
+            parsePositionNode(nestedObj.state) ??
+            parsePositionNode(nestedObj.value);
+          if (nested) return nested;
+        }
+      }
+    }
+  }
+
+  if (!Array.isArray(collection)) return null;
+
+  for (const item of collection) {
+    const nodeToken = tokenFromNode(item);
+    if (nodeToken !== tokenLower) continue;
+
+    const direct = parsePositionNode(item);
+    if (direct) return direct;
+
+    const itemObj = asObject(item);
+    if (!itemObj) continue;
+
+    const nested =
+      parsePositionNode(itemObj.position) ??
+      parsePositionNode(itemObj.state) ??
+      parsePositionNode(itemObj.value);
+    if (nested) return nested;
+  }
+
+  return null;
+};
+
+const extractTokenPosition = (
+  marketState: ProposeIntentInput['marketState'],
+  token: `0x${string}`
+): PositionState | null => {
+  const tokenLower = token.toLowerCase();
+
+  if (Array.isArray(marketState.positions)) {
+    for (const raw of marketState.positions) {
+      if (!raw || typeof raw !== 'object') continue;
+      if (!isAddress(raw.token) || getAddress(raw.token).toLowerCase() !== tokenLower) continue;
+
+      const quantity = parseBigIntValue(raw.quantity);
+      if (!quantity || quantity <= 0n) continue;
+
+      const costBasisRaw =
+        raw.costBasisAsset === undefined ? null : parseBigIntValue(raw.costBasisAsset);
+      const openedAt = parseTimestamp(raw.openedAt);
+
+      return {
+        quantity,
+        costBasisAsset: costBasisRaw && costBasisRaw > 0n ? costBasisRaw : null,
+        openedAt
+      };
+    }
+  }
+
+  const sources: unknown[] = [
+    marketState.nadfunCurveState,
+    marketState.liquidity,
+    marketState.volatility
+  ];
+
+  for (const source of sources) {
+    const direct = matchPositionInCollection(source, tokenLower);
+    if (direct) return direct;
+
+    const sourceObj = asObject(source);
+    if (!sourceObj) continue;
+
+    const nestedKeys = [
+      'positions',
+      'tokenPositions',
+      'holdings',
+      'inventory',
+      'balances',
+      'openPositions'
+    ];
+
+    for (const key of nestedKeys) {
+      const matched = matchPositionInCollection(sourceObj[key], tokenLower);
+      if (matched) return matched;
+    }
+  }
+
+  return null;
+};
+
+const computeImpactBps = (quoteA: bigint, quote2A: bigint): number => {
+  if (quoteA <= 0n) return 10_000;
+  const linear = quoteA * 2n;
+  if (quote2A >= linear) return 0;
+
+  const impact = ((linear - quote2A) * 10_000n) / linear;
+  return Number(impact > 10_000n ? 10_000n : impact);
+};
+
+const scaledAmountByImpact = (
+  amountIn: bigint,
+  impactBps: number,
+  maxImpactBps: number
+): bigint => {
+  if (impactBps <= maxImpactBps || impactBps <= 0) return amountIn;
+
+  const scaled =
+    (amountIn * BigInt(maxImpactBps)) / BigInt(Math.max(impactBps, 1));
+  if (scaled <= 0n) return 1n;
+  return scaled;
+};
+
+const applySlippage = (amountOut: bigint, maxSlippageBps: number): bigint => {
+  return (amountOut * BigInt(10_000 - maxSlippageBps)) / 10_000n;
+};
+
+const quoteFromLens = async (input: {
+  client: ReturnType<typeof createPublicClient>;
+  lensAddress: `0x${string}`;
+  token: `0x${string}`;
+  amountIn: bigint;
+  isBuy: boolean;
+}): Promise<{ router: `0x${string}`; amountOut: bigint } | null> => {
+  try {
+    const quote = await input.client.readContract({
+      address: input.lensAddress,
+      abi: LENS_ABI,
+      functionName: 'getAmountOut',
+      args: [input.token, input.amountIn, input.isBuy]
+    });
+
+    return {
+      router: getAddress(quote[0]) as `0x${string}`,
+      amountOut: quote[1]
+    };
+  } catch {
+    return null;
+  }
+};
+
+const evaluateBuyCandidate = async (input: {
+  client: ReturnType<typeof createPublicClient>;
+  lensAddress: `0x${string}`;
+  token: `0x${string}`;
+  maxAmountIn: bigint;
+  maxImpactBps: number;
+  maxSlippageBps: number;
+  allowedRouters: Set<string>;
+}): Promise<BuyCandidate | null> => {
+  const first = await quoteFromLens({
+    client: input.client,
+    lensAddress: input.lensAddress,
+    token: input.token,
+    amountIn: input.maxAmountIn,
+    isBuy: true
+  });
+  if (!first || first.amountOut <= 0n) return null;
+
+  const doubled = await quoteFromLens({
+    client: input.client,
+    lensAddress: input.lensAddress,
+    token: input.token,
+    amountIn: input.maxAmountIn * 2n,
+    isBuy: true
+  });
+  if (!doubled || doubled.amountOut <= 0n) return null;
+
+  const impactBps = computeImpactBps(first.amountOut, doubled.amountOut);
+  const adjustedAmountIn = scaledAmountByImpact(
+    input.maxAmountIn,
+    impactBps,
+    input.maxImpactBps
+  );
+
+  let finalQuote = first;
+  if (adjustedAmountIn !== input.maxAmountIn) {
+    const requote = await quoteFromLens({
+      client: input.client,
+      lensAddress: input.lensAddress,
+      token: input.token,
+      amountIn: adjustedAmountIn,
+      isBuy: true
+    });
+    if (!requote || requote.amountOut <= 0n) return null;
+    finalQuote = requote;
+  }
+
+  if (!input.allowedRouters.has(finalQuote.router.toLowerCase())) {
+    return null;
+  }
+
+  const minAmountOut = applySlippage(finalQuote.amountOut, input.maxSlippageBps);
+  if (minAmountOut <= 0n) return null;
+
+  return {
+    token: input.token,
+    router: finalQuote.router,
+    amountIn: adjustedAmountIn,
+    quoteAmountOut: finalQuote.amountOut,
+    minAmountOut,
+    impactBps,
+    score: 10_000 - impactBps
+  };
+};
+
+const evaluateSellCandidate = async (input: {
+  client: ReturnType<typeof createPublicClient>;
+  lensAddress: `0x${string}`;
+  token: `0x${string}`;
+  position: PositionState;
+  maxAmountIn: bigint;
+  maxSlippageBps: number;
+  takeProfitBps: number;
+  stopLossBps: number;
+  maxHoldSeconds: number;
+  allowedRouters: Set<string>;
+  nowTs: number;
+}): Promise<SellCandidate | null> => {
+  const amountIn =
+    input.position.quantity <= input.maxAmountIn
+      ? input.position.quantity
+      : input.maxAmountIn;
+  if (amountIn <= 0n) return null;
+
+  const quote = await quoteFromLens({
+    client: input.client,
+    lensAddress: input.lensAddress,
+    token: input.token,
+    amountIn,
+    isBuy: false
+  });
+  if (!quote || quote.amountOut <= 0n) return null;
+  if (!input.allowedRouters.has(quote.router.toLowerCase())) return null;
+
+  const minAmountOut = applySlippage(quote.amountOut, input.maxSlippageBps);
+  if (minAmountOut <= 0n) return null;
+
+  let pnlBps: number | null = null;
+  if (
+    input.position.costBasisAsset &&
+    input.position.costBasisAsset > 0n &&
+    input.position.quantity > 0n
+  ) {
+    const costPortion =
+      (input.position.costBasisAsset * amountIn) / input.position.quantity;
+    if (costPortion > 0n) {
+      pnlBps = Number(((quote.amountOut - costPortion) * 10_000n) / costPortion);
+    }
+  }
+
+  const ageSeconds =
+    input.position.openedAt && input.position.openedAt > 0
+      ? Math.max(0, input.nowTs - input.position.openedAt)
+      : null;
+
+  let trigger: SellTrigger | null = null;
+  let urgency = 0;
+
+  if (pnlBps !== null && pnlBps >= input.takeProfitBps) {
+    trigger = 'TAKE_PROFIT';
+    urgency = pnlBps - input.takeProfitBps;
+  } else if (pnlBps !== null && pnlBps <= -input.stopLossBps) {
+    trigger = 'STOP_LOSS';
+    urgency = Math.abs(pnlBps) - input.stopLossBps;
+  } else if (ageSeconds !== null && ageSeconds >= input.maxHoldSeconds) {
+    trigger = 'TIME_EXIT';
+    urgency = ageSeconds - input.maxHoldSeconds;
+  }
+
+  if (!trigger) return null;
+
+  return {
+    token: input.token,
+    router: quote.router,
+    amountIn,
+    quoteAmountOut: quote.amountOut,
+    minAmountOut,
+    pnlBps,
+    ageSeconds,
+    trigger,
+    urgency
+  };
+};
 
 export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeIntentOutput> {
   const { fundId, roomId, epochId, snapshot, riskPolicy } = input;
 
   if (!snapshot.finalized) {
-    return {
-      status: "OK",
-      taskType: "propose_intent",
-      fundId,
-      roomId,
-      epochId,
-      decision: "HOLD",
-      reason: "snapshot not finalized",
-      confidence: 1,
-      assumptions: [],
-    };
+    return holdDecision(input, 'snapshot not finalized');
+  }
+  if (snapshot.claimCount < 1) {
+    return holdDecision(input, 'no claims in snapshot');
   }
 
-  if (snapshot.claimCount < 1) {
-    return {
-      status: "OK",
-      taskType: "propose_intent",
-      fundId,
-      roomId,
-      epochId,
-      decision: "HOLD",
-      reason: "no claims in snapshot",
-      confidence: 1,
-      assumptions: [],
-    };
-  }
+  const maxAmountIn = parsePositiveBigInt(riskPolicy.maxNotional);
+  const candidateTokens = normalizedAddressList(riskPolicy.allowlistTokens);
+  const deadlineTtlSeconds = computeDeadlineTtlSeconds(snapshot.claimCount);
 
   const riskChecks: RiskChecks = {
-    allowlistPass: riskPolicy.allowlistTokens.length > 0,
-    notionalPass: BigInt(riskPolicy.maxNotional) > BigInt(0),
-    slippagePass: riskPolicy.maxSlippageBps > 0 && riskPolicy.maxSlippageBps <= 10000,
-    deadlinePass: true,
+    allowlistPass: candidateTokens.length > 0 && usesNadfunVenue(riskPolicy.allowlistVenues),
+    notionalPass: maxAmountIn !== null,
+    slippagePass: riskPolicy.maxSlippageBps > 0 && riskPolicy.maxSlippageBps <= 10_000,
+    deadlinePass: deadlineTtlSeconds >= 300
   };
 
-  const anyRiskFail = !riskChecks.allowlistPass || !riskChecks.notionalPass || !riskChecks.slippagePass || !riskChecks.deadlinePass;
+  if (!riskChecks.allowlistPass || !riskChecks.notionalPass || !riskChecks.slippagePass || !riskChecks.deadlinePass) {
+    return holdDecision(input, 'risk policy check failed', [
+      'allowlistTokens must include at least one valid token address',
+      'allowlistVenues must include NadFun when venues are specified',
+      'maxNotional must be a positive integer',
+      'maxSlippageBps must be between 1 and 10000',
+      'deadline TTL must be at least 300 seconds'
+    ]);
+  }
 
-  if (anyRiskFail) {
+  const network = NADFUN_NETWORKS[input.marketState.network];
+  if (!network) {
+    return holdDecision(input, `unsupported NadFun network: ${input.marketState.network}`);
+  }
+
+  const rpcUrl = process.env.RPC_URL;
+  if (!rpcUrl) {
+    return holdDecision(input, 'RPC_URL is required for NadFun quote');
+  }
+
+  const lensAddress = (process.env.NADFUN_LENS_ADDRESS && isAddress(process.env.NADFUN_LENS_ADDRESS))
+    ? getAddress(process.env.NADFUN_LENS_ADDRESS)
+    : network.lens;
+  const wmon = (process.env.NADFUN_WMON_ADDRESS && isAddress(process.env.NADFUN_WMON_ADDRESS))
+    ? getAddress(process.env.NADFUN_WMON_ADDRESS)
+    : network.wmon;
+
+  const allowedRouters = normalizedAddressSet([
+    process.env.NADFUN_BONDING_CURVE_ROUTER ?? network.bondingRouter,
+    process.env.NADFUN_DEX_ROUTER ?? network.dexRouter
+  ]);
+
+  if (allowedRouters.size === 0) {
+    return holdDecision(input, 'no allowed NadFun routers configured');
+  }
+
+  const client = createPublicClient({
+    transport: http(rpcUrl)
+  });
+
+  const nowTs = nowSeconds();
+  const deadline = nowTs + deadlineTtlSeconds;
+  const maxImpactBps = envPositiveInt('STRATEGY_MAX_IMPACT_BPS', DEFAULT_MAX_IMPACT_BPS);
+
+  const takeProfitBps = envPositiveInt(
+    'STRATEGY_SELL_TAKE_PROFIT_BPS',
+    DEFAULT_SELL_TAKE_PROFIT_BPS
+  );
+  const stopLossBps = envPositiveInt(
+    'STRATEGY_SELL_STOP_LOSS_BPS',
+    DEFAULT_SELL_STOP_LOSS_BPS
+  );
+  const maxHoldSeconds = envPositiveInt(
+    'STRATEGY_SELL_MAX_HOLD_SECONDS',
+    DEFAULT_SELL_MAX_HOLD_SECONDS
+  );
+
+  const sellCandidates = (
+    await Promise.all(
+      candidateTokens.map(async (token) => {
+        const position = extractTokenPosition(input.marketState, token);
+        if (!position || position.quantity <= 0n) return null;
+
+        return evaluateSellCandidate({
+          client,
+          lensAddress: lensAddress as `0x${string}`,
+          token,
+          position,
+          maxAmountIn: maxAmountIn as bigint,
+          maxSlippageBps: riskPolicy.maxSlippageBps,
+          takeProfitBps,
+          stopLossBps,
+          maxHoldSeconds,
+          allowedRouters,
+          nowTs
+        });
+      })
+    )
+  ).filter(isNonNull);
+
+  sellCandidates.sort((a, b) => {
+    if (a.trigger !== b.trigger) {
+      if (a.trigger === 'STOP_LOSS') return -1;
+      if (b.trigger === 'STOP_LOSS') return 1;
+      if (a.trigger === 'TIME_EXIT') return -1;
+      if (b.trigger === 'TIME_EXIT') return 1;
+    }
+
+    if (b.urgency !== a.urgency) return b.urgency - a.urgency;
+    if (b.quoteAmountOut === a.quoteAmountOut) return 0;
+    return b.quoteAmountOut > a.quoteAmountOut ? 1 : -1;
+  });
+
+  const sellPick = sellCandidates[0];
+  if (sellPick) {
     return {
-      status: "OK",
-      taskType: "propose_intent",
+      status: 'OK',
+      taskType: 'propose_intent',
       fundId,
-      roomId,
       epochId,
-      decision: "HOLD",
-      reason: "risk policy check failed",
+      decision: 'PROPOSE',
+      intent: {
+        intentVersion: 'V1',
+        fundId,
+        roomId,
+        epochId,
+        vault: process.env.VAULT_ADDRESS ?? ZERO_ADDRESS,
+        action: 'SELL',
+        tokenIn: sellPick.token,
+        tokenOut: wmon,
+        amountIn: String(sellPick.amountIn),
+        minAmountOut: String(sellPick.minAmountOut),
+        deadline,
+        maxSlippageBps: riskPolicy.maxSlippageBps,
+        snapshotHash: snapshot.snapshotHash
+      },
+      reason: `NadFun SELL trigger=${sellPick.trigger} token=${sellPick.token} router=${sellPick.router}`,
+      riskChecks,
       confidence: 0.9,
-      assumptions: ["risk checks are scaffold defaults"],
+      assumptions: [
+        'sell path prioritizes capital protection and position recycling',
+        `pnlBps=${sellPick.pnlBps ?? 'n/a'} ageSeconds=${sellPick.ageSeconds ?? 'n/a'}`,
+        'execution route must use the same router returned by NadFun lens'
+      ]
     };
   }
 
-  const tokenIn = riskPolicy.allowlistTokens[0] ?? "0x0000000000000000000000000000000000000000";
-  const tokenOut = riskPolicy.allowlistTokens[1] ?? "0x0000000000000000000000000000000000000000";
-  const deadline = nowSeconds() + 3600;
+  const buyCandidates = (
+    await Promise.all(
+      candidateTokens.map((token) =>
+        evaluateBuyCandidate({
+          client,
+          lensAddress: lensAddress as `0x${string}`,
+          token,
+          maxAmountIn: maxAmountIn as bigint,
+          maxImpactBps,
+          maxSlippageBps: riskPolicy.maxSlippageBps,
+          allowedRouters
+        })
+      )
+    )
+  ).filter(isNonNull);
+
+  if (buyCandidates.length === 0) {
+    return holdDecision(input, 'no executable NadFun BUY route from allowlist', [
+      'all candidate tokens failed quote/router/impact checks',
+      'ensure allowlist tokens are active NadFun markets'
+    ]);
+  }
+
+  buyCandidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (a.impactBps !== b.impactBps) return a.impactBps - b.impactBps;
+    if (b.quoteAmountOut === a.quoteAmountOut) return 0;
+    return b.quoteAmountOut > a.quoteAmountOut ? 1 : -1;
+  });
+
+  const buyPick = buyCandidates[0];
 
   return {
-    status: "OK",
-    taskType: "propose_intent",
+    status: 'OK',
+    taskType: 'propose_intent',
     fundId,
     epochId,
-    decision: "PROPOSE",
+    decision: 'PROPOSE',
     intent: {
-      intentVersion: "V1",
+      intentVersion: 'V1',
       fundId,
       roomId,
       epochId,
-      vault: "0x0000000000000000000000000000000000000000",
-      action: "BUY",
-      tokenIn,
-      tokenOut,
-      amountIn: riskPolicy.maxNotional,
-      minAmountOut: "0",
+      vault: process.env.VAULT_ADDRESS ?? ZERO_ADDRESS,
+      action: 'BUY',
+      tokenIn: wmon,
+      tokenOut: buyPick.token,
+      amountIn: String(buyPick.amountIn),
+      minAmountOut: String(buyPick.minAmountOut),
       deadline,
       maxSlippageBps: riskPolicy.maxSlippageBps,
-      snapshotHash: snapshot.snapshotHash,
+      snapshotHash: snapshot.snapshotHash
     },
-    reason: "scaffold proposal — actual strategy logic is delegated to LLM agent at runtime",
+    reason: `NadFun BUY token=${buyPick.token} router=${buyPick.router} impactBps=${buyPick.impactBps}`,
     riskChecks,
-    confidence: 0.5,
+    confidence: 0.9,
     assumptions: [
-      "vault address is placeholder",
-      "token selection is placeholder (first two from allowlist)",
-      "minAmountOut set to 0 — production must compute from market data",
-    ],
+      'token selection uses per-token NadFun lens quotes, not allowlist[0] shortcut',
+      'BUY size is downscaled when quote impact exceeds STRATEGY_MAX_IMPACT_BPS',
+      'execution route must use the same router returned by NadFun lens',
+      `deadlineTtlSeconds=${deadlineTtlSeconds}`
+    ]
   };
 }

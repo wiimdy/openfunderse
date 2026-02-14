@@ -32,8 +32,8 @@ if (signerKey === "0x") {
 
 const account = privateKeyToAccount(signerKey);
 const chainId = asBigInt("CHAIN_ID", "10143");
-const claimBookAddress = env("CLAIM_BOOK_ADDRESS");
 const intentBookAddress = env("INTENT_BOOK_ADDRESS");
+const claimAttestationVerifierAddress = env("CLAIM_ATTESTATION_VERIFIER_ADDRESS");
 
 const claimHash = env(
   "CLAIM_HASH",
@@ -56,7 +56,7 @@ const claimDomain = {
   name: "ClawClaimBook",
   version: "1",
   chainId,
-  verifyingContract: claimBookAddress
+  verifyingContract: claimAttestationVerifierAddress
 };
 
 const intentDomain = {
@@ -117,6 +117,7 @@ console.log(`- ${path.join(fixturesDir, "claim-attestation.json")}`);
 console.log(`- ${path.join(fixturesDir, "intent-attestation-batch.json")}`);
 console.log("\nSet these Postman environment values:");
 console.log(`verifier_address=${verifier}`);
+console.log(`claim_attestation_verifier_address=${claimAttestationVerifierAddress}`);
 console.log(`claim_hash=${claimHash}`);
 console.log(`intent_hash=${intentHash}`);
 console.log(`epoch_id=${epochId.toString()}`);

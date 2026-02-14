@@ -1,7 +1,9 @@
 # prompts scaffold
 
-Prompt templates paired with `packages/agents/skills/*` bundles.
+Prompt template source of truth moved to:
+
+`/Users/wiimdy/agent/packages/openfunderse/packs/openfunderse/prompts`
 
 Status:
-- scaffold only (TODO)
-- final text should be aligned with docs/prompts and the notebook playbook
+- local pointer only
+- final text should stay aligned with docs/prompts and the notebook playbook

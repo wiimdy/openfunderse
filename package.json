@@ -10,8 +10,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -ws --if-present",
-    "dev": "npm run dev -ws --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present",
     "demo-local": "bash ./scripts/demo-local.sh"
   },
   "devDependencies": {

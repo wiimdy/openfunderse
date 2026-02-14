@@ -2,6 +2,10 @@
 
 Install OpenFunderse skill packs into Codex.
 
+## Role
+- Monorepo distribution package for Codex skills/prompts/manifests.
+- Owns install UX (`npx @wiimdy/openfunderse@latest install openfunderse`) and pack copy logic.
+
 ## Usage
 
 ```bash

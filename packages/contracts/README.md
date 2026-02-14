@@ -1,5 +1,9 @@
 # Contracts (Foundry)
 
+## Role
+- Monorepo onchain source of truth.
+- Owns fund lifecycle contracts (`ClawFundFactory`, `IntentBook`, `ClawCore`, `ClawVault4626`) and NadFun execution adapter.
+
 MVP contracts:
 - `ClawFundFactory`
 - `IntentBook`

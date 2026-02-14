@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireBotAuth } from "@/lib/bot-auth";
+import { isSameAddress, requireFundBotRole } from "@/lib/fund-bot-authz";
 import {
   buildCanonicalClaimRecord,
   type ClaimPayload
@@ -9,7 +10,7 @@ import {
   insertClaim,
   listClaimsByFund,
   upsertSubjectState
-} from "@/lib/sqlite";
+} from "@/lib/supabase";
 
 export async function POST(
   request: Request,
@@ -29,6 +30,15 @@ export async function POST(
     );
   }
 
+  const membership = await requireFundBotRole({
+    fundId,
+    botId: botAuth.botId,
+    allowedRoles: ["crawler"]
+  });
+  if (!membership.ok) {
+    return membership.response;
+  }
+
   let body: Record<string, unknown>;
   try {
     body = (await request.json()) as Record<string, unknown>;
@@ -38,12 +48,32 @@ export async function POST(
 
   const claimPayload = (body.claimPayload ?? body.payload) as ClaimPayload | undefined;
   const epochIdRaw = body.epochId ?? body.epoch_id;
-  const epochId = BigInt(String(epochIdRaw ?? "0"));
+  let epochId: bigint;
+  try {
+    epochId = BigInt(String(epochIdRaw ?? "0"));
+  } catch {
+    return NextResponse.json(
+      { error: "BAD_REQUEST", message: "epochId must be an integer" },
+      { status: 400 }
+    );
+  }
 
   if (!claimPayload) {
     return NextResponse.json(
       { error: "BAD_REQUEST", message: "claimPayload is required" },
       { status: 400 }
+    );
+  }
+  const claimedCrawler = String(claimPayload.crawler ?? "");
+  if (!isSameAddress(claimedCrawler, membership.membership.botAddress)) {
+    return NextResponse.json(
+      {
+        error: "FORBIDDEN",
+        message: "claimPayload.crawler must match registered crawler bot address",
+        expectedCrawler: membership.membership.botAddress,
+        receivedCrawler: claimedCrawler
+      },
+      { status: 403 }
     );
   }
 

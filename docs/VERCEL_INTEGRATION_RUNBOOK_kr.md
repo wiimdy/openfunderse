@@ -43,7 +43,9 @@ Vercel 프로젝트 생성 시 Root Directory를 아래로 지정:
 권장:
 - `RPC_URL`
 - `CHAIN_ID`
-- `CLAIM_BOOK_ADDRESS`
+- `CLAIM_FINALIZATION_MODE` (`OFFCHAIN` or `ONCHAIN`)
+- `CLAIM_ATTESTATION_VERIFIER_ADDRESS`
+- `CLAIM_BOOK_ADDRESS` (`CLAIM_FINALIZATION_MODE=ONCHAIN`일 때만)
 - `INTENT_BOOK_ADDRESS`
 - `CLAW_VAULT_ADDRESS`
 - `RELAYER_SIGNER_PRIVATE_KEY`
@@ -128,9 +130,9 @@ npx clawhub@latest install claw-validation-market
 ```
 
 관련 프레임은 아래에 준비됨:
-- `packages/agents/config/setup-manifest.json`
-- `packages/agents/skills/*`
-- `packages/agents/prompts/*`
+- `packages/openfunderse/packs/openfunderse/config/setup-manifest.json`
+- `packages/openfunderse/packs/openfunderse/skills/*`
+- `packages/openfunderse/packs/openfunderse/prompts/*`
 
 현재는 스캐폴드이므로, 실제 `clawhub` 배포/설치 스펙에 맞춰 매니페스트 필드와 패키징 파이프라인을 확정해야 합니다.
 

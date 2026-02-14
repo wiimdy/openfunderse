@@ -1,7 +1,11 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export type SubjectType = "CLAIM" | "INTENT";
-export type RecordStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type RecordStatus =
+  | "PENDING"
+  | "READY_FOR_ONCHAIN"
+  | "APPROVED"
+  | "REJECTED";
 
 export interface AttestationRow {
   id: number;
@@ -62,8 +66,29 @@ export interface IntentRow {
   updated_at: number;
 }
 
+export interface FundDeploymentRow {
+  id: number;
+  fund_id: string;
+  chain_id: string;
+  factory_address: string;
+  onchain_fund_id: string;
+  intent_book_address: string;
+  claw_core_address: string;
+  claw_vault_address: string;
+  fund_owner_address: string;
+  strategy_agent_address: string;
+  snapshot_book_address: string;
+  asset_address: string;
+  deploy_tx_hash: string;
+  deploy_block_number: string;
+  deployer_address: string;
+  created_at: number;
+  updated_at: number;
+}
+
 export type ExecutionJobStatus =
   | "READY"
+  | "READY_FOR_ONCHAIN"
   | "RUNNING"
   | "EXECUTED"
   | "FAILED_RETRYABLE"
@@ -80,6 +105,14 @@ export interface ExecutionJobRow {
   last_error: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface SubjectStateRow {
+  threshold_weight: string;
+  attested_weight: string;
+  status: RecordStatus;
+  submit_attempts: number;
+  tx_hash: string | null;
 }
 
 let supabaseSingleton: SupabaseClient | null = null;
@@ -190,6 +223,63 @@ export async function getFundThresholds(
   };
 }
 
+export async function upsertFundDeployment(input: {
+  fundId: string;
+  chainId: bigint;
+  factoryAddress: string;
+  onchainFundId: bigint;
+  intentBookAddress: string;
+  clawCoreAddress: string;
+  clawVaultAddress: string;
+  fundOwnerAddress: string;
+  strategyAgentAddress: string;
+  snapshotBookAddress: string;
+  assetAddress: string;
+  deployTxHash: string;
+  deployBlockNumber: bigint;
+  deployerAddress: string;
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const { error } = await db.from("fund_deployments").upsert(
+    {
+      fund_id: input.fundId,
+      chain_id: input.chainId.toString(),
+      factory_address: input.factoryAddress.toLowerCase(),
+      onchain_fund_id: input.onchainFundId.toString(),
+      intent_book_address: input.intentBookAddress.toLowerCase(),
+      claw_core_address: input.clawCoreAddress.toLowerCase(),
+      claw_vault_address: input.clawVaultAddress.toLowerCase(),
+      fund_owner_address: input.fundOwnerAddress.toLowerCase(),
+      strategy_agent_address: input.strategyAgentAddress.toLowerCase(),
+      snapshot_book_address: input.snapshotBookAddress.toLowerCase(),
+      asset_address: input.assetAddress.toLowerCase(),
+      deploy_tx_hash: input.deployTxHash.toLowerCase(),
+      deploy_block_number: input.deployBlockNumber.toString(),
+      deployer_address: input.deployerAddress.toLowerCase(),
+      created_at: now,
+      updated_at: now
+    },
+    {
+      onConflict: "fund_id"
+    }
+  );
+  throwIfError(error, null);
+}
+
+export async function getFundDeployment(fundId: string): Promise<FundDeploymentRow | undefined> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("fund_deployments")
+    .select(
+      "id,fund_id,chain_id,factory_address,onchain_fund_id,intent_book_address,claw_core_address,claw_vault_address,fund_owner_address,strategy_agent_address,snapshot_book_address,asset_address,deploy_tx_hash,deploy_block_number,deployer_address,created_at,updated_at"
+    )
+    .eq("fund_id", fundId)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as FundDeploymentRow | null) ?? undefined;
+}
+
 export async function upsertFundBot(input: {
   fundId: string;
   botId: string;
@@ -246,6 +336,33 @@ export async function listFundBots(fundId: string) {
   }>;
 }
 
+export async function getFundBot(fundId: string, botId: string) {
+  const db = supabase();
+  const { data, error } = await db
+    .from('fund_bots')
+    .select(
+      'fund_id,bot_id,role,bot_address,status,policy_uri,telegram_handle,registered_by,created_at,updated_at'
+    )
+    .eq('fund_id', fundId)
+    .eq('bot_id', botId)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as
+    | {
+        fund_id: string;
+        bot_id: string;
+        role: string;
+        bot_address: string;
+        status: string;
+        policy_uri: string | null;
+        telegram_handle: string | null;
+        registered_by: string;
+        created_at: number;
+        updated_at: number;
+      }
+    | null) ?? undefined;
+}
+
 export async function insertAttestation(input: {
   fundId: string;
   subjectType: SubjectType;
@@ -255,9 +372,13 @@ export async function insertAttestation(input: {
   expiresAt: bigint;
   nonce: bigint;
   signature: string;
+  status?: RecordStatus;
+  txHash?: string | null;
 }): Promise<{ ok: true; id: number } | { ok: false; reason: "DUPLICATE" }> {
   const db = supabase();
   const now = nowMs();
+  const status = input.status ?? "PENDING";
+  const txHash = input.txHash ? input.txHash.toLowerCase() : null;
   const { data, error } = await db
     .from("attestations")
     .insert({
@@ -269,7 +390,8 @@ export async function insertAttestation(input: {
       expires_at: input.expiresAt.toString(),
       nonce: input.nonce.toString(),
       signature: input.signature,
-      status: "PENDING",
+      status,
+      tx_hash: txHash,
       created_at: now,
       updated_at: now
     })
@@ -360,51 +482,79 @@ export async function getSubjectState(subjectType: SubjectType, subjectHash: str
   const db = supabase();
   const { data, error } = await db
     .from("subject_state")
-    .select("threshold_weight,attested_weight,status,submit_attempts")
+    .select("threshold_weight,attested_weight,status,submit_attempts,tx_hash")
     .eq("subject_type", subjectType)
     .eq("subject_hash", subjectHash.toLowerCase())
     .maybeSingle();
   throwIfError(error, null);
-  return (data as
-    | {
-        threshold_weight: string;
-        attested_weight: string;
-        status: RecordStatus;
-        submit_attempts: number;
-      }
-    | null) ?? undefined;
+  return (data as SubjectStateRow | null) ?? undefined;
+}
+
+export async function getSubjectStateByFund(
+  fundId: string,
+  subjectType: SubjectType,
+  subjectHash: string
+) {
+  const db = supabase();
+  const { data, error } = await db
+    .from("subject_state")
+    .select("threshold_weight,attested_weight,status,submit_attempts,tx_hash")
+    .eq("fund_id", fundId)
+    .eq("subject_type", subjectType)
+    .eq("subject_hash", subjectHash.toLowerCase())
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as SubjectStateRow | null) ?? undefined;
 }
 
 export async function listPendingAttestations(
   subjectType: SubjectType,
-  subjectHash: string
+  subjectHash: string,
+  fundId?: string
 ): Promise<AttestationRow[]> {
   const db = supabase();
-  const { data, error } = await db
+  let query = db
     .from("attestations")
     .select("*")
     .eq("subject_type", subjectType)
     .eq("subject_hash", subjectHash.toLowerCase())
-    .eq("status", "PENDING")
-    .order("created_at", { ascending: true });
+    .eq("status", "PENDING");
+  if (fundId) {
+    query = query.eq("fund_id", fundId);
+  }
+  const { data, error } = await query.order("created_at", { ascending: true });
   throwIfError(error, null);
   return (data ?? []) as AttestationRow[];
 }
 
 export async function markSubjectApproved(input: {
+  fundId: string;
   subjectType: SubjectType;
   subjectHash: string;
-  txHash: string;
+  txHash?: string | null;
 }): Promise<void> {
   const db = supabase();
   const now = nowMs();
   const key = input.subjectHash.toLowerCase();
-  const txHash = input.txHash.toLowerCase();
+  let txHash = input.txHash ? input.txHash.toLowerCase() : null;
+
+  if (txHash === null) {
+    const { data: existing, error: existingError } = await db
+      .from("subject_state")
+      .select("tx_hash")
+      .eq("fund_id", input.fundId)
+      .eq("subject_type", input.subjectType)
+      .eq("subject_hash", key)
+      .maybeSingle();
+    throwIfError(existingError, null);
+    txHash = existing?.tx_hash ? String(existing.tx_hash).toLowerCase() : null;
+  }
 
   {
     const { error } = await db
       .from("subject_state")
       .update({ status: "APPROVED", tx_hash: txHash, updated_at: now })
+      .eq("fund_id", input.fundId)
       .eq("subject_type", input.subjectType)
       .eq("subject_hash", key);
     throwIfError(error, null);
@@ -414,9 +564,10 @@ export async function markSubjectApproved(input: {
     const { error } = await db
       .from("attestations")
       .update({ status: "APPROVED", tx_hash: txHash, updated_at: now })
+      .eq("fund_id", input.fundId)
       .eq("subject_type", input.subjectType)
       .eq("subject_hash", key)
-      .eq("status", "PENDING");
+      .in("status", ["PENDING", "READY_FOR_ONCHAIN"]);
     throwIfError(error, null);
   }
 
@@ -424,6 +575,7 @@ export async function markSubjectApproved(input: {
     const { error } = await db
       .from("claims")
       .update({ status: "APPROVED", updated_at: now })
+      .eq("fund_id", input.fundId)
       .eq("claim_hash", key);
     throwIfError(error, null);
     return;
@@ -433,34 +585,81 @@ export async function markSubjectApproved(input: {
     const { error } = await db
       .from("intents")
       .update({ status: "APPROVED", updated_at: now })
+      .eq("fund_id", input.fundId)
       .eq("intent_hash", key);
     throwIfError(error, null);
   }
 
-  const { data: intent, error: intentError } = await db
-    .from("intents")
-    .select("fund_id")
-    .eq("intent_hash", key)
-    .maybeSingle();
-  throwIfError(intentError, null);
+  const { error } = await db.from("execution_jobs").upsert(
+    {
+      fund_id: input.fundId,
+      intent_hash: key,
+      status: "READY",
+      attempt_count: 0,
+      next_run_at: now,
+      created_at: now,
+      updated_at: now
+    },
+    {
+      onConflict: "fund_id,intent_hash"
+    }
+  );
+  throwIfError(error, null);
+}
 
-  if (intent?.fund_id) {
-    const { error } = await db.from("execution_jobs").upsert(
-      {
-        fund_id: intent.fund_id,
-        intent_hash: key,
-        status: "READY",
-        attempt_count: 0,
-        next_run_at: now,
-        created_at: now,
-        updated_at: now
-      },
-      {
-        onConflict: "fund_id,intent_hash"
-      }
-    );
+export async function markIntentReadyForOnchain(input: {
+  fundId: string;
+  intentHash: string;
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const key = input.intentHash.toLowerCase();
+
+  const { error: stateError } = await db
+    .from("subject_state")
+    .update({ status: "READY_FOR_ONCHAIN", updated_at: now })
+    .eq("fund_id", input.fundId)
+    .eq("subject_type", "INTENT")
+    .eq("subject_hash", key)
+    .eq("status", "PENDING");
+  throwIfError(stateError, null);
+
+  {
+    const { error } = await db
+      .from("attestations")
+      .update({ status: "READY_FOR_ONCHAIN", updated_at: now })
+      .eq("fund_id", input.fundId)
+      .eq("subject_type", "INTENT")
+      .eq("subject_hash", key)
+      .eq("status", "PENDING");
     throwIfError(error, null);
   }
+
+  {
+    const { error } = await db
+      .from("intents")
+      .update({ status: "READY_FOR_ONCHAIN", updated_at: now })
+      .eq("fund_id", input.fundId)
+      .eq("intent_hash", key)
+      .in("status", ["PENDING", "READY_FOR_ONCHAIN"]);
+    throwIfError(error, null);
+  }
+
+  const { error } = await db.from("execution_jobs").upsert(
+    {
+      fund_id: input.fundId,
+      intent_hash: key,
+      status: "READY_FOR_ONCHAIN",
+      attempt_count: 0,
+      next_run_at: now,
+      created_at: now,
+      updated_at: now
+    },
+    {
+      onConflict: "fund_id,intent_hash"
+    }
+  );
+  throwIfError(error, null);
 }
 
 export async function markSubjectSubmitError(input: {
@@ -516,12 +715,12 @@ export async function getStatusSummary(fundId: string) {
     attested_weight: string;
   }>) {
     if (row.subject_type === "CLAIM") {
-      if (row.status === "PENDING") claimsPending += 1;
+      if (row.status === "PENDING" || row.status === "READY_FOR_ONCHAIN") claimsPending += 1;
       if (row.status === "APPROVED") claimsApproved += 1;
       claimAttestedWeight += BigInt(row.attested_weight);
       claimThresholdWeight += BigInt(row.threshold_weight);
     } else {
-      if (row.status === "PENDING") intentsPending += 1;
+      if (row.status === "PENDING" || row.status === "READY_FOR_ONCHAIN") intentsPending += 1;
       if (row.status === "APPROVED") intentsApproved += 1;
       intentAttestedWeight += BigInt(row.attested_weight);
       intentThresholdWeight += BigInt(row.threshold_weight);
@@ -790,6 +989,183 @@ export async function getIntentByHash(
   return (data as IntentRow | null) ?? undefined;
 }
 
+export async function getIntentAttestationBundle(input: {
+  fundId: string;
+  intentHash: string;
+}): Promise<
+  | {
+      subjectHash: string;
+      stateStatus: RecordStatus;
+      thresholdWeight: string;
+      attestedWeight: string;
+      verifiers: string[];
+      signatures: string[];
+      attestations: Array<{
+        verifier: string;
+        expiresAt: string;
+        nonce: string;
+        signature: string;
+      }>;
+    }
+  | undefined
+> {
+  const db = supabase();
+  const key = input.intentHash.toLowerCase();
+
+  const { data: state, error: stateError } = await db
+    .from("subject_state")
+    .select("status,threshold_weight,attested_weight")
+    .eq("fund_id", input.fundId)
+    .eq("subject_type", "INTENT")
+    .eq("subject_hash", key)
+    .maybeSingle();
+  throwIfError(stateError, null);
+  if (!state) return undefined;
+
+  const { data: rows, error: rowsError } = await db
+    .from("attestations")
+    .select("verifier,expires_at,nonce,signature")
+    .eq("fund_id", input.fundId)
+    .eq("subject_type", "INTENT")
+    .eq("subject_hash", key)
+    .order("created_at", { ascending: true });
+  throwIfError(rowsError, null);
+
+  const attestations = (rows ?? []).map((row) => ({
+    verifier: String(row.verifier),
+    expiresAt: String(row.expires_at),
+    nonce: String(row.nonce),
+    signature: String(row.signature)
+  }));
+  const verifiers = attestations.map((row) => row.verifier);
+  const signatures = attestations.map((row) => row.signature);
+
+  return {
+    subjectHash: key,
+    stateStatus: state.status as RecordStatus,
+    thresholdWeight: String(state.threshold_weight),
+    attestedWeight: String(state.attested_weight),
+    verifiers,
+    signatures,
+    attestations
+  };
+}
+
+export async function listReadyOnchainExecutionJobs(input: {
+  fundId: string;
+  limit: number;
+  offset: number;
+}) {
+  const db = supabase();
+
+  const { data: jobs, error: jobsError, count } = await db
+    .from("execution_jobs")
+    .select("*", { count: "exact" })
+    .eq("fund_id", input.fundId)
+    .eq("status", "READY_FOR_ONCHAIN")
+    .order("created_at", { ascending: true })
+    .range(input.offset, input.offset + input.limit - 1);
+  throwIfError(jobsError, null);
+
+  const intentHashes = (jobs ?? []).map((job) => String(job.intent_hash).toLowerCase());
+  if (intentHashes.length === 0) {
+    return {
+      rows: [] as Array<{
+        job: ExecutionJobRow;
+        intent: IntentRow;
+      }>,
+      total: Number(count ?? 0)
+    };
+  }
+
+  const { data: intents, error: intentsError } = await db
+    .from("intents")
+    .select("*")
+    .eq("fund_id", input.fundId)
+    .in("intent_hash", intentHashes);
+  throwIfError(intentsError, null);
+
+  const intentMap = new Map(
+    (intents ?? []).map((intent) => [String(intent.intent_hash).toLowerCase(), intent as IntentRow])
+  );
+  const rows = (jobs ?? [])
+    .map((job) => {
+      const intent = intentMap.get(String(job.intent_hash).toLowerCase());
+      if (!intent) return null;
+      return {
+        job: job as ExecutionJobRow,
+        intent
+      };
+    })
+    .filter(Boolean) as Array<{
+    job: ExecutionJobRow;
+    intent: IntentRow;
+  }>;
+
+  return {
+    rows,
+    total: Number(count ?? 0)
+  };
+}
+
+export async function listReadyExecutionPayloads(input: {
+  fundId: string;
+  limit: number;
+  offset: number;
+}) {
+  const db = supabase();
+
+  const { data: jobs, error: jobsError, count } = await db
+    .from("execution_jobs")
+    .select("*", { count: "exact" })
+    .eq("fund_id", input.fundId)
+    .eq("status", "READY")
+    .order("created_at", { ascending: true })
+    .range(input.offset, input.offset + input.limit - 1);
+  throwIfError(jobsError, null);
+
+  const intentHashes = (jobs ?? []).map((job) => String(job.intent_hash).toLowerCase());
+  if (intentHashes.length === 0) {
+    return {
+      rows: [] as Array<{
+        job: ExecutionJobRow;
+        intent: IntentRow;
+      }>,
+      total: Number(count ?? 0)
+    };
+  }
+
+  const { data: intents, error: intentsError } = await db
+    .from("intents")
+    .select("*")
+    .eq("fund_id", input.fundId)
+    .in("intent_hash", intentHashes);
+  throwIfError(intentsError, null);
+
+  const intentMap = new Map(
+    (intents ?? []).map((intent) => [String(intent.intent_hash).toLowerCase(), intent as IntentRow])
+  );
+
+  const rows = (jobs ?? [])
+    .map((job) => {
+      const intent = intentMap.get(String(job.intent_hash).toLowerCase());
+      if (!intent) return null;
+      return {
+        job: job as ExecutionJobRow,
+        intent
+      };
+    })
+    .filter(Boolean) as Array<{
+    job: ExecutionJobRow;
+    intent: IntentRow;
+  }>;
+
+  return {
+    rows,
+    total: Number(count ?? 0)
+  };
+}
+
 export async function listExecutionJobs(input: {
   fundId?: string;
   status?: ExecutionJobStatus;
@@ -847,6 +1223,58 @@ export async function markExecutionJobExecuted(id: number, txHash: string): Prom
     .from("execution_jobs")
     .update({ status: "EXECUTED", tx_hash: txHash.toLowerCase(), updated_at: nowMs() })
     .eq("id", id);
+  throwIfError(error, null);
+}
+
+export async function markExecutionJobExecutedByIntent(input: {
+  fundId: string;
+  intentHash: string;
+  txHash: string;
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const key = input.intentHash.toLowerCase();
+  const { error } = await db
+    .from("execution_jobs")
+    .update({
+      status: "EXECUTED",
+      tx_hash: input.txHash.toLowerCase(),
+      updated_at: now
+    })
+    .eq("fund_id", input.fundId)
+    .eq("intent_hash", key);
+  throwIfError(error, null);
+}
+
+export async function markExecutionJobRetryableByIntent(input: {
+  fundId: string;
+  intentHash: string;
+  error: string;
+  retryDelayMs: number;
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const key = input.intentHash.toLowerCase();
+  const { data: current, error: findError } = await db
+    .from("execution_jobs")
+    .select("attempt_count")
+    .eq("fund_id", input.fundId)
+    .eq("intent_hash", key)
+    .maybeSingle();
+  throwIfError(findError, null);
+
+  const attemptCount = Number(current?.attempt_count ?? 0) + 1;
+  const { error } = await db
+    .from("execution_jobs")
+    .update({
+      status: "FAILED_RETRYABLE",
+      attempt_count: attemptCount,
+      next_run_at: now + Math.max(0, input.retryDelayMs),
+      last_error: input.error,
+      updated_at: now
+    })
+    .eq("fund_id", input.fundId)
+    .eq("intent_hash", key);
   throwIfError(error, null);
 }
 
