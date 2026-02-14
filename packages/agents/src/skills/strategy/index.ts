@@ -115,13 +115,14 @@ export interface ProposeIntentAndSubmitInput extends ProposeIntentInput {
   strategyAaAccountAddress?: string;
   adapterAddress?: string;
   allowExistingOnchainIntent?: boolean;
+  submit?: boolean;
 }
 
 export interface ProposeIntentAndSubmitOutput {
   status: 'OK';
   taskType: 'propose_intent';
   fundId: string;
-  decision: 'HOLD' | 'SUBMITTED';
+  decision: 'HOLD' | 'READY' | 'SUBMITTED';
   proposal: ProposeIntentOutput;
   intentHash?: string;
   executionRoute?: {
@@ -143,6 +144,12 @@ export interface ProposeIntentAndSubmitOutput {
     skippedExisting: boolean;
     userOpHash?: string;
     txHash?: string;
+  };
+  safety?: {
+    submitRequested: boolean;
+    autoSubmitEnabled: boolean;
+    requireExplicitSubmit: boolean;
+    trustedRelayerHosts: string[];
   };
 }
 
@@ -230,6 +237,18 @@ const DEFAULT_MAX_IMPACT_BPS = 60;
 const DEFAULT_SELL_TAKE_PROFIT_BPS = 2000;
 const DEFAULT_SELL_STOP_LOSS_BPS = 600;
 const DEFAULT_SELL_MAX_HOLD_SECONDS = 5400;
+const DEFAULT_REQUIRE_EXPLICIT_SUBMIT = true;
+const DEFAULT_AUTO_SUBMIT = false;
+
+const PRIVATE_HOST_PATTERNS = [
+  /^localhost$/i,
+  /^127\./,
+  /^::1$/,
+  /^\[::1\]$/,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2[0-9]|3[0-1])\./
+];
 
 const nowSeconds = (): number => {
   return Math.floor(Date.now() / 1000);
@@ -247,6 +266,59 @@ const envPositiveInt = (name: string, fallback: number): number => {
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
 
   return Math.floor(parsed);
+};
+
+const envBool = (name: string, fallback: boolean): boolean => {
+  const raw = process.env[name];
+  if (!raw || raw.trim().length === 0) return fallback;
+  const normalized = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+};
+
+const envCsv = (name: string): string[] => {
+  const raw = process.env[name];
+  if (!raw || raw.trim().length === 0) return [];
+  return raw
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+};
+
+const isPrivateHost = (host: string): boolean => {
+  const normalized = host.trim().toLowerCase();
+  if (normalized.endsWith('.local')) return true;
+  return PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(normalized));
+};
+
+const validateStrategyRelayerUrl = (rawUrl: string, trustedHosts: string[]): void => {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`RELAYER_URL is invalid: ${rawUrl}`);
+  }
+
+  const host = parsed.hostname.trim().toLowerCase();
+  const allowHttp = envBool('STRATEGY_ALLOW_HTTP_RELAYER', false);
+  if (parsed.protocol !== 'https:' && !(allowHttp && parsed.protocol === 'http:')) {
+    throw new Error(
+      'RELAYER_URL must use https (set STRATEGY_ALLOW_HTTP_RELAYER=true only for local development)'
+    );
+  }
+
+  if (trustedHosts.length > 0 && !trustedHosts.includes(host)) {
+    throw new Error(
+      `RELAYER_URL host is not in STRATEGY_TRUSTED_RELAYER_HOSTS: host=${host}`
+    );
+  }
+
+  if (trustedHosts.length === 0 && isPrivateHost(host) && parsed.protocol === 'https:') {
+    throw new Error(
+      'RELAYER_URL points to a private/local host over https. Configure STRATEGY_TRUSTED_RELAYER_HOSTS explicitly.'
+    );
+  }
 };
 
 const computeDeadlineTtlSeconds = (claimCount: number): number => {
@@ -1049,14 +1121,6 @@ export async function proposeIntentAndSubmit(
       process.env.ADAPTER_ADDRESS,
     'NADFUN_EXECUTION_ADAPTER_ADDRESS'
   );
-  const intentBookAddress = requireAddress(
-    input.intentBookAddress ?? process.env.INTENT_BOOK_ADDRESS,
-    'INTENT_BOOK_ADDRESS'
-  );
-  const strategyAaAccountAddress = requireAddress(
-    input.strategyAaAccountAddress ?? process.env.STRATEGY_AA_ACCOUNT_ADDRESS,
-    'STRATEGY_AA_ACCOUNT_ADDRESS'
-  );
   const vaultAddress = requireAddress(proposal.intent.vault, 'intent.vault');
 
   const intent: TradeIntent = {
@@ -1106,6 +1170,70 @@ export async function proposeIntentAndSubmit(
     allowlistHash,
     maxNotional
   });
+
+  const trustedRelayerHosts = envCsv('STRATEGY_TRUSTED_RELAYER_HOSTS');
+  const relayerUrl = process.env.RELAYER_URL ?? '';
+  if (!relayerUrl) {
+    throw new Error('RELAYER_URL is required');
+  }
+  validateStrategyRelayerUrl(relayerUrl, trustedRelayerHosts);
+
+  const requireExplicitSubmit = envBool(
+    'STRATEGY_REQUIRE_EXPLICIT_SUBMIT',
+    DEFAULT_REQUIRE_EXPLICIT_SUBMIT
+  );
+  const autoSubmitEnabled = envBool('STRATEGY_AUTO_SUBMIT', DEFAULT_AUTO_SUBMIT);
+  const submitRequested = input.submit ?? false;
+  const shouldSubmit = submitRequested || (!requireExplicitSubmit && autoSubmitEnabled);
+
+  if (submitRequested && !autoSubmitEnabled) {
+    throw new Error(
+      'submit was requested but STRATEGY_AUTO_SUBMIT is disabled. Set STRATEGY_AUTO_SUBMIT=true to allow external submission.'
+    );
+  }
+
+  if (!shouldSubmit) {
+    return {
+      status: 'OK',
+      taskType: 'propose_intent',
+      fundId: input.fundId,
+      decision: 'READY',
+      proposal,
+      intentHash: canonical.intentHash,
+      executionRoute: {
+        tokenIn: executionRoute.tokenIn,
+        tokenOut: executionRoute.tokenOut,
+        quoteAmountOut: executionRoute.quoteAmountOut.toString(),
+        minAmountOut: executionRoute.minAmountOut.toString(),
+        adapter: executionRoute.adapter,
+        adapterData: executionRoute.adapterData ?? '0x',
+        allowlistHash: canonical.constraints.allowlistHash
+      },
+      relayer: {
+        submitted: false,
+        duplicate: false
+      },
+      onchain: {
+        submitted: false,
+        skippedExisting: false
+      },
+      safety: {
+        submitRequested,
+        autoSubmitEnabled,
+        requireExplicitSubmit,
+        trustedRelayerHosts
+      }
+    };
+  }
+
+  const intentBookAddress = requireAddress(
+    input.intentBookAddress ?? process.env.INTENT_BOOK_ADDRESS,
+    'INTENT_BOOK_ADDRESS'
+  );
+  const strategyAaAccountAddress = requireAddress(
+    input.strategyAaAccountAddress ?? process.env.STRATEGY_AA_ACCOUNT_ADDRESS,
+    'STRATEGY_AA_ACCOUNT_ADDRESS'
+  );
 
   const relayer = createRelayerClient();
   let relayerSubmitted = false;
@@ -1238,6 +1366,12 @@ export async function proposeIntentAndSubmit(
       skippedExisting: onchainSkippedExisting,
       userOpHash,
       txHash
+    },
+    safety: {
+      submitRequested,
+      autoSubmitEnabled,
+      requireExplicitSubmit,
+      trustedRelayerHosts
     }
   };
 }
