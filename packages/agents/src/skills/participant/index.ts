@@ -1,15 +1,26 @@
-import { randomBytes } from 'node:crypto';
 import {
-  buildCanonicalClaimRecord,
-  type Address,
-  type ClaimPayload
+  type Address
 } from '@claw/protocol-sdk';
 import {
   createRelayerClient,
   type RelayerClientOptions
 } from '../../lib/relayer-client.js';
-import { createBotSigner, type BotSignerOptions } from '../../lib/signer.js';
 import { isAddress, keccak256, toHex } from 'viem';
+
+interface ClaimPayload {
+  schemaId: string;
+  sourceType: string;
+  sourceRef: string;
+  selector: string;
+  extracted: string;
+  extractedType: string;
+  timestamp: bigint;
+  responseHash: `0x${string}`;
+  evidenceType: string;
+  evidenceURI: string;
+  crawler: Address;
+  notes?: string;
+}
 
 export interface MineClaimInput {
   taskType: 'mine_claim';
@@ -91,11 +102,6 @@ export interface VerifyClaimOutput {
     | 'STALE_DATA'
     | 'REPRODUCTION_FAILED'
     | 'HASH_MISMATCH';
-  attestationDraft?: {
-    validator: string;
-    expiresAt: number;
-    nonce: string;
-  };
   confidence: number;
   assumptions: string[];
   error?: string;
@@ -120,38 +126,6 @@ export interface SubmitMinedClaimOutput {
     | 'OK'
     | 'CLAIM_HASH_MISMATCH'
     | 'SAFETY_BLOCKED'
-    | 'RELAYER_REJECTED'
-    | 'NETWORK_ERROR';
-  error?: string;
-  safety?: {
-    submitRequested: boolean;
-    autoSubmitEnabled: boolean;
-    requireExplicitSubmit: boolean;
-    trustedRelayerHosts: string[];
-  };
-}
-
-export interface AttestClaimInput {
-  fundId: string;
-  claimHash: `0x${string}`;
-  epochId: number;
-  expiresInSeconds?: number;
-  nonce?: bigint | number | string;
-  clientOptions?: RelayerClientOptions;
-  signerOptions?: BotSignerOptions;
-  submit?: boolean;
-}
-
-export interface AttestClaimOutput {
-  status: 'OK' | 'ERROR';
-  fundId: string;
-  claimHash: `0x${string}`;
-  decision?: 'READY' | 'SUBMITTED';
-  response?: Record<string, unknown>;
-  reasonCode?:
-    | 'OK'
-    | 'SAFETY_BLOCKED'
-    | 'ATTESTATION_DOMAIN_MISMATCH'
     | 'RELAYER_REJECTED'
     | 'NETWORK_ERROR';
   error?: string;
@@ -426,10 +400,20 @@ const claimPayloadFromMine = (input: {
   };
 };
 
-const defaultNonce = (): bigint => {
-  const ms = BigInt(Date.now());
-  const rand = BigInt(`0x${randomBytes(8).toString('hex')}`);
-  return (ms << 64n) | rand;
+const legacyLocalClaimHash = (payload: ClaimPayload, epochId: number): `0x${string}` => {
+  const canonical = JSON.stringify(
+    {
+      epochId,
+      schemaId: payload.schemaId,
+      sourceRef: payload.sourceRef,
+      extracted: payload.extracted,
+      responseHash: payload.responseHash,
+      timestamp: payload.timestamp.toString(),
+      crawler: payload.crawler
+    },
+    (_k, v) => (typeof v === 'bigint' ? v.toString() : v)
+  );
+  return keccak256(toHex(canonical));
 };
 
 function nowSeconds(): number {
@@ -483,10 +467,7 @@ export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput>
       timestamp,
       crawler: crawlerAddress(input.crawlerAddress)
     });
-    const canonicalRecord = buildCanonicalClaimRecord({
-      payload,
-      epochId: BigInt(epochId)
-    });
+    const localClaimHash = legacyLocalClaimHash(payload, epochId);
 
     return {
       status: 'OK',
@@ -494,7 +475,7 @@ export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput>
       fundId,
       epochId,
       observation: {
-        claimHash: canonicalRecord.claimHash,
+        claimHash: localClaimHash,
         sourceSpecId: sourceSpec.sourceSpecId,
         token: tokenContext.address,
         timestamp,
@@ -507,7 +488,7 @@ export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput>
       confidence: 0.75,
       assumptions: [
         'extractor logic uses deterministic raw-body slice (first 256 chars)',
-        'claimHash is computed via SDK canonical claim encoding'
+        'claimHash is computed via local deterministic prehash (bridge mode)'
       ],
       reasonCode: 'OK'
     };
@@ -631,14 +612,6 @@ export async function verifyClaim(input: VerifyClaimInput): Promise<VerifyClaimO
     verdict: 'PASS',
     reason: 'required fields are present and validation policy checks passed',
     reasonCode: 'OK',
-    attestationDraft: {
-      validator:
-        process.env.BOT_ADDRESS ??
-        process.env.VERIFIER_ADDRESS ??
-        '0x0000000000000000000000000000000000000000',
-      expiresAt: nowSeconds() + 900,
-      nonce: defaultNonce().toString()
-    },
     confidence: 0.9,
     assumptions: ['verification is deterministic under the same source response and policy']
   };
@@ -660,19 +633,7 @@ export async function submitMinedClaim(
           crawler: crawlerAddress(input.observation.crawler)
         });
 
-    const record = buildCanonicalClaimRecord({
-      payload: canonicalPayload,
-      epochId: BigInt(input.epochId)
-    });
-    if (record.claimHash.toLowerCase() !== input.observation.claimHash.toLowerCase()) {
-      return {
-        status: 'ERROR',
-        fundId: input.fundId,
-        epochId: input.epochId,
-        reasonCode: 'CLAIM_HASH_MISMATCH',
-        error: `observation claimHash mismatch (expected ${record.claimHash}, received ${input.observation.claimHash})`
-      };
-    }
+    const localClaimHash = legacyLocalClaimHash(canonicalPayload, input.epochId);
 
     const safety = participantSubmitSafety(input.submit ?? false);
     if (safety.submitRequested && !safety.autoSubmitEnabled) {
@@ -680,7 +641,7 @@ export async function submitMinedClaim(
         status: 'ERROR',
         fundId: input.fundId,
         epochId: input.epochId,
-        claimHash: record.claimHash,
+        claimHash: localClaimHash,
         reasonCode: 'SAFETY_BLOCKED',
         error:
           'submit was requested but PARTICIPANT_AUTO_SUBMIT is disabled. Set PARTICIPANT_AUTO_SUBMIT=true to allow external submission.',
@@ -694,7 +655,7 @@ export async function submitMinedClaim(
         fundId: input.fundId,
         epochId: input.epochId,
         decision: 'READY',
-        claimHash: record.claimHash,
+        claimHash: localClaimHash,
         reasonCode: 'OK',
         safety
       };
@@ -720,7 +681,7 @@ export async function submitMinedClaim(
         status: 'ERROR',
         fundId: input.fundId,
         epochId: input.epochId,
-        claimHash: record.claimHash,
+        claimHash: localClaimHash,
         reasonCode: 'SAFETY_BLOCKED',
         error: message,
         safety
@@ -734,16 +695,6 @@ export async function submitMinedClaim(
       canonicalPayload,
       BigInt(input.epochId)
     );
-    if (response.claimHash.toLowerCase() !== record.claimHash.toLowerCase()) {
-      return {
-        status: 'ERROR',
-        fundId: input.fundId,
-        epochId: input.epochId,
-        reasonCode: 'CLAIM_HASH_MISMATCH',
-        error: `relayer claimHash mismatch (expected ${record.claimHash}, received ${response.claimHash})`
-      };
-    }
-
     return {
       status: 'OK',
       fundId: input.fundId,
@@ -761,104 +712,6 @@ export async function submitMinedClaim(
       fundId: input.fundId,
       epochId: input.epochId,
       reasonCode: 'NETWORK_ERROR',
-      error: message
-    };
-  }
-}
-
-export async function attestClaim(input: AttestClaimInput): Promise<AttestClaimOutput> {
-  try {
-    const safety = participantSubmitSafety(input.submit ?? false);
-
-    if (safety.submitRequested && !safety.autoSubmitEnabled) {
-      return {
-        status: 'ERROR',
-        fundId: input.fundId,
-        claimHash: input.claimHash,
-        reasonCode: 'SAFETY_BLOCKED',
-        error:
-          'submit was requested but PARTICIPANT_AUTO_SUBMIT is disabled. Set PARTICIPANT_AUTO_SUBMIT=true to allow external submission.',
-        safety
-      };
-    }
-
-    if (!safety.shouldSubmit) {
-      return {
-        status: 'OK',
-        fundId: input.fundId,
-        claimHash: input.claimHash,
-        decision: 'READY',
-        reasonCode: 'OK',
-        safety
-      };
-    }
-
-    const relayerUrl = process.env.RELAYER_URL ?? '';
-    if (!relayerUrl) {
-      return {
-        status: 'ERROR',
-        fundId: input.fundId,
-        claimHash: input.claimHash,
-        reasonCode: 'NETWORK_ERROR',
-        error: 'RELAYER_URL is required',
-        safety
-      };
-    }
-
-    try {
-      validateParticipantRelayerUrl(relayerUrl, safety.trustedRelayerHosts);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        status: 'ERROR',
-        fundId: input.fundId,
-        claimHash: input.claimHash,
-        reasonCode: 'SAFETY_BLOCKED',
-        error: message,
-        safety
-      };
-    }
-
-    const signer = createBotSigner(input.signerOptions ?? {});
-    const client = createRelayerClient(input.clientOptions ?? {});
-    const expiresAt = BigInt(
-      nowSeconds() + (input.expiresInSeconds === undefined ? 900 : input.expiresInSeconds)
-    );
-    const nonce = input.nonce === undefined ? defaultNonce() : BigInt(input.nonce);
-
-    const signed = await signer.signClaimAttestation({
-      claimHash: input.claimHash,
-      epochId: BigInt(input.epochId),
-      expiresAt,
-      nonce
-    });
-    const response = await client.submitClaimAttestation(input.fundId, {
-      claimHash: signed.message.claimHash,
-      epochId: signed.message.epochId,
-      verifier: signed.verifier,
-      expiresAt: signed.message.expiresAt,
-      nonce: signed.message.nonce,
-      signature: signed.signature
-    });
-    return {
-      status: 'OK',
-      fundId: input.fundId,
-      claimHash: input.claimHash,
-      decision: 'SUBMITTED',
-      response,
-      reasonCode: 'OK',
-      safety
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const reasonCode = message.includes('CLAIM_ATTESTATION_VERIFIER_ADDRESS')
-      ? 'ATTESTATION_DOMAIN_MISMATCH'
-      : 'NETWORK_ERROR';
-    return {
-      status: 'ERROR',
-      fundId: input.fundId,
-      claimHash: input.claimHash,
-      reasonCode,
       error: message
     };
   }

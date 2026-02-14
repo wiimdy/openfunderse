@@ -16,7 +16,6 @@
     "participant:mine": "tsx src/index.ts participant-mine",
     "participant:verify": "tsx src/index.ts participant-verify",
     "participant:submit": "tsx src/index.ts participant-submit",
-    "participant:attest": "tsx src/index.ts participant-attest",
     "participant:e2e": "tsx src/index.ts participant-e2e",
     "strategy:create:fund": "tsx src/index.ts strategy-create-fund",
     "strategy:attest:onchain": "tsx src/index.ts strategy-attest-onchain",

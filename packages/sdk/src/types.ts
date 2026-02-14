@@ -2,19 +2,15 @@ export type Hex = `0x${string}`;
 
 export type Address = `0x${string}`;
 
-export interface ClaimPayload {
-  schemaId: string;
-  sourceType: string;
-  sourceRef: string;
-  selector: string;
-  extracted: string;
-  extractedType: string;
-  timestamp: bigint;
-  responseHash: Hex;
-  evidenceType: string;
-  evidenceURI: string;
-  crawler: Address;
-  notes?: string;
+export interface AllocationClaimV1 {
+  claimVersion: "v1";
+  fundId: string;
+  epochId: bigint;
+  participant: Address;
+  targetWeights: bigint[];
+  horizonSec: bigint;
+  nonce: bigint;
+  submittedAt: bigint;
 }
 
 export interface TradeIntent {
@@ -44,17 +40,12 @@ export interface ProtocolScope {
   epochId: bigint;
 }
 
-export type SubjectType = "CLAIM" | "INTENT";
+export type SubjectType = "INTENT";
 
 export interface AttestationMeta {
   verifier: Address;
   expiresAt: bigint;
   nonce: bigint;
-}
-
-export interface ClaimAttestationDraft extends AttestationMeta {
-  claimHash: Hex;
-  epochId: bigint;
 }
 
 export interface IntentAttestationDraft extends AttestationMeta {
@@ -110,9 +101,8 @@ export interface CoreExecutionRequestInput {
   adapterData: Hex;
 }
 
-export interface CanonicalClaimRecord {
-  payload: ClaimPayload;
-  epochId: bigint;
+export interface CanonicalAllocationClaimRecord {
+  claim: AllocationClaimV1;
   claimHash: Hex;
 }
 

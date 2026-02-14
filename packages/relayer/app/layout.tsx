@@ -4,7 +4,7 @@ import { GeistSans } from 'geist/font/sans';
 
 let title = 'Claw Relayer';
 let description =
-  'Claw relayer app with admin-id login and weighted attestation APIs.';
+  'Claw relayer app with admin-id login, claim/epoch aggregation, and intent execution APIs.';
 
 export const metadata = {
   title,

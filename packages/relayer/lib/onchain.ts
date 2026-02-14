@@ -3,10 +3,6 @@ import { privateKeyToAccount } from "viem/accounts";
 import type { Hex } from "@claw/protocol-sdk";
 import { loadRuntimeConfig } from "@/lib/config";
 
-const CLAIM_BOOK_ABI = parseAbi([
-  "function attestClaim(bytes32 claimHash, address[] verifiers, bytes[] sigs)"
-]);
-
 const INTENT_BOOK_ABI = parseAbi([
   "function attestIntent(bytes32 intentHash, address[] verifiers, bytes[] sigs)"
 ]);
@@ -35,8 +31,7 @@ function clients() {
   return { cfg, account, publicClient, walletClient };
 }
 
-async function submitWithRetry<T extends "CLAIM" | "INTENT">(input: {
-  kind: T;
+async function submitWithRetry(input: {
   subjectHash: Hex;
   verifiers: `0x${string}`[];
   signatures: Hex[];
@@ -54,30 +49,14 @@ async function submitWithRetry<T extends "CLAIM" | "INTENT">(input: {
 
       let hash: Hex;
 
-      if (input.kind === "CLAIM") {
-        if (!cfg.claimBookAddress) {
-          throw new Error(
-            "missing required env: CLAIM_BOOK_ADDRESS (when CLAIM_FINALIZATION_MODE=ONCHAIN)"
-          );
-        }
-        hash = await walletClient.writeContract({
-          address: cfg.claimBookAddress,
-          abi: CLAIM_BOOK_ABI,
-          functionName: "attestClaim",
-          args: [input.subjectHash, input.verifiers, input.signatures],
-          nonce,
-          account
-        });
-      } else {
-        hash = await walletClient.writeContract({
-          address: cfg.intentBookAddress,
-          abi: INTENT_BOOK_ABI,
-          functionName: "attestIntent",
-          args: [input.subjectHash, input.verifiers, input.signatures],
-          nonce,
-          account
-        });
-      }
+      hash = await walletClient.writeContract({
+        address: cfg.intentBookAddress,
+        abi: INTENT_BOOK_ABI,
+        functionName: "attestIntent",
+        args: [input.subjectHash, input.verifiers, input.signatures],
+        nonce,
+        account
+      });
 
       await publicClient.waitForTransactionReceipt({ hash });
       return hash;
@@ -90,26 +69,12 @@ async function submitWithRetry<T extends "CLAIM" | "INTENT">(input: {
   throw lastError;
 }
 
-export async function submitClaimAttestationsOnchain(input: {
-  claimHash: Hex;
-  verifiers: `0x${string}`[];
-  signatures: Hex[];
-}): Promise<Hex> {
-  return submitWithRetry({
-    kind: "CLAIM",
-    subjectHash: input.claimHash,
-    verifiers: input.verifiers,
-    signatures: input.signatures
-  });
-}
-
 export async function submitIntentAttestationsOnchain(input: {
   intentHash: Hex;
   verifiers: `0x${string}`[];
   signatures: Hex[];
 }): Promise<Hex> {
   return submitWithRetry({
-    kind: "INTENT",
     subjectHash: input.intentHash,
     verifiers: input.verifiers,
     signatures: input.signatures

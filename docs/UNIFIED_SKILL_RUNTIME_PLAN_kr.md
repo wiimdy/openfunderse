@@ -64,7 +64,6 @@ packages/
 - `mine_claim` (participant)
 - `verify_claim_or_intent_validity` (participant)
 - `submit_mined_claim` (participant)
-- `attest_claim` (participant)
 
 ## 5.3 frontmatter 표준화
 - `name`, `description`, `version`
@@ -108,17 +107,17 @@ packages/
 ## 8. relayer API 연동 기준
 전략 봇 필수 경로:
 1. `GET /api/v1/funds/{fundId}/claims` (attested/finalized 조회)
-2. `GET /api/v1/funds/{fundId}/snapshots/latest`
-3. `POST /api/v1/funds/{fundId}/intents/propose`
-4. `POST /api/v1/funds/{fundId}/intents/attestations/batch` (검증자 제출)
-5. `GET /api/v1/funds/{fundId}/intents/{intentHash}/onchain-bundle`
-6. `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-attested`
-7. `GET /api/v1/funds/{fundId}/intents/ready-execution`
-8. `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-executed|onchain-failed`
+2. `POST /api/v1/funds/{fundId}/epochs/{epochId}/aggregate`
+3. `GET /api/v1/funds/{fundId}/epochs/latest`
+4. `POST /api/v1/funds/{fundId}/intents/propose`
+5. `POST /api/v1/funds/{fundId}/intents/attestations/batch` (검증자 제출)
+6. `GET /api/v1/funds/{fundId}/intents/{intentHash}/onchain-bundle`
+7. `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-attested`
+8. `GET /api/v1/funds/{fundId}/intents/ready-execution`
+9. `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-executed|onchain-failed`
 
 참여자 봇 필수 경로:
 1. `POST /api/v1/funds/{fundId}/claims`
-2. `POST /api/v1/funds/{fundId}/attestations`
 
 ## 9. 온체인 연동 기준
 전략 봇의 온체인 행위:

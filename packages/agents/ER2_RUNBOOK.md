@@ -98,12 +98,4 @@ npm run clawbot:run -w @claw/agents -- \
   --role participant \
   --action submit_claim \
   --claim-file /tmp/claim.mine.json
-
-# Attest
-npm run clawbot:run -w @claw/agents -- \
-  --role participant \
-  --action attest_claim \
-  --fund-id "$FUND_ID" \
-  --epoch-id 1 \
-  --claim-hash 0x...
 ```

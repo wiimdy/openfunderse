@@ -26,7 +26,7 @@
 - bot 인증/권한
 - 펀드/봇 메타데이터 관리
 - claim 수집/검증/집계
-- approved claims 기반 snapshot 생성
+- epoch state 집계 생성
 - intent propose 수신 + executionRoute 정규화
 - intent attestation 집계 + 온체인 제출
 - execution job 큐 + cron 워커
@@ -36,7 +36,7 @@
 - `packages/relayer/lib/**`
 
 ### 2.3 Agents 런타임
-- participant CLI: mine -> verify -> submit claim -> attest claim
+- participant CLI: mine -> verify -> submit claim
 - strategy 보조 로직: NadFun quote 기반 인텐트 제안 판단
 
 코드:
@@ -45,9 +45,9 @@
 
 ### 2.4 Protocol SDK
 컨트랙트 테스트/relayer/agents가 공통으로 쓰는 단일 규격 레이어.
-- canonical hash (`claimHash`, `intentHash`, `snapshotHash`)
-- EIP-712 typed data/verify
-- weighted threshold 유틸
+- canonical hash (`allocationClaimHash`, `intentHash`, `snapshotHash`)
+- EIP-712 intent typed data/verify
+- weighted threshold 유틸 (intent verifier set)
 - execution-route allowlist hash
 
 코드:
@@ -55,17 +55,14 @@
 
 ## 3. 데이터/합의 모델
 ### 3.1 Claims (현재)
-- 현재 컨트랙트 스택의 핵심 경로는 claim onchain book이 아님.
 - claim은 relayer DB(Supabase Postgres)에 저장/집계됨.
-- claim attestation은 relayer에서 EIP-712 검증.
-- 기본 운영은 `CLAIM_FINALIZATION_MODE=OFFCHAIN`.
-- `ONCHAIN` 모드는 호환 경로로 존재하지만 주 경로는 아님.
+- claim-level attestation/finalization은 현재 주 경로에서 제거됨.
+- participant claim은 strategy의 epoch aggregate 입력으로 사용됨.
 
-### 3.2 Snapshot (현재)
-- `GET /api/v1/funds/{fundId}/snapshots/latest`가 approved claims로 snapshot 생성/갱신.
-- snapshot은 relayer DB에 materialize.
-- weighted 검증자 스냅샷은 현재 `VERIFIER_WEIGHT_SNAPSHOT`(env) 기반.
-- 온체인 스냅샷 소스 연동은 TODO.
+### 3.2 Epoch State (현재)
+- `POST /api/v1/funds/{fundId}/epochs/{epochId}/aggregate`가 claim으로 epoch state를 생성.
+- `GET /api/v1/funds/{fundId}/epochs/latest`가 최신 epoch state를 제공.
+- epoch state hash를 `TradeIntent.snapshotHash`에 사용.
 
 ### 3.3 Intent (현재)
 - strategy bot이 `POST /intents/propose` 호출.
@@ -87,17 +84,18 @@ Bots:
 - `POST/GET /api/v1/funds/{fundId}/bots/register`
 - `POST /api/v1/funds/{fundId}/claims`
 - `GET /api/v1/funds/{fundId}/claims`
-- `POST /api/v1/funds/{fundId}/attestations`
-- `GET /api/v1/funds/{fundId}/snapshots/latest`
+- `POST /api/v1/funds/{fundId}/epochs/{epochId}/aggregate`
+- `GET /api/v1/funds/{fundId}/epochs/latest`
 - `POST /api/v1/funds/{fundId}/intents/propose`
 - `POST /api/v1/funds/{fundId}/intents/attestations/batch`
+- 제거(no-legacy): `POST /attestations`, `GET /snapshots/latest`, `GET /events/claims`
 
 Ops:
 - `GET /api/v1/funds/{fundId}/status`
 - `GET /api/v1/metrics`
 - `GET /api/v1/executions`
 - `POST /api/v1/cron/execute-intents`
-- SSE: `/events/claims`, `/events/intents`
+- SSE: `/events/intents`
 
 ## 5. 컨트랙트-릴레이어 결합 포인트
 아래 ABI/시그니처가 바뀌면 relayer 동시 수정이 필요함:
@@ -113,11 +111,9 @@ Relayer 호출 지점:
 ## 6. 미구현/리스크 TODO
 - 검증자 스냅샷을 env 기반에서 온체인 소스로 전환.
 - dry-run/simulation UX를 relayer/agent 사용자 경로로 제품화.
-- claim onchain 경로를 현 스택에 정식 통합하거나 명시적 제거.
 - strategy 자동화는 현재 BUY 편향(SELL은 규격/컨트랙트 지원, 자동 전략 분기 보강 필요).
 - 운영 모니터링/재시도/알림 체계 고도화.
 
 ## 7. 운영 기본값
-- 권장: `CLAIM_FINALIZATION_MODE=OFFCHAIN`
 - intent 승인/합의는 `IntentBook` 온체인 기준
 - 최종 실행은 relayer executor가 `ClawCore.executeIntent` 호출

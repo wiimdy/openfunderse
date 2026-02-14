@@ -94,23 +94,20 @@ flowchart LR
 
 ### 4.3 Participant Actions
 - `CRAWLER_SUBMIT_CLAIM`: `POST /api/v1/funds/{fundId}/claims`
-- `VERIFIER_ATTEST_CLAIM`: `POST /api/v1/funds/{fundId}/attestations`
 - `VERIFIER_ATTEST_INTENT`: `POST /api/v1/funds/{fundId}/intents/attestations/batch`
 
 ### 4.4 Observe/Ops Actions
 - `READ_STATUS`: `GET /api/v1/funds/{fundId}/status`
 - `READ_METRICS`: `GET /api/v1/metrics`
 - `READ_EXECUTIONS`: `GET /api/v1/executions`
-- `SSE_CLAIMS`: `GET /api/v1/funds/{fundId}/events/claims`
 - `SSE_INTENTS`: `GET /api/v1/funds/{fundId}/events/intents`
 
 ## 5. 현재 E2E 동작 순서
 1. Admin fund 생성 또는 bootstrap
 2. Strategy bot이 participant bot 등록
 3. Crawler claim 제출
-4. Verifier claim attestation 제출
-5. Relayer weighted threshold 판정 후 claim finalize (기본 OFFCHAIN)
-6. approved claims로 snapshot 생성
+4. Strategy epoch aggregate 생성
+5. latest epoch state 조회
 7. Strategy intent propose (`executionRoute` 필수, allowlistHash는 relayer 계산)
 8. Verifier intent attestation batch 제출
 9. intent가 `READY_FOR_ONCHAIN`이면 Strategy signer bot이 bundle 조회

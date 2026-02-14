@@ -1,45 +1,38 @@
-# 현재 구현 상태 및 미구현 TODO (KR)
+# 현재 구현 상태 및 전환 TODO (KR)
 
 마지막 업데이트: 2026-02-14
 
-## 1. 현재 동작하는 것
-- 펀드 메타 생성/관리 (`/funds`)
-- 펀드 온체인 배포+저장 (`/funds/bootstrap`)
-- strategy 전용 participant bot 등록 (`/bots/register`)
-- claim 제출/조회/attestation 집계
-- approved claims 기반 snapshot 생성
-- intent propose (`executionRoute` 필수, allowlistHash 서버 계산)
-- intent attestation 집계 및 온체인 제출 시도
-- execution job 생성/조회/cron 실행
-- metrics/status/SSE 제공
+## 1. 현재 코드 상태 (사실 기준)
+- 현재 런타임은 `claim 제출 -> epoch aggregate 생성 -> intent` 파이프라인이다.
+- claim은 `crawl/evidence` payload 기반이며, README의 새 수식 모델(`target weight claim`)과 불일치한다.
+- relayer, sdk, agents, openfunderse 문서/코드 대부분이 레거시 claim 의미를 전제로 동작한다.
 
-## 2. 운영 시 주의사항
-- claim 기본 finalize 모드는 OFFCHAIN.
-- intent onchain submit/execute는 relayer signer 잔액이 부족하면 실패할 수 있음.
-- verifier 주소는 `VERIFIER_WEIGHT_SNAPSHOT`에 반드시 포함되어야 함.
+## 2. 이제 기준으로 삼을 문서
+- 단일 전환 기준: `docs/CLAIM_REDESIGN_V1_kr.md`
+- 레거시 호환 유지 정책: 없음(no-legacy)
 
-## 3. 미구현/정리 필요
-### 3.1 P0
-- validator snapshot 소스를 env -> 온체인 소스로 전환
-- claim onchain 경로의 위치를 명확히 결정(정식 통합 또는 명시 제거)
-- 컨트랙트 ABI 변경 시 relayer 동시 갱신 절차 고정
+## 3. 즉시 실행할 전환 작업
+### 3.1 P0 (연쇄의 시작점)
+- SDK claim 타입/해시를 `AllocationClaimV1`으로 교체
+- relayer DB 스키마를 allocation/epoch/settlement 중심으로 교체
+- relayer API에서 `/attestations`, `/snapshots/latest` 제거 (`/claims`는 AllocationClaimV1 제출 경로로 유지)
 
 ### 3.2 P1
-- strategy 자동 제안 SELL 분기 강화
-- dry-run/simulation을 운영 API/CLI 경로로 노출
-- execution 장애 시 자동 알림/재시도 정책 강화
+- agents participant/strategy 플로우를 새 API로 교체
+- openfunderse skill/prompt를 새 claim semantics로 동기화
+- postman/smoke 스크립트 전면 교체
 
 ### 3.3 P2
-- Postman/문서와 실제 운영 runbook의 지속 동기화
-- ChatOps UX(명령/상태 템플릿) 고도화
+- contracts `snapshotHash` 의존 제거 및 새 epoch state hash 체계 반영
+- vault reward mint 정산 엔트리포인트 추가
+- E2E/운영 runbook 전면 교체
 
-## 4. ABI 변경 영향 포인트
-아래가 바뀌면 relayer 수정 필수:
-- `IntentBook.getIntentExecutionData(...)`
-- `IntentBook.attestIntent(...)`
-- `ClawCore.validateIntentExecution(...)`
-- `ClawCore.executeIntent(...)`
+## 4. 블로커/주의사항
+- no-legacy 전환으로 기존 클라이언트/스크립트가 즉시 깨진다.
+- relayer schema 변경은 마이그레이션 SQL + 데이터 초기화 전략을 같이 가져가야 한다.
+- contracts 인터페이스 변경 시 factory/배포 스크립트/relayer ABI를 동시 갱신해야 한다.
 
-영향 파일:
-- `packages/relayer/lib/onchain.ts`
-- `packages/relayer/lib/executor.ts`
+## 5. 완료 판단 기준
+- 레거시 claim 필드(`sourceRef/extracted/evidenceURI`) 코드/DB/API 제거 완료
+- 새 claim 제출/집계/정산/민팅 흐름 E2E 통과
+- README 수식과 런타임 데이터 모델 간 1:1 대응 확인

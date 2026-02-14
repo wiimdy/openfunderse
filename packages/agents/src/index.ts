@@ -5,7 +5,6 @@ import { runClawbotCli } from './clawbot-cli.js';
 
 export { createRelayerClient, RelayerClient } from './lib/relayer-client.js';
 export type {
-  ClaimAttestationInput,
   ClaimQuery,
   ClaimTemplateInput,
   IntentAttestationInput,
@@ -24,19 +23,15 @@ export type {
 export { createBotSigner, BotSigner } from './lib/signer.js';
 export type {
   BotSignerOptions,
-  SignedClaimAttestation,
   SignedIntentAttestation
 } from './lib/signer.js';
 
 export {
-  attestClaim,
   mineClaim,
   submitMinedClaim,
   verifyClaim
 } from './skills/participant/index.js';
 export type {
-  AttestClaimInput,
-  AttestClaimOutput,
   MineClaimInput,
   MineClaimOutput,
   MineClaimObservation,

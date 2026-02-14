@@ -1,10 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { isAddress, type Hex } from 'viem';
+import { isAddress } from 'viem';
 import type { RelayerClientOptions } from './lib/relayer-client.js';
-import type { BotSignerOptions } from './lib/signer.js';
 import {
-  attestClaim,
   mineClaim,
   submitMinedClaim,
   verifyClaim,
@@ -166,23 +164,6 @@ const participantCrawlerAddress = (): `0x${string}` | undefined => {
   return raw as `0x${string}`;
 };
 
-const buildVerifierSignerOptions = (): BotSignerOptions => {
-  const options: BotSignerOptions = {};
-  if (process.env.PARTICIPANT_PRIVATE_KEY) {
-    options.privateKey = process.env.PARTICIPANT_PRIVATE_KEY as Hex;
-  } else if (process.env.VERIFIER_PRIVATE_KEY) {
-    options.privateKey = process.env.VERIFIER_PRIVATE_KEY as Hex;
-  }
-  if (process.env.CLAIM_ATTESTATION_VERIFIER_ADDRESS && isAddress(process.env.CLAIM_ATTESTATION_VERIFIER_ADDRESS)) {
-    options.claimAttestationVerifierAddress =
-      process.env.CLAIM_ATTESTATION_VERIFIER_ADDRESS as `0x${string}`;
-  }
-  if (process.env.CHAIN_ID) {
-    options.chainId = BigInt(process.env.CHAIN_ID);
-  }
-  return options;
-};
-
 const observationToClaimPayload = (
   observation: MineClaimObservation
 ): Record<string, unknown> => {
@@ -301,29 +282,6 @@ const runParticipantSubmit = async (parsed: ParsedCli): Promise<void> => {
   }
 };
 
-const runParticipantAttest = async (parsed: ParsedCli): Promise<void> => {
-  const fundId = requiredOption(parsed, 'fund-id');
-  const epochId = Number(requiredOption(parsed, 'epoch-id'));
-  if (!Number.isFinite(epochId)) {
-    throw new Error('--epoch-id must be a number');
-  }
-  const claimHash = requiredOption(parsed, 'claim-hash');
-  const submitRequested = parsed.flags.has('submit');
-  const output = await attestClaim({
-    fundId,
-    claimHash: claimHash as `0x${string}`,
-    epochId: Math.trunc(epochId),
-    expiresInSeconds: toNumberOption(parsed, 'expires-in-seconds', 900),
-    clientOptions: buildParticipantClientOptions(),
-    signerOptions: buildVerifierSignerOptions(),
-    submit: submitRequested
-  });
-  console.log(jsonStringify(output));
-  if (output.status !== 'OK') {
-    process.exitCode = 2;
-  }
-};
-
 const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
   const fundId = requiredOption(parsed, 'fund-id');
   const epochId = Number(requiredOption(parsed, 'epoch-id'));
@@ -397,7 +355,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
       mine,
       verify,
       submit,
-      attest: { status: 'SKIPPED', reason: 'participant submit gate is not enabled; pass --submit and set PARTICIPANT_AUTO_SUBMIT=true' }
+      finalize: { status: 'SKIPPED', reason: 'participant submit gate is not enabled; pass --submit and set PARTICIPANT_AUTO_SUBMIT=true' }
     };
     console.log(jsonStringify(report));
     const reportFile = parsed.options.get('report-file');
@@ -407,16 +365,6 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     return;
   }
 
-  const attest = await attestClaim({
-    fundId,
-    claimHash: submit.claimHash as `0x${string}`,
-    epochId: Math.trunc(epochId),
-    expiresInSeconds: toNumberOption(parsed, 'expires-in-seconds', 900),
-    clientOptions: buildParticipantClientOptions(),
-    signerOptions: buildVerifierSignerOptions(),
-    submit: submitRequested
-  });
-
   const report = {
     step: 'participant-e2e',
     fundId,
@@ -424,8 +372,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     claimHash: submit.claimHash,
     mine,
     verify,
-    submit,
-    attest
+    submit
   };
   console.log(jsonStringify(report));
 
@@ -434,9 +381,6 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     await writeJsonFile(reportFile, report);
   }
 
-  if (attest.status !== 'OK') {
-    process.exitCode = 2;
-  }
 };
 
 const printUsage = (): void => {
@@ -454,10 +398,6 @@ participant-verify
 
 participant-submit
   --claim-file <path> [--submit]
-
-participant-attest
-  --fund-id <id> --epoch-id <n> --claim-hash <0x...>
-  [--expires-in-seconds <n>] [--submit]
 
 participant-e2e
   --fund-id <id> --epoch-id <n> --source-ref <url> --token-address <0x...>
@@ -487,10 +427,6 @@ export const runParticipantCli = async (argv: string[]): Promise<boolean> => {
   }
   if (command === 'participant-submit') {
     await runParticipantSubmit(parsed);
-    return true;
-  }
-  if (command === 'participant-attest') {
-    await runParticipantAttest(parsed);
     return true;
   }
   if (command === 'participant-e2e') {
