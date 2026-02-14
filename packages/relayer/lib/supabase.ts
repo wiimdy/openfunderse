@@ -66,6 +66,23 @@ export interface IntentRow {
   updated_at: number;
 }
 
+export interface FundRow {
+  fund_id: string;
+  fund_name: string;
+  strategy_bot_id: string;
+  strategy_bot_address: string;
+  verifier_threshold_weight: string;
+  intent_threshold_weight: string;
+  strategy_policy_uri: string | null;
+  telegram_room_id: string | null;
+  is_verified: boolean;
+  visibility: string;
+  verification_note: string | null;
+  created_by: string;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface FundDeploymentRow {
   id: number;
   fund_id: string;
@@ -174,24 +191,38 @@ export async function upsertFund(input: {
   intentThresholdWeight: bigint;
   strategyPolicyUri: string | null;
   telegramRoomId: string | null;
+  isVerified?: boolean;
+  visibility?: "PUBLIC" | "HIDDEN";
+  verificationNote?: string | null;
   createdBy: string;
 }) {
   const db = supabase();
   const now = nowMs();
+  const payload: Record<string, unknown> = {
+    fund_id: input.fundId,
+    fund_name: input.fundName,
+    strategy_bot_id: input.strategyBotId,
+    strategy_bot_address: input.strategyBotAddress,
+    verifier_threshold_weight: input.verifierThresholdWeight.toString(),
+    intent_threshold_weight: input.intentThresholdWeight.toString(),
+    strategy_policy_uri: input.strategyPolicyUri,
+    telegram_room_id: input.telegramRoomId,
+    created_by: input.createdBy,
+    created_at: now,
+    updated_at: now
+  };
+  if (input.isVerified !== undefined) {
+    payload.is_verified = input.isVerified;
+  }
+  if (input.visibility !== undefined) {
+    payload.visibility = input.visibility;
+  }
+  if (input.verificationNote !== undefined) {
+    payload.verification_note = input.verificationNote;
+  }
+
   const { error } = await db.from("funds").upsert(
-    {
-      fund_id: input.fundId,
-      fund_name: input.fundName,
-      strategy_bot_id: input.strategyBotId,
-      strategy_bot_address: input.strategyBotAddress,
-      verifier_threshold_weight: input.verifierThresholdWeight.toString(),
-      intent_threshold_weight: input.intentThresholdWeight.toString(),
-      strategy_policy_uri: input.strategyPolicyUri,
-      telegram_room_id: input.telegramRoomId,
-      created_by: input.createdBy,
-      created_at: now,
-      updated_at: now
-    },
+    payload,
     {
       onConflict: "fund_id"
     }
@@ -204,12 +235,51 @@ export async function getFund(fundId: string) {
   const { data, error } = await db
     .from("funds")
     .select(
-      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,created_by,created_at,updated_at"
+      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,is_verified,visibility,verification_note,created_by,created_at,updated_at"
     )
     .eq("fund_id", fundId)
     .maybeSingle();
   throwIfError(error, null);
-  return data ?? undefined;
+  return (data as FundRow | null) ?? undefined;
+}
+
+export async function listPublicFunds(input?: {
+  limit?: number;
+  offset?: number;
+}): Promise<FundRow[]> {
+  const db = supabase();
+  const limit = input?.limit ?? 50;
+  const offset = input?.offset ?? 0;
+  const { data, error } = await db
+    .from("funds")
+    .select(
+      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,is_verified,visibility,verification_note,created_by,created_at,updated_at"
+    )
+    .eq("is_verified", true)
+    .eq("visibility", "PUBLIC")
+    .order("updated_at", { ascending: false })
+    .range(offset, offset + Math.max(limit - 1, 0));
+  throwIfError(error, null);
+  return (data ?? []) as FundRow[];
+}
+
+export async function updateFundVerification(input: {
+  fundId: string;
+  isVerified: boolean;
+  visibility: "PUBLIC" | "HIDDEN";
+  verificationNote: string | null;
+}): Promise<void> {
+  const db = supabase();
+  const { error } = await db
+    .from("funds")
+    .update({
+      is_verified: input.isVerified,
+      visibility: input.visibility,
+      verification_note: input.verificationNote,
+      updated_at: nowMs()
+    })
+    .eq("fund_id", input.fundId);
+  throwIfError(error, null);
 }
 
 export async function getFundThresholds(
@@ -275,6 +345,21 @@ export async function getFundDeployment(fundId: string): Promise<FundDeploymentR
       "id,fund_id,chain_id,factory_address,onchain_fund_id,intent_book_address,claw_core_address,claw_vault_address,fund_owner_address,strategy_agent_address,snapshot_book_address,asset_address,deploy_tx_hash,deploy_block_number,deployer_address,created_at,updated_at"
     )
     .eq("fund_id", fundId)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as FundDeploymentRow | null) ?? undefined;
+}
+
+export async function getFundDeploymentByTxHash(
+  txHash: string
+): Promise<FundDeploymentRow | undefined> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("fund_deployments")
+    .select(
+      "id,fund_id,chain_id,factory_address,onchain_fund_id,intent_book_address,claw_core_address,claw_vault_address,fund_owner_address,strategy_agent_address,snapshot_book_address,asset_address,deploy_tx_hash,deploy_block_number,deployer_address,created_at,updated_at"
+    )
+    .eq("deploy_tx_hash", txHash.toLowerCase())
     .maybeSingle();
   throwIfError(error, null);
   return (data as FundDeploymentRow | null) ?? undefined;

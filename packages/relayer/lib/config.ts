@@ -142,6 +142,18 @@ export function loadFactoryRuntimeConfig() {
   };
 }
 
+export function loadChainReadConfig() {
+  const chainId = BigInt(env("CHAIN_ID"));
+  const rpcUrl = env("RPC_URL");
+  const factoryAddress = env("CLAW_FUND_FACTORY_ADDRESS") as Address;
+
+  return {
+    chainId,
+    rpcUrl,
+    factoryAddress
+  };
+}
+
 export function loadExecutionConfig() {
   const chainId = BigInt(env("CHAIN_ID"));
   const rpcUrl = env("RPC_URL");

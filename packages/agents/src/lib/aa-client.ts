@@ -127,6 +127,24 @@ export interface StrategyAaClientConfig {
   userOpVersion?: UserOpVersion;
 }
 
+export interface StrategyAaClientEnvOverrides {
+  chainId?: number;
+  rpcUrl?: string;
+  bundlerUrl?: string;
+  entryPoint?: Address;
+  smartAccount?: Address;
+  ownerPrivateKey?: Hex;
+  initCode?: Hex;
+  callGasLimit?: bigint;
+  verificationGasLimit?: bigint;
+  preVerificationGas?: bigint;
+  maxPriorityFeePerGas?: bigint;
+  maxFeePerGas?: bigint;
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+  userOpVersion?: UserOpVersion;
+}
+
 export interface ExecuteViaAaInput {
   target: Address;
   data: Hex;
@@ -180,16 +198,22 @@ export class StrategyAaClient {
     });
   }
 
-  static fromEnv(): StrategyAaClient {
+  static fromEnv(overrides: StrategyAaClientEnvOverrides = {}): StrategyAaClient {
     const chainIdRaw = process.env.CHAIN_ID ?? '10143';
-    const chainId = Number(chainIdRaw);
-    const rpcUrl = process.env.STRATEGY_AA_RPC_URL ?? process.env.RPC_URL ?? '';
-    const bundlerUrl = process.env.STRATEGY_AA_BUNDLER_URL ?? '';
-    const entryPoint = process.env.STRATEGY_AA_ENTRYPOINT_ADDRESS ?? '';
-    const smartAccount = process.env.STRATEGY_AA_ACCOUNT_ADDRESS ?? '';
+    const envChainId = Number(chainIdRaw);
+    const chainId = overrides.chainId ?? envChainId;
+    const rpcUrl = overrides.rpcUrl ?? process.env.STRATEGY_AA_RPC_URL ?? process.env.RPC_URL ?? '';
+    const bundlerUrl = overrides.bundlerUrl ?? process.env.STRATEGY_AA_BUNDLER_URL ?? '';
+    const entryPoint = overrides.entryPoint ?? (process.env.STRATEGY_AA_ENTRYPOINT_ADDRESS as Address | undefined) ?? '';
+    const smartAccount = overrides.smartAccount ?? (process.env.STRATEGY_AA_ACCOUNT_ADDRESS as Address | undefined) ?? '';
     const ownerPrivateKey =
-      process.env.STRATEGY_AA_OWNER_PRIVATE_KEY ?? process.env.STRATEGY_PRIVATE_KEY ?? '';
-    const rawUserOpVersion = (process.env.STRATEGY_AA_USER_OP_VERSION ?? 'v07').toLowerCase();
+      overrides.ownerPrivateKey ??
+      (process.env.STRATEGY_AA_OWNER_PRIVATE_KEY as Hex | undefined) ??
+      (process.env.STRATEGY_PRIVATE_KEY as Hex | undefined) ??
+      '';
+    const rawUserOpVersion =
+      (overrides.userOpVersion ?? (process.env.STRATEGY_AA_USER_OP_VERSION as UserOpVersion | undefined) ?? 'v07')
+        .toLowerCase();
     if (rawUserOpVersion !== 'v06' && rawUserOpVersion !== 'v07') {
       throw new Error('STRATEGY_AA_USER_OP_VERSION must be one of: v06, v07');
     }
@@ -228,14 +252,19 @@ export class StrategyAaClient {
       entryPoint: entryPoint as Address,
       smartAccount: smartAccount as Address,
       ownerPrivateKey: ownerPrivateKey as Hex,
-      initCode: (process.env.STRATEGY_AA_INIT_CODE as Hex | undefined) ?? ('0x' as Hex),
-      callGasLimit: parseBigIntEnv('STRATEGY_AA_CALL_GAS_LIMIT'),
-      verificationGasLimit: parseBigIntEnv('STRATEGY_AA_VERIFICATION_GAS_LIMIT'),
-      preVerificationGas: parseBigIntEnv('STRATEGY_AA_PRE_VERIFICATION_GAS'),
-      maxPriorityFeePerGas: parseBigIntEnv('STRATEGY_AA_MAX_PRIORITY_FEE_PER_GAS'),
-      maxFeePerGas: parseBigIntEnv('STRATEGY_AA_MAX_FEE_PER_GAS'),
-      pollIntervalMs: parseNumberEnv('STRATEGY_AA_POLL_INTERVAL_MS'),
-      timeoutMs: parseNumberEnv('STRATEGY_AA_TIMEOUT_MS'),
+      initCode:
+        overrides.initCode ??
+        ((process.env.STRATEGY_AA_INIT_CODE as Hex | undefined) ?? ('0x' as Hex)),
+      callGasLimit: overrides.callGasLimit ?? parseBigIntEnv('STRATEGY_AA_CALL_GAS_LIMIT'),
+      verificationGasLimit:
+        overrides.verificationGasLimit ?? parseBigIntEnv('STRATEGY_AA_VERIFICATION_GAS_LIMIT'),
+      preVerificationGas:
+        overrides.preVerificationGas ?? parseBigIntEnv('STRATEGY_AA_PRE_VERIFICATION_GAS'),
+      maxPriorityFeePerGas:
+        overrides.maxPriorityFeePerGas ?? parseBigIntEnv('STRATEGY_AA_MAX_PRIORITY_FEE_PER_GAS'),
+      maxFeePerGas: overrides.maxFeePerGas ?? parseBigIntEnv('STRATEGY_AA_MAX_FEE_PER_GAS'),
+      pollIntervalMs: overrides.pollIntervalMs ?? parseNumberEnv('STRATEGY_AA_POLL_INTERVAL_MS'),
+      timeoutMs: overrides.timeoutMs ?? parseNumberEnv('STRATEGY_AA_TIMEOUT_MS'),
       userOpVersion: rawUserOpVersion as UserOpVersion
     });
   }

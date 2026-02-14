@@ -8,10 +8,17 @@ create table if not exists funds (
   intent_threshold_weight text not null,
   strategy_policy_uri text,
   telegram_room_id text,
+  is_verified boolean not null default false,
+  visibility text not null default 'HIDDEN',
+  verification_note text,
   created_by text not null,
   created_at bigint not null,
   updated_at bigint not null
 );
+
+alter table if exists funds add column if not exists is_verified boolean not null default false;
+alter table if exists funds add column if not exists visibility text not null default 'HIDDEN';
+alter table if exists funds add column if not exists verification_note text;
 
 create table if not exists fund_bots (
   id bigserial primary key,
@@ -145,7 +152,9 @@ create table if not exists execution_jobs (
 create index if not exists idx_attestations_subject on attestations(subject_type, subject_hash, status);
 create index if not exists idx_fund_bots_fund on fund_bots(fund_id, status);
 create index if not exists idx_fund_deployments_chain on fund_deployments(chain_id, onchain_fund_id);
+create unique index if not exists idx_fund_deployments_tx_hash_unique on fund_deployments(deploy_tx_hash);
 create index if not exists idx_claims_fund_epoch on claims(fund_id, epoch_id, created_at desc);
 create index if not exists idx_snapshots_fund_finalized on snapshots(fund_id, finalized_at desc);
 create index if not exists idx_intents_fund_snapshot on intents(fund_id, snapshot_hash, created_at desc);
 create index if not exists idx_execution_jobs_status_next on execution_jobs(status, next_run_at, created_at);
+create index if not exists idx_funds_verified_visibility on funds(is_verified, visibility, updated_at desc);

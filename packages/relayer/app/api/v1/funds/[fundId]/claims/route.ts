@@ -33,7 +33,7 @@ export async function POST(
   const membership = await requireFundBotRole({
     fundId,
     botId: botAuth.botId,
-    allowedRoles: ["crawler"]
+    allowedRoles: ["participant"]
   });
   if (!membership.ok) {
     return membership.response;
@@ -69,7 +69,7 @@ export async function POST(
     return NextResponse.json(
       {
         error: "FORBIDDEN",
-        message: "claimPayload.crawler must match registered crawler bot address",
+        message: "claimPayload.crawler must match registered participant bot address",
         expectedCrawler: membership.membership.botAddress,
         receivedCrawler: claimedCrawler
       },

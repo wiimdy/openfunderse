@@ -55,8 +55,8 @@ Vercel 프로젝트 생성 시 Root Directory를 아래로 지정:
 AUTH_SECRET=long-random-secret
 POSTGRES_URL=postgres://user:pass@host:5432/db
 ADMIN_EMAILS=ops1@yourdomain.com,ops2@yourdomain.com
-BOT_API_KEYS=bot-strategy-1:key1,bot-crawler-1:key2,bot-verifier-1:key3
-BOT_SCOPES=bot-strategy-1:intents.propose,bot-crawler-1:claims.submit,bot-verifier-1:claims.attest|intents.attest
+BOT_API_KEYS=bot-strategy-1:key1,bot-participant-1:key2
+BOT_SCOPES=bot-strategy-1:intents.propose,bot-participant-1:claims.submit|claims.attest|intents.attest
 ```
 
 ## 3) 운영자/유저 동선
@@ -93,7 +93,7 @@ curl -i -X POST "$RELAYER_BASE_URL/api/v1/funds/fund-demo/claims"
 ```bash
 curl -i -X POST "$RELAYER_BASE_URL/api/v1/funds/fund-demo/claims" \
   -H "content-type: application/json" \
-  -H "x-bot-id: bot-crawler-1" \
+  -H "x-bot-id: bot-participant-1" \
   -H "x-bot-api-key: key2" \
   -d '{"claim":"demo"}'
 ```
@@ -119,8 +119,7 @@ MoltBot 런타임에서 Relayer 호출 시 아래 헤더를 항상 포함:
 - `x-bot-api-key`
 
 역할별 scope 예시:
-- crawler: `claims.submit`
-- verifier: `claims.attest`, `intents.attest`
+- participant: `claims.submit`, `claims.attest`, `intents.attest`
 - strategy: `intents.propose`
 
 ## 5.2 설치 UX 목표

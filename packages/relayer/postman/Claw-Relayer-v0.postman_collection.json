@@ -169,7 +169,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"role\": \"verifier\",\n  \"botId\": \"bot-verifier-2\",\n  \"botAddress\": \"0x00000000000000000000000000000000000000b2\",\n  \"policyUri\": \"ipfs://todo\",\n  \"telegramHandle\": \"@bot_verifier_2\"\n}"
+              "raw": "{\n  \"role\": \"participant\",\n  \"botId\": \"{{participant_bot_id}}\",\n  \"botAddress\": \"{{participant_address}}\",\n  \"policyUri\": \"ipfs://todo\",\n  \"telegramHandle\": \"@participant_bot\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/bots/register",
@@ -230,16 +230,16 @@
               },
               {
                 "key": "x-bot-id",
-                "value": "{{crawler_bot_id}}"
+                "value": "{{participant_bot_id}}"
               },
               {
                 "key": "x-bot-api-key",
-                "value": "{{crawler_bot_api_key}}"
+                "value": "{{participant_bot_api_key}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"epochId\": \"{{epoch_id}}\",\n  \"claimPayload\": {\n    \"schemaId\": \"price_signal_v1\",\n    \"sourceType\": \"WEB\",\n    \"sourceRef\": \"https://example.com/tokens/{{token_out}}\",\n    \"selector\": \"$.signal\",\n    \"extracted\": \"BUY\",\n    \"extractedType\": \"string\",\n    \"timestamp\": \"1739940000\",\n    \"responseHash\": \"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n    \"evidenceType\": \"url\",\n    \"evidenceURI\": \"https://example.com/evidence/1\",\n    \"crawler\": \"{{crawler_address}}\",\n    \"notes\": \"demo claim\"\n  }\n}"
+              "raw": "{\n  \"epochId\": \"{{epoch_id}}\",\n  \"claimPayload\": {\n    \"schemaId\": \"price_signal_v1\",\n    \"sourceType\": \"WEB\",\n    \"sourceRef\": \"https://example.com/tokens/{{token_out}}\",\n    \"selector\": \"$.signal\",\n    \"extracted\": \"BUY\",\n    \"extractedType\": \"string\",\n    \"timestamp\": \"1739940000\",\n    \"responseHash\": \"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\n    \"evidenceType\": \"url\",\n    \"evidenceURI\": \"https://example.com/evidence/1\",\n    \"crawler\": \"{{participant_address}}\",\n    \"notes\": \"demo claim\"\n  }\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/claims",
@@ -289,16 +289,16 @@
               },
               {
                 "key": "x-bot-id",
-                "value": "{{verifier_bot_id}}"
+                "value": "{{participant_bot_id}}"
               },
               {
                 "key": "x-bot-api-key",
-                "value": "{{verifier_bot_api_key}}"
+                "value": "{{participant_bot_api_key}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\",\n  \"verifier\": \"{{verifier_address}}\",\n  \"expiresAt\": \"{{claim_expires_at}}\",\n  \"nonce\": \"{{claim_nonce}}\",\n  \"signature\": \"{{claim_signature}}\"\n}"
+              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\",\n  \"verifier\": \"{{participant_address}}\",\n  \"expiresAt\": \"{{claim_expires_at}}\",\n  \"nonce\": \"{{claim_nonce}}\",\n  \"signature\": \"{{claim_signature}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/attestations",
@@ -327,16 +327,16 @@
               },
               {
                 "key": "x-bot-id",
-                "value": "{{verifier_bot_id}}"
+                "value": "{{participant_bot_id}}"
               },
               {
                 "key": "x-bot-api-key",
-                "value": "{{verifier_bot_api_key}}"
+                "value": "{{participant_bot_api_key}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\",\n  \"verifier\": \"{{verifier_address}}\",\n  \"expiresAt\": \"{{claim_expires_at}}\",\n  \"nonce\": \"{{claim_nonce}}\",\n  \"signature\": \"0xdeadbeef\"\n}"
+              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\",\n  \"verifier\": \"{{participant_address}}\",\n  \"expiresAt\": \"{{claim_expires_at}}\",\n  \"nonce\": \"{{claim_nonce}}\",\n  \"signature\": \"0xdeadbeef\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/attestations",
@@ -409,16 +409,16 @@
               },
               {
                 "key": "x-bot-id",
-                "value": "{{verifier_bot_id}}"
+                "value": "{{participant_bot_id}}"
               },
               {
                 "key": "x-bot-api-key",
-                "value": "{{verifier_bot_api_key}}"
+                "value": "{{participant_bot_api_key}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"attestations\": [\n    {\n      \"intentHash\": \"{{intent_hash}}\",\n      \"verifier\": \"{{verifier_address}}\",\n      \"expiresAt\": \"{{intent_expires_at}}\",\n      \"nonce\": \"{{intent_nonce}}\",\n      \"signature\": \"{{intent_signature}}\"\n    }\n  ]\n}"
+              "raw": "{\n  \"attestations\": [\n    {\n      \"intentHash\": \"{{intent_hash}}\",\n      \"verifier\": \"{{participant_address}}\",\n      \"expiresAt\": \"{{intent_expires_at}}\",\n      \"nonce\": \"{{intent_nonce}}\",\n      \"signature\": \"{{intent_signature}}\"\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/intents/attestations/batch",
@@ -449,16 +449,16 @@
               },
               {
                 "key": "x-bot-id",
-                "value": "{{verifier_bot_id}}"
+                "value": "{{participant_bot_id}}"
               },
               {
                 "key": "x-bot-api-key",
-                "value": "{{verifier_bot_api_key}}"
+                "value": "{{participant_bot_api_key}}"
               }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"attestations\": [\n    {\n      \"intentHash\": \"{{intent_hash}}\",\n      \"verifier\": \"{{verifier_address}}\",\n      \"expiresAt\": \"{{intent_expires_at}}\",\n      \"nonce\": \"{{intent_nonce}}\",\n      \"signature\": \"0xdeadbeef\"\n    }\n  ]\n}"
+              "raw": "{\n  \"attestations\": [\n    {\n      \"intentHash\": \"{{intent_hash}}\",\n      \"verifier\": \"{{participant_address}}\",\n      \"expiresAt\": \"{{intent_expires_at}}\",\n      \"nonce\": \"{{intent_nonce}}\",\n      \"signature\": \"0xdeadbeef\"\n    }\n  ]\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/intents/attestations/batch",

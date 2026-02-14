@@ -98,7 +98,7 @@ const readJsonFile = async <T>(filePath: string): Promise<T> => {
   return JSON.parse(raw) as T;
 };
 
-const buildClientOptions = (prefix: 'CRAWLER' | 'VERIFIER'): RelayerClientOptions | undefined => {
+const buildClientOptionsForPrefix = (prefix: string): RelayerClientOptions | undefined => {
   const botId = process.env[`${prefix}_BOT_ID`];
   const botApiKey = process.env[`${prefix}_BOT_API_KEY`];
   const botAddress = process.env[`${prefix}_BOT_ADDRESS`];
@@ -122,9 +122,55 @@ const buildClientOptions = (prefix: 'CRAWLER' | 'VERIFIER'): RelayerClientOption
   };
 };
 
+const buildDefaultBotClientOptions = (): RelayerClientOptions | undefined => {
+  const botId = process.env.BOT_ID;
+  const botApiKey = process.env.BOT_API_KEY;
+  const botAddress = process.env.BOT_ADDRESS;
+
+  if (!botId && !botApiKey && !botAddress) {
+    return undefined;
+  }
+  if (!botId || !botApiKey) {
+    throw new Error('BOT_ID and BOT_API_KEY must be set together');
+  }
+  if (botAddress && !isAddress(botAddress)) {
+    throw new Error('BOT_ADDRESS must be a valid address');
+  }
+
+  return {
+    botId,
+    botApiKey,
+    botAddress: botAddress as `0x${string}` | undefined
+  };
+};
+
+const buildParticipantClientOptions = (): RelayerClientOptions | undefined => {
+  const scoped = buildClientOptionsForPrefix('PARTICIPANT');
+  if (scoped) {
+    return scoped;
+  }
+  return buildDefaultBotClientOptions();
+};
+
+const participantCrawlerAddress = (): `0x${string}` | undefined => {
+  const raw = process.env.PARTICIPANT_BOT_ADDRESS ?? process.env.BOT_ADDRESS;
+
+  if (!raw || raw.trim().length === 0) {
+    return undefined;
+  }
+  if (!isAddress(raw)) {
+    throw new Error(
+      'PARTICIPANT_BOT_ADDRESS (or BOT_ADDRESS fallback) must be a valid address'
+    );
+  }
+  return raw as `0x${string}`;
+};
+
 const buildVerifierSignerOptions = (): BotSignerOptions => {
   const options: BotSignerOptions = {};
-  if (process.env.VERIFIER_PRIVATE_KEY) {
+  if (process.env.PARTICIPANT_PRIVATE_KEY) {
+    options.privateKey = process.env.PARTICIPANT_PRIVATE_KEY as Hex;
+  } else if (process.env.VERIFIER_PRIVATE_KEY) {
     options.privateKey = process.env.VERIFIER_PRIVATE_KEY as Hex;
   }
   if (process.env.CLAIM_ATTESTATION_VERIFIER_ADDRESS && isAddress(process.env.CLAIM_ATTESTATION_VERIFIER_ADDRESS)) {
@@ -198,7 +244,7 @@ const runParticipantMine = async (parsed: ParsedCli): Promise<void> => {
       symbol: optionOrDefault(parsed, 'token-symbol', 'TOKEN'),
       address: tokenAddress
     },
-    crawlerAddress: process.env.CRAWLER_BOT_ADDRESS as `0x${string}` | undefined
+    crawlerAddress: participantCrawlerAddress()
   });
 
   console.log(jsonStringify(output));
@@ -245,7 +291,7 @@ const runParticipantSubmit = async (parsed: ParsedCli): Promise<void> => {
     fundId: bundle.fundId,
     epochId: bundle.epochId,
     observation: bundle.observation,
-    clientOptions: buildClientOptions('CRAWLER')
+    clientOptions: buildParticipantClientOptions()
   });
   console.log(jsonStringify(output));
   if (output.status !== 'OK') {
@@ -265,7 +311,7 @@ const runParticipantAttest = async (parsed: ParsedCli): Promise<void> => {
     claimHash: claimHash as `0x${string}`,
     epochId: Math.trunc(epochId),
     expiresInSeconds: toNumberOption(parsed, 'expires-in-seconds', 900),
-    clientOptions: buildClientOptions('VERIFIER'),
+    clientOptions: buildParticipantClientOptions(),
     signerOptions: buildVerifierSignerOptions()
   });
   console.log(jsonStringify(output));
@@ -296,7 +342,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
       symbol: optionOrDefault(parsed, 'token-symbol', 'TOKEN'),
       address: requiredOption(parsed, 'token-address')
     },
-    crawlerAddress: process.env.CRAWLER_BOT_ADDRESS as `0x${string}` | undefined
+    crawlerAddress: participantCrawlerAddress()
   });
   if (mine.status !== 'OK' || !mine.observation) {
     console.log(jsonStringify({ step: 'mine', result: mine }));
@@ -327,7 +373,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     fundId,
     epochId: Math.trunc(epochId),
     observation: mine.observation,
-    clientOptions: buildClientOptions('CRAWLER')
+    clientOptions: buildParticipantClientOptions()
   });
   if (submit.status !== 'OK' || !submit.claimHash) {
     console.log(jsonStringify({ step: 'submit', result: submit }));
@@ -340,7 +386,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     claimHash: submit.claimHash as `0x${string}`,
     epochId: Math.trunc(epochId),
     expiresInSeconds: toNumberOption(parsed, 'expires-in-seconds', 900),
-    clientOptions: buildClientOptions('VERIFIER'),
+    clientOptions: buildParticipantClientOptions(),
     signerOptions: buildVerifierSignerOptions()
   });
 

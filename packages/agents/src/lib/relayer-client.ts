@@ -161,6 +161,19 @@ export interface ReadyExecutionPayloadItem {
   executionRoute: IntentExecutionRouteInput;
 }
 
+export interface SyncFundDeploymentInput {
+  fundId: string;
+  fundName: string;
+  strategyBotId: string;
+  strategyBotAddress: Address;
+  txHash: Hex;
+  verifierThresholdWeight?: bigint | number | string;
+  intentThresholdWeight?: bigint | number | string;
+  strategyPolicyUri?: string;
+  telegramRoomId?: string;
+  telegramHandle?: string;
+}
+
 const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -515,6 +528,34 @@ export class RelayerClient {
       method: 'GET',
       path: `/api/v1/funds/${encodeURIComponent(fundId)}/status`,
       withAuth: this.authOnRead
+    });
+  }
+
+  async syncFundDeployment(
+    input: SyncFundDeploymentInput
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>({
+      method: 'POST',
+      path: '/api/v1/funds/sync-by-strategy',
+      body: {
+        fundId: input.fundId,
+        fundName: input.fundName,
+        strategyBotId: input.strategyBotId,
+        strategyBotAddress: input.strategyBotAddress,
+        txHash: input.txHash,
+        verifierThresholdWeight:
+          input.verifierThresholdWeight === undefined
+            ? undefined
+            : String(input.verifierThresholdWeight),
+        intentThresholdWeight:
+          input.intentThresholdWeight === undefined
+            ? undefined
+            : String(input.intentThresholdWeight),
+        strategyPolicyUri: input.strategyPolicyUri,
+        telegramRoomId: input.telegramRoomId,
+        telegramHandle: input.telegramHandle
+      },
+      withAuth: true
     });
   }
 

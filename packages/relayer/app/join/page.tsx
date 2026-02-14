@@ -13,7 +13,7 @@ export default function JoinPage() {
           <li>운영자가 공유한 fundId와 relayer URL 확인</li>
           <li>텔레그램 채팅방 초대 링크로 입장</li>
           <li>MoltBot 환경변수 설정(fundId, botId, bot key, role)</li>
-          <li>역할별 실행 커맨드 실행(crawler/verifier/strategy)</li>
+          <li>역할별 실행 커맨드 실행(participant/strategy)</li>
           <li>채팅방에서 /status, /claims, /intent로 상태 확인</li>
         </ol>
 
