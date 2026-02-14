@@ -1,12 +1,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { isAddress } from 'viem';
 import type { RelayerClientOptions } from './lib/relayer-client.js';
 import {
   mineClaim,
   submitMinedClaim,
   verifyClaim,
-  type MineClaimOutput,
   type MineClaimObservation
 } from './skills/participant/index.js';
 
@@ -109,9 +107,6 @@ const buildClientOptionsForPrefix = (prefix: string): RelayerClientOptions | und
       `${prefix}_BOT_ID and ${prefix}_BOT_API_KEY must be set together`
     );
   }
-  if (botAddress && !isAddress(botAddress)) {
-    throw new Error(`${prefix}_BOT_ADDRESS must be a valid address`);
-  }
 
   return {
     botId,
@@ -131,9 +126,6 @@ const buildDefaultBotClientOptions = (): RelayerClientOptions | undefined => {
   if (!botId || !botApiKey) {
     throw new Error('BOT_ID and BOT_API_KEY must be set together');
   }
-  if (botAddress && !isAddress(botAddress)) {
-    throw new Error('BOT_ADDRESS must be a valid address');
-  }
 
   return {
     botId,
@@ -150,30 +142,27 @@ const buildParticipantClientOptions = (): RelayerClientOptions | undefined => {
   return buildDefaultBotClientOptions();
 };
 
-const participantCrawlerAddress = (): `0x${string}` | undefined => {
-  const raw = process.env.PARTICIPANT_BOT_ADDRESS ?? process.env.BOT_ADDRESS;
-
-  if (!raw || raw.trim().length === 0) {
-    return undefined;
+const parseTargetWeights = (raw: string): Array<string | number | bigint> => {
+  const tokens = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (tokens.length === 0) {
+    throw new Error('--target-weights must contain at least one integer');
   }
-  if (!isAddress(raw)) {
-    throw new Error(
-      'PARTICIPANT_BOT_ADDRESS (or BOT_ADDRESS fallback) must be a valid address'
-    );
-  }
-  return raw as `0x${string}`;
+  return tokens.map((token) => {
+    try {
+      return BigInt(token);
+    } catch {
+      throw new Error(`invalid target weight: ${token}`);
+    }
+  });
 };
 
 const observationToClaimPayload = (
   observation: MineClaimObservation
 ): Record<string, unknown> => {
-  return {
-    sourceRef: observation.canonicalPayload.sourceRef,
-    extracted: observation.canonicalPayload.extracted,
-    responseHash: observation.canonicalPayload.responseHash,
-    evidenceURI: observation.canonicalPayload.evidenceURI,
-    timestamp: Number(observation.canonicalPayload.timestamp)
-  };
+  return observation.canonicalClaim as unknown as Record<string, unknown>;
 };
 
 const readObservationFromFile = async (
@@ -189,7 +178,7 @@ const readObservationFromFile = async (
     }
     return { fundId, epochId: Math.trunc(epochId), observation };
   }
-  if (parsed.claimHash && parsed.canonicalPayload) {
+  if (parsed.claimHash && parsed.canonicalClaim) {
     const observation = parsed as unknown as MineClaimObservation;
     const fundId = String(parsed.fundId ?? '');
     const epochId = Number(parsed.epochId ?? 0);
@@ -208,24 +197,19 @@ const runParticipantMine = async (parsed: ParsedCli): Promise<void> => {
     throw new Error('--epoch-id must be a number');
   }
 
-  const sourceRef = requiredOption(parsed, 'source-ref');
-  const tokenAddress = requiredOption(parsed, 'token-address');
   const output = await mineClaim({
     taskType: 'mine_claim',
     fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
     epochId: Math.trunc(epochId),
-    sourceSpec: {
-      sourceSpecId: optionOrDefault(parsed, 'source-spec-id', 'participant-source'),
-      sourceRef,
-      extractor: { mode: 'raw-slice-256' },
-      freshnessSeconds: toNumberOption(parsed, 'freshness-seconds', 15)
-    },
-    tokenContext: {
-      symbol: optionOrDefault(parsed, 'token-symbol', 'TOKEN'),
-      address: tokenAddress
-    },
-    crawlerAddress: participantCrawlerAddress()
+    allocation: {
+      participant: parsed.options.get('participant'),
+      targetWeights: parseTargetWeights(requiredOption(parsed, 'target-weights')),
+      horizonSec: toNumberOption(parsed, 'horizon-sec', 3600),
+      nonce: parsed.options.has('nonce')
+        ? toNumberOption(parsed, 'nonce', Math.trunc(Date.now() / 1000))
+        : undefined
+    }
   });
 
   console.log(jsonStringify(output));
@@ -250,7 +234,7 @@ const runParticipantVerify = async (parsed: ParsedCli): Promise<void> => {
     subjectHash: bundle.observation.claimHash,
     subjectPayload: observationToClaimPayload(bundle.observation),
     validationPolicy: {
-      reproducible: optionOrDefault(parsed, 'reproducible', 'true') !== 'false',
+      reproducible: true,
       maxDataAgeSeconds: toNumberOption(parsed, 'max-data-age-seconds', 300)
     }
   });
@@ -295,17 +279,14 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
     epochId: Math.trunc(epochId),
-    sourceSpec: {
-      sourceSpecId: optionOrDefault(parsed, 'source-spec-id', 'participant-source'),
-      sourceRef: requiredOption(parsed, 'source-ref'),
-      extractor: { mode: 'raw-slice-256' },
-      freshnessSeconds: toNumberOption(parsed, 'freshness-seconds', 15)
-    },
-    tokenContext: {
-      symbol: optionOrDefault(parsed, 'token-symbol', 'TOKEN'),
-      address: requiredOption(parsed, 'token-address')
-    },
-    crawlerAddress: participantCrawlerAddress()
+    allocation: {
+      participant: parsed.options.get('participant'),
+      targetWeights: parseTargetWeights(requiredOption(parsed, 'target-weights')),
+      horizonSec: toNumberOption(parsed, 'horizon-sec', 3600),
+      nonce: parsed.options.has('nonce')
+        ? toNumberOption(parsed, 'nonce', Math.trunc(Date.now() / 1000))
+        : undefined
+    }
   });
   if (mine.status !== 'OK' || !mine.observation) {
     console.log(jsonStringify({ step: 'mine', result: mine }));
@@ -322,7 +303,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     subjectHash: mine.observation.claimHash,
     subjectPayload: observationToClaimPayload(mine.observation),
     validationPolicy: {
-      reproducible: optionOrDefault(parsed, 'reproducible', 'true') !== 'false',
+      reproducible: true,
       maxDataAgeSeconds: toNumberOption(parsed, 'max-data-age-seconds', 300)
     }
   });
@@ -345,42 +326,31 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     return;
   }
 
-  if (submit.decision !== 'SUBMITTED') {
-    const report = {
-      step: 'participant-e2e',
-      mode: 'READY',
-      fundId,
-      epochId: Math.trunc(epochId),
-      claimHash: submit.claimHash,
-      mine,
-      verify,
-      submit,
-      finalize: { status: 'SKIPPED', reason: 'participant submit gate is not enabled; pass --submit and set PARTICIPANT_AUTO_SUBMIT=true' }
-    };
-    console.log(jsonStringify(report));
-    const reportFile = parsed.options.get('report-file');
-    if (reportFile) {
-      await writeJsonFile(reportFile, report);
-    }
-    return;
-  }
-
   const report = {
     step: 'participant-e2e',
+    mode: submit.decision === 'SUBMITTED' ? 'SUBMITTED' : 'READY',
     fundId,
     epochId: Math.trunc(epochId),
     claimHash: submit.claimHash,
     mine,
     verify,
-    submit
+    submit,
+    finalize:
+      submit.decision === 'SUBMITTED'
+        ? undefined
+        : {
+            status: 'SKIPPED',
+            reason:
+              'participant submit gate is not enabled; pass --submit and set PARTICIPANT_AUTO_SUBMIT=true'
+          }
   };
+
   console.log(jsonStringify(report));
 
   const reportFile = parsed.options.get('report-file');
   if (reportFile) {
     await writeJsonFile(reportFile, report);
   }
-
 };
 
 const printUsage = (): void => {
@@ -388,20 +358,19 @@ const printUsage = (): void => {
 [agents] participant commands
 
 participant-mine
-  --fund-id <id> --epoch-id <n> --source-ref <url> --token-address <0x...>
-  [--source-spec-id <id>] [--token-symbol <sym>] [--room-id <id>]
-  [--freshness-seconds <n>] [--out-file <path>]
+  --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
+  [--participant <0x...>] [--horizon-sec <n>] [--nonce <n>] [--room-id <id>] [--out-file <path>]
 
 participant-verify
   --claim-file <path>
-  [--reproducible true|false] [--max-data-age-seconds <n>] [--out-file <path>]
+  [--max-data-age-seconds <n>] [--out-file <path>]
 
 participant-submit
   --claim-file <path> [--submit]
 
 participant-e2e
-  --fund-id <id> --epoch-id <n> --source-ref <url> --token-address <0x...>
-  [--token-symbol <sym>] [--reproducible true|false] [--report-file <path>] [--submit]
+  --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
+  [--participant <0x...>] [--horizon-sec <n>] [--report-file <path>] [--submit]
 `);
 };
 

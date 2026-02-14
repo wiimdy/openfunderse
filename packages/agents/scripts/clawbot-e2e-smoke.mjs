@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 
 const cwd = process.cwd();
+const AGENTS_WORKSPACE = '@wiimdy/openfunderse-agents';
 
 const run = (cmd, args, options = {}) =>
   new Promise((resolve, reject) => {
@@ -31,35 +32,6 @@ async function main() {
   const now = nowSeconds();
   const deadline = now + 1800;
 
-  const sampleClaim = {
-    fundId: process.env.FUND_ID ?? 'demo-fund',
-    epochId: 1,
-    observation: {
-      claimHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
-      sourceSpecId: 'sample-source',
-      token: '0x00000000000000000000000000000000000000a1',
-      timestamp: now,
-      extracted: 'sample',
-      responseHash: '0x2222222222222222222222222222222222222222222222222222222222222222',
-      evidenceURI: 'https://example.com/evidence',
-      crawler: '0x00000000000000000000000000000000000000b2',
-      canonicalPayload: {
-        schemaId: 'claim_template_v0',
-        sourceType: 'WEB',
-        sourceRef: 'https://example.com/evidence',
-        selector: '$.raw',
-        extracted:
-          '{"token":"0x00000000000000000000000000000000000000a1","sample":"sample"}',
-        extractedType: 'json',
-        timestamp: String(now),
-        responseHash: '0x2222222222222222222222222222222222222222222222222222222222222222',
-        evidenceType: 'url',
-        evidenceURI: 'https://example.com/evidence',
-        crawler: '0x00000000000000000000000000000000000000b2'
-      }
-    }
-  };
-
   const sampleIntent = {
     intentVersion: 'V1',
     vault: process.env.VAULT_ADDRESS ?? '0x0000000000000000000000000000000000000001',
@@ -85,17 +57,41 @@ async function main() {
   };
 
   try {
-    await writeFile(claimPath, JSON.stringify(sampleClaim, null, 2));
     await writeFile(intentPath, JSON.stringify(sampleIntent, null, 2));
     await writeFile(routePath, JSON.stringify(sampleRoute, null, 2));
 
     console.log('\n[smoke] 1) clawbot-run help');
-    await run('npm', ['run', 'clawbot:run', '--', '--help']);
+    await run('npm', ['run', 'clawbot:run', '-w', AGENTS_WORKSPACE, '--', '--help']);
 
-    console.log('\n[smoke] 2) participant verify routing');
+    console.log('\n[smoke] 2) participant mine routing');
     await run('npm', [
       'run',
       'clawbot:run',
+      '-w',
+      AGENTS_WORKSPACE,
+      '--',
+      '--role',
+      'participant',
+      '--action',
+      'mine_claim',
+      '--fund-id',
+      process.env.FUND_ID ?? 'demo-fund',
+      '--epoch-id',
+      '1',
+      '--target-weights',
+      '7000,3000',
+      '--participant',
+      process.env.BOT_ADDRESS ?? '0x00000000000000000000000000000000000000b2',
+      '--out-file',
+      claimPath
+    ]);
+
+    console.log('\n[smoke] 3) participant verify routing');
+    await run('npm', [
+      'run',
+      'clawbot:run',
+      '-w',
+      AGENTS_WORKSPACE,
       '--',
       '--role',
       'participant',
@@ -103,16 +99,16 @@ async function main() {
       'verify_claim',
       '--claim-file',
       claimPath,
-      '--reproducible',
-      'false',
       '--max-data-age-seconds',
       '86400'
     ]);
 
-    console.log('\n[smoke] 3) strategy help routing');
+    console.log('\n[smoke] 4) strategy help routing');
     await run('npm', [
       'run',
       'clawbot:run',
+      '-w',
+      AGENTS_WORKSPACE,
       '--',
       '--role',
       'strategy',
@@ -128,10 +124,12 @@ async function main() {
       Boolean(process.env.FUND_ID);
 
     if (canNetwork) {
-      console.log('\n[smoke] 4) strategy propose_intent (network)');
+      console.log('\n[smoke] 5) strategy propose_intent (network)');
       await run('npm', [
         'run',
         'clawbot:run',
+        '-w',
+        AGENTS_WORKSPACE,
         '--',
         '--role',
         'strategy',
@@ -146,7 +144,7 @@ async function main() {
       ]);
     } else {
       console.log(
-        '\n[smoke] 4) strategy propose_intent skipped (need RELAYER_URL,BOT_ID,BOT_API_KEY,FUND_ID)'
+        '\n[smoke] 5) strategy propose_intent skipped (need RELAYER_URL,BOT_ID,BOT_API_KEY,FUND_ID)'
       );
     }
 

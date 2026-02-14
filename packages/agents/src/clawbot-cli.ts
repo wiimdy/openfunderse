@@ -80,7 +80,7 @@ clawbot-run --role <strategy|participant> --action <action> [action options...]
 
 Examples:
   clawbot-run --role strategy --action propose_intent --fund-id demo-fund --intent-file ./intent.json --execution-route-file ./route.json
-  clawbot-run --role participant --action mine_claim --fund-id demo-fund --epoch-id 1 --source-ref https://example.com --token-address 0x...
+  clawbot-run --role participant --action mine_claim --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000
 `);
 };
 

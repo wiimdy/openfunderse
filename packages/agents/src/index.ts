@@ -1,4 +1,3 @@
-import { runRedditMvpCli } from './reddit-mvp.js';
 import { runParticipantCli } from './participant-cli.js';
 import { runStrategyCli } from './strategy-cli.js';
 import { runClawbotCli } from './clawbot-cli.js';
@@ -6,7 +5,6 @@ import { runClawbotCli } from './clawbot-cli.js';
 export { createRelayerClient, RelayerClient } from './lib/relayer-client.js';
 export type {
   ClaimQuery,
-  ClaimTemplateInput,
   IntentAttestationInput,
   IntentOnchainBundleItem,
   IntentOnchainBundleResponse,
@@ -60,9 +58,7 @@ console.log(
 );
 console.log(
   `[agents] participant key set=${Boolean(
-    process.env.PARTICIPANT_PRIVATE_KEY ||
-      process.env.BOT_PRIVATE_KEY ||
-      process.env.VERIFIER_PRIVATE_KEY
+    process.env.PARTICIPANT_PRIVATE_KEY
   )}`
 );
 
@@ -78,7 +74,7 @@ const main = async (): Promise<void> => {
   }
   const handledByParticipant = await runParticipantCli(argv);
   if (!handledByParticipant) {
-    await runRedditMvpCli(argv);
+    throw new Error('unknown command. run with --help');
   }
 };
 

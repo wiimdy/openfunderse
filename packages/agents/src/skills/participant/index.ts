@@ -1,62 +1,46 @@
 import {
-  type Address
+  buildCanonicalAllocationClaimRecord,
+  type Address,
+  type AllocationClaimV1
 } from '@claw/protocol-sdk';
 import {
   createRelayerClient,
   type RelayerClientOptions
 } from '../../lib/relayer-client.js';
-import { isAddress, keccak256, toHex } from 'viem';
-
-interface ClaimPayload {
-  schemaId: string;
-  sourceType: string;
-  sourceRef: string;
-  selector: string;
-  extracted: string;
-  extractedType: string;
-  timestamp: bigint;
-  responseHash: `0x${string}`;
-  evidenceType: string;
-  evidenceURI: string;
-  crawler: Address;
-  notes?: string;
-}
+import { isAddress } from 'viem';
 
 export interface MineClaimInput {
   taskType: 'mine_claim';
   fundId: string;
   roomId: string;
   epochId: number;
-  sourceSpec: {
-    sourceSpecId: string;
-    sourceRef: string;
-    extractor: Record<string, unknown>;
-    freshnessSeconds: number;
-    allowHosts?: string[];
+  allocation: {
+    participant?: string;
+    targetWeights: Array<string | number | bigint>;
+    horizonSec?: number;
+    nonce?: number;
   };
-  tokenContext: {
-    symbol: string;
-    address: string;
-  };
-  crawlerAddress?: Address;
-  maxResponseBytes?: number;
 }
 
-export interface SerializedClaimPayload
-  extends Omit<ClaimPayload, 'timestamp'> {
-  timestamp: string;
+export interface SerializedAllocationClaimV1 {
+  claimVersion: 'v1';
+  fundId: string;
+  epochId: string;
+  participant: Address;
+  targetWeights: string[];
+  horizonSec: string;
+  nonce: string;
+  submittedAt: string;
 }
 
 export interface MineClaimObservation {
   claimHash: string;
-  sourceSpecId: string;
-  token: string;
-  timestamp: number;
-  extracted: string;
-  responseHash: string;
-  evidenceURI: string;
-  crawler: string;
-  canonicalPayload: SerializedClaimPayload;
+  participant: Address;
+  targetWeights: string[];
+  horizonSec: string;
+  nonce: string;
+  submittedAt: string;
+  canonicalClaim: SerializedAllocationClaimV1;
 }
 
 export interface MineClaimOutput {
@@ -138,7 +122,6 @@ export interface SubmitMinedClaimOutput {
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
-const DEFAULT_MAX_RESPONSE_BYTES = 512 * 1024;
 const DEFAULT_REQUIRE_EXPLICIT_SUBMIT = true;
 const DEFAULT_AUTO_SUBMIT = false;
 const PRIVATE_HOST_PATTERNS = [
@@ -155,24 +138,6 @@ const PRIVATE_HOST_PATTERNS = [
   /^fe80:/i
 ];
 
-const serializeClaimPayload = (
-  payload: ClaimPayload
-): SerializedClaimPayload => {
-  return {
-    ...payload,
-    timestamp: payload.timestamp.toString()
-  };
-};
-
-const deserializeClaimPayload = (
-  payload: SerializedClaimPayload
-): ClaimPayload => {
-  return {
-    ...payload,
-    timestamp: BigInt(payload.timestamp)
-  };
-};
-
 const parseEnvCsv = (value: string | undefined): string[] => {
   if (!value) return [];
   return value
@@ -188,14 +153,6 @@ const envBool = (name: string, fallback: boolean): boolean => {
   if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
   if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
   return fallback;
-};
-
-const normalizedHostAllowlist = (hosts: string[] | undefined): Set<string> => {
-  const envHosts = parseEnvCsv(process.env.PARTICIPANT_ALLOWED_SOURCE_HOSTS);
-  const allHosts = [...envHosts, ...(hosts ?? [])]
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-  return new Set(allHosts);
 };
 
 const isPrivateHostname = (hostname: string): boolean => {
@@ -262,212 +219,86 @@ const participantSubmitSafety = (
   };
 };
 
-const maxResponseBytesFromEnv = (override?: number): number => {
-  if (override !== undefined && Number.isFinite(override) && override > 0) {
-    return Math.trunc(override);
+const toAddress = (value: string): Address => {
+  if (!isAddress(value)) {
+    throw new Error(`invalid participant address: ${value}`);
   }
-  const raw = process.env.PARTICIPANT_MAX_RESPONSE_BYTES;
-  if (!raw) return DEFAULT_MAX_RESPONSE_BYTES;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_MAX_RESPONSE_BYTES;
-  }
-  return Math.trunc(parsed);
+  return value as Address;
 };
 
-const crawlerAddress = (value?: string): Address => {
-  const raw = (value ?? process.env.CRAWLER_ADDRESS ?? '').trim();
+const participantAddressFromEnv = (override?: string): Address => {
+  const raw = (override ?? process.env.PARTICIPANT_BOT_ADDRESS ?? process.env.BOT_ADDRESS ?? '').trim();
   if (!raw) return ZERO_ADDRESS;
-  if (!isAddress(raw)) {
-    throw new Error(`invalid crawler address: ${raw}`);
-  }
-  return raw as Address;
+  return toAddress(raw);
 };
 
-const validateSourceRef = (
-  sourceRef: string,
-  allowHosts?: string[]
-): URL => {
-  let url: URL;
-  try {
-    url = new URL(sourceRef);
-  } catch {
-    throw new Error(`invalid sourceRef URL: ${sourceRef}`);
+const normalizeTargetWeights = (
+  input: Array<string | number | bigint>
+): bigint[] => {
+  if (!Array.isArray(input) || input.length === 0) {
+    throw new Error('targetWeights must be a non-empty array');
   }
-
-  if (url.protocol !== 'https:' && process.env.PARTICIPANT_ALLOW_HTTP_SOURCE !== 'true') {
-    throw new Error('only https sourceRef is allowed (set PARTICIPANT_ALLOW_HTTP_SOURCE=true for local dev)');
+  const out = input.map((value) => BigInt(value));
+  if (out.some((v) => v < 0n)) {
+    throw new Error('targetWeights must be non-negative');
   }
-
-  const allowlist = normalizedHostAllowlist(allowHosts);
-  const host = url.hostname.trim().toLowerCase();
-  if (allowlist.size > 0) {
-    if (!allowlist.has(host)) {
-      throw new Error(`sourceRef host is not allowlisted: ${host}`);
-    }
-    return url;
+  const sum = out.reduce((acc, cur) => acc + cur, 0n);
+  if (sum <= 0n) {
+    throw new Error('targetWeights sum must be positive');
   }
-
-  if (isPrivateHostname(host)) {
-    throw new Error(`private/internal host is not allowed: ${host}`);
-  }
-  return url;
+  return out;
 };
 
-const readResponseTextWithLimit = async (
-  response: Response,
-  maxBytes: number
-): Promise<string> => {
-  const contentLength = response.headers.get('content-length');
-  if (contentLength) {
-    const announced = Number(contentLength);
-    if (Number.isFinite(announced) && announced > maxBytes) {
-      throw new Error(`response exceeds max size (${announced} > ${maxBytes})`);
-    }
-  }
+const nowSeconds = (): bigint => BigInt(Math.floor(Date.now() / 1000));
 
-  if (!response.body) {
-    const text = await response.text();
-    if (Buffer.byteLength(text, 'utf8') > maxBytes) {
-      throw new Error(`response exceeds max size (${maxBytes} bytes)`);
-    }
-    return text;
-  }
+const toSerializedClaim = (claim: AllocationClaimV1): SerializedAllocationClaimV1 => ({
+  claimVersion: 'v1',
+  fundId: claim.fundId,
+  epochId: claim.epochId.toString(),
+  participant: claim.participant,
+  targetWeights: claim.targetWeights.map((v) => v.toString()),
+  horizonSec: claim.horizonSec.toString(),
+  nonce: claim.nonce.toString(),
+  submittedAt: claim.submittedAt.toString()
+});
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let total = 0;
-  let text = '';
-
-  for (;;) {
-    const next = await reader.read();
-    if (next.done) break;
-    total += next.value.byteLength;
-    if (total > maxBytes) {
-      throw new Error(`response exceeds max size (${maxBytes} bytes)`);
-    }
-    text += decoder.decode(next.value, { stream: true });
-  }
-  text += decoder.decode();
-  return text;
-};
-
-const fetchSourceBody = async (
-  sourceRef: string,
-  freshnessSeconds: number,
-  allowHosts?: string[],
-  maxBytes?: number
-): Promise<string> => {
-  const timeoutMs = Math.max(1, freshnessSeconds) * 1000;
-  const validated = validateSourceRef(sourceRef, allowHosts);
-  const response = await fetch(validated.toString(), {
-    signal: AbortSignal.timeout(timeoutMs),
-    headers: {
-      Accept: 'application/json,text/plain,*/*'
-    }
-  });
-  if (!response.ok) {
-    throw new Error(`source responded with HTTP ${response.status}`);
-  }
-  return readResponseTextWithLimit(response, maxResponseBytesFromEnv(maxBytes));
-};
-
-const claimPayloadFromMine = (input: {
-  sourceSpecId: string;
-  sourceRef: string;
-  tokenAddress: string;
-  extracted: string;
-  responseHash: string;
-  timestamp: number;
-  crawler: Address;
-}): ClaimPayload => {
-  return {
-    schemaId: 'claim_template_v0',
-    sourceType: 'WEB',
-    sourceRef: input.sourceRef,
-    selector: '$.raw',
-    extracted: JSON.stringify({
-      token: input.tokenAddress,
-      sample: input.extracted
-    }),
-    extractedType: 'json',
-    timestamp: BigInt(input.timestamp),
-    responseHash: input.responseHash as `0x${string}`,
-    evidenceType: 'url',
-    evidenceURI: input.sourceRef,
-    crawler: input.crawler,
-    notes: `sourceSpecId=${input.sourceSpecId}`
-  };
-};
-
-const legacyLocalClaimHash = (payload: ClaimPayload, epochId: number): `0x${string}` => {
-  const canonical = JSON.stringify(
-    {
-      epochId,
-      schemaId: payload.schemaId,
-      sourceRef: payload.sourceRef,
-      extracted: payload.extracted,
-      responseHash: payload.responseHash,
-      timestamp: payload.timestamp.toString(),
-      crawler: payload.crawler
-    },
-    (_k, v) => (typeof v === 'bigint' ? v.toString() : v)
-  );
-  return keccak256(toHex(canonical));
-};
-
-function nowSeconds(): number {
-  return Math.floor(Date.now() / 1000);
-}
+const fromSerializedClaim = (
+  claim: SerializedAllocationClaimV1
+): AllocationClaimV1 => ({
+  claimVersion: 'v1',
+  fundId: claim.fundId,
+  epochId: BigInt(claim.epochId),
+  participant: claim.participant,
+  targetWeights: claim.targetWeights.map((v) => BigInt(v)),
+  horizonSec: BigInt(claim.horizonSec),
+  nonce: BigInt(claim.nonce),
+  submittedAt: BigInt(claim.submittedAt)
+});
 
 export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput> {
-  const { sourceSpec, tokenContext, fundId, epochId } = input;
-
-  if (!sourceSpec.sourceRef || !sourceSpec.sourceSpecId) {
-    return {
-      status: 'ERROR',
-      taskType: 'mine_claim',
-      fundId,
-      epochId,
-      confidence: 0,
-      assumptions: [],
-      reasonCode: 'MISSING_FIELDS',
-      error: 'sourceSpec.sourceRef and sourceSpecId are required'
-    };
-  }
-  if (!isAddress(tokenContext.address)) {
-    return {
-      status: 'ERROR',
-      taskType: 'mine_claim',
-      fundId,
-      epochId,
-      confidence: 0,
-      assumptions: [],
-      reasonCode: 'INVALID_SCOPE',
-      error: `invalid token address: ${tokenContext.address}`
-    };
-  }
+  const { fundId, epochId, allocation } = input;
 
   try {
-    const body = await fetchSourceBody(
-      sourceSpec.sourceRef,
-      sourceSpec.freshnessSeconds,
-      sourceSpec.allowHosts,
-      input.maxResponseBytes
-    );
-    const responseHash = keccak256(toHex(body));
-    const timestamp = nowSeconds();
-    const extracted = body.slice(0, 256);
-    const payload = claimPayloadFromMine({
-      sourceSpecId: sourceSpec.sourceSpecId,
-      sourceRef: sourceSpec.sourceRef,
-      tokenAddress: tokenContext.address,
-      extracted,
-      responseHash,
-      timestamp,
-      crawler: crawlerAddress(input.crawlerAddress)
-    });
-    const localClaimHash = legacyLocalClaimHash(payload, epochId);
+    const participant = participantAddressFromEnv(allocation.participant);
+    if (participant === ZERO_ADDRESS) {
+      throw new Error('participant address is required (PARTICIPANT_BOT_ADDRESS or BOT_ADDRESS)');
+    }
+
+    const targetWeights = normalizeTargetWeights(allocation.targetWeights);
+    const submittedAt = nowSeconds();
+
+    const claim: AllocationClaimV1 = {
+      claimVersion: 'v1',
+      fundId,
+      epochId: BigInt(epochId),
+      participant,
+      targetWeights,
+      horizonSec: BigInt(allocation.horizonSec ?? 3600),
+      nonce: BigInt(allocation.nonce ?? submittedAt),
+      submittedAt
+    };
+
+    const canonical = buildCanonicalAllocationClaimRecord({ claim });
 
     return {
       status: 'OK',
@@ -475,21 +306,16 @@ export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput>
       fundId,
       epochId,
       observation: {
-        claimHash: localClaimHash,
-        sourceSpecId: sourceSpec.sourceSpecId,
-        token: tokenContext.address,
-        timestamp,
-        extracted,
-        responseHash,
-        evidenceURI: sourceSpec.sourceRef,
-        crawler: payload.crawler,
-        canonicalPayload: serializeClaimPayload(payload)
+        claimHash: canonical.claimHash,
+        participant,
+        targetWeights: targetWeights.map((v) => v.toString()),
+        horizonSec: claim.horizonSec.toString(),
+        nonce: claim.nonce.toString(),
+        submittedAt: claim.submittedAt.toString(),
+        canonicalClaim: toSerializedClaim(canonical.claim)
       },
-      confidence: 0.75,
-      assumptions: [
-        'extractor logic uses deterministic raw-body slice (first 256 chars)',
-        'claimHash is computed via local deterministic prehash (bridge mode)'
-      ],
+      confidence: 0.95,
+      assumptions: ['claim is allocation-only (targetWeights) and does not include crawl/evidence payloads'],
       reasonCode: 'OK'
     };
   } catch (err: unknown) {
@@ -501,22 +327,14 @@ export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput>
       epochId,
       confidence: 0,
       assumptions: [],
-      reasonCode: 'REPRODUCTION_FAILED',
-      error: `fetch failed: ${message}`
+      reasonCode: 'MISSING_FIELDS',
+      error: message
     };
   }
 }
 
-const REQUIRED_CLAIM_FIELDS = [
-  'sourceRef',
-  'extracted',
-  'responseHash',
-  'evidenceURI'
-] as const;
-
 export async function verifyClaim(input: VerifyClaimInput): Promise<VerifyClaimOutput> {
-  const { fundId, roomId, epochId, subjectType, subjectHash, subjectPayload, validationPolicy } =
-    input;
+  const { fundId, roomId, epochId, subjectType, subjectHash, subjectPayload } = input;
 
   const base = {
     status: 'OK' as const,
@@ -529,14 +347,83 @@ export async function verifyClaim(input: VerifyClaimInput): Promise<VerifyClaimO
   };
 
   if (subjectType === 'CLAIM') {
-    const missing = REQUIRED_CLAIM_FIELDS.filter((field) => !(field in subjectPayload));
-    if (missing.length > 0) {
+    const claimVersion = String(subjectPayload.claimVersion ?? '');
+    const payloadFundId = String(subjectPayload.fundId ?? '');
+    const payloadEpochId = String(subjectPayload.epochId ?? '');
+    const participant = String(subjectPayload.participant ?? '');
+    const targetWeightsRaw = subjectPayload.targetWeights;
+
+    if (
+      claimVersion !== 'v1' ||
+      !payloadFundId ||
+      !payloadEpochId ||
+      !participant ||
+      !Array.isArray(targetWeightsRaw) ||
+      targetWeightsRaw.length === 0
+    ) {
       return {
         ...base,
         verdict: 'NEED_MORE_EVIDENCE',
-        reason: `missing fields: ${missing.join(', ')}`,
+        reason: 'allocation claim requires claimVersion/fundId/epochId/participant/targetWeights',
         reasonCode: 'MISSING_FIELDS',
         confidence: 0,
+        assumptions: []
+      };
+    }
+
+    if (payloadFundId !== fundId || payloadEpochId !== String(epochId)) {
+      return {
+        ...base,
+        verdict: 'FAIL',
+        reason: 'claim scope mismatch with fundId/epochId',
+        reasonCode: 'INVALID_SCOPE',
+        confidence: 0.9,
+        assumptions: []
+      };
+    }
+
+    if (!isAddress(participant)) {
+      return {
+        ...base,
+        verdict: 'FAIL',
+        reason: 'claim participant must be a valid address',
+        reasonCode: 'INVALID_SCOPE',
+        confidence: 0.9,
+        assumptions: []
+      };
+    }
+
+    try {
+      const claim: AllocationClaimV1 = {
+        claimVersion: 'v1',
+        fundId,
+        epochId: BigInt(payloadEpochId),
+        participant: participant as Address,
+        targetWeights: normalizeTargetWeights(targetWeightsRaw as Array<string | number | bigint>),
+        horizonSec: BigInt(String(subjectPayload.horizonSec ?? '3600')),
+        nonce: BigInt(String(subjectPayload.nonce ?? '0')),
+        submittedAt: BigInt(String(subjectPayload.submittedAt ?? '0'))
+      };
+
+      const canonical = buildCanonicalAllocationClaimRecord({ claim });
+      if (canonical.claimHash.toLowerCase() !== subjectHash.toLowerCase()) {
+        return {
+          ...base,
+          verdict: 'FAIL',
+          reason: 'claim hash mismatch against canonical allocation claim',
+          reasonCode: 'HASH_MISMATCH',
+          confidence: 0.95,
+          assumptions: ['canonical hash uses SDK AllocationClaimV1 rules']
+        };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        ...base,
+        verdict: 'FAIL',
+        reason: `claim normalization failed: ${message}`,
+        reasonCode: 'REPRODUCTION_FAILED',
+        confidence: 0.9,
         assumptions: []
       };
     }
@@ -553,67 +440,13 @@ export async function verifyClaim(input: VerifyClaimInput): Promise<VerifyClaimO
     };
   }
 
-  const payloadTimestamp = Number(subjectPayload.timestamp ?? 0);
-  if (payloadTimestamp > 0 && validationPolicy.maxDataAgeSeconds > 0) {
-    const age = nowSeconds() - payloadTimestamp;
-    if (age > validationPolicy.maxDataAgeSeconds) {
-      return {
-        ...base,
-        verdict: 'FAIL',
-        reason: `data age ${age}s exceeds max ${validationPolicy.maxDataAgeSeconds}s`,
-        reasonCode: 'STALE_DATA',
-        confidence: 0.65,
-        assumptions: ['freshness evaluated against current wall-clock time']
-      };
-    }
-  }
-
-  if (subjectType === 'CLAIM' && validationPolicy.reproducible) {
-    const sourceRef = String(subjectPayload.sourceRef ?? '');
-    const expectedResponseHash = String(subjectPayload.responseHash ?? '').toLowerCase();
-    if (!sourceRef || !expectedResponseHash) {
-      return {
-        ...base,
-        verdict: 'NEED_MORE_EVIDENCE',
-        reason: 'reproducible check requires sourceRef and responseHash',
-        reasonCode: 'MISSING_FIELDS',
-        confidence: 0,
-        assumptions: []
-      };
-    }
-    try {
-      const body = await fetchSourceBody(sourceRef, Math.max(5, validationPolicy.maxDataAgeSeconds));
-      const recrawledHash = keccak256(toHex(body)).toLowerCase();
-      if (recrawledHash !== expectedResponseHash) {
-        return {
-          ...base,
-          verdict: 'FAIL',
-          reason: 'responseHash mismatch after re-fetch',
-          reasonCode: 'HASH_MISMATCH',
-          confidence: 0.9,
-          assumptions: ['re-fetched source payload was hashed using keccak256(utf8 body)']
-        };
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return {
-        ...base,
-        verdict: 'FAIL',
-        reason: `reproducibility check failed: ${message}`,
-        reasonCode: 'REPRODUCTION_FAILED',
-        confidence: 0.8,
-        assumptions: []
-      };
-    }
-  }
-
   return {
     ...base,
     verdict: 'PASS',
-    reason: 'required fields are present and validation policy checks passed',
+    reason: 'subject payload passes deterministic scope/hash checks',
     reasonCode: 'OK',
-    confidence: 0.9,
-    assumptions: ['verification is deterministic under the same source response and policy']
+    confidence: 0.95,
+    assumptions: ['participant validation is schema/hash based in allocation-claim mode']
   };
 }
 
@@ -621,19 +454,8 @@ export async function submitMinedClaim(
   input: SubmitMinedClaimInput
 ): Promise<SubmitMinedClaimOutput> {
   try {
-    const canonicalPayload = input.observation.canonicalPayload
-      ? deserializeClaimPayload(input.observation.canonicalPayload)
-      : claimPayloadFromMine({
-          sourceSpecId: input.observation.sourceSpecId,
-          sourceRef: input.observation.evidenceURI,
-          tokenAddress: input.observation.token,
-          extracted: input.observation.extracted,
-          responseHash: input.observation.responseHash,
-          timestamp: input.observation.timestamp,
-          crawler: crawlerAddress(input.observation.crawler)
-        });
-
-    const localClaimHash = legacyLocalClaimHash(canonicalPayload, input.epochId);
+    const claim = fromSerializedClaim(input.observation.canonicalClaim);
+    const canonical = buildCanonicalAllocationClaimRecord({ claim });
 
     const safety = participantSubmitSafety(input.submit ?? false);
     if (safety.submitRequested && !safety.autoSubmitEnabled) {
@@ -641,7 +463,7 @@ export async function submitMinedClaim(
         status: 'ERROR',
         fundId: input.fundId,
         epochId: input.epochId,
-        claimHash: localClaimHash,
+        claimHash: canonical.claimHash,
         reasonCode: 'SAFETY_BLOCKED',
         error:
           'submit was requested but PARTICIPANT_AUTO_SUBMIT is disabled. Set PARTICIPANT_AUTO_SUBMIT=true to allow external submission.',
@@ -655,7 +477,7 @@ export async function submitMinedClaim(
         fundId: input.fundId,
         epochId: input.epochId,
         decision: 'READY',
-        claimHash: localClaimHash,
+        claimHash: canonical.claimHash,
         reasonCode: 'OK',
         safety
       };
@@ -681,7 +503,7 @@ export async function submitMinedClaim(
         status: 'ERROR',
         fundId: input.fundId,
         epochId: input.epochId,
-        claimHash: localClaimHash,
+        claimHash: canonical.claimHash,
         reasonCode: 'SAFETY_BLOCKED',
         error: message,
         safety
@@ -689,12 +511,8 @@ export async function submitMinedClaim(
     }
 
     const client = createRelayerClient(input.clientOptions ?? {});
+    const response = await client.submitClaim(input.fundId, canonical.claim);
 
-    const response = await client.submitClaim(
-      input.fundId,
-      canonicalPayload,
-      BigInt(input.epochId)
-    );
     return {
       status: 'OK',
       fundId: input.fundId,

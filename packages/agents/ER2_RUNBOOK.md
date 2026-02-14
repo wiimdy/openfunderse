@@ -83,8 +83,7 @@ npm run clawbot:run -w @claw/agents -- \
   --action mine_claim \
   --fund-id "$FUND_ID" \
   --epoch-id 1 \
-  --source-ref "https://www.reddit.com/r/CryptoCurrency/new.json?limit=10&raw_json=1" \
-  --token-address 0x00000000000000000000000000000000000000a1 \
+  --target-weights 7000,3000 \
   --out-file /tmp/claim.mine.json
 
 # Verify
