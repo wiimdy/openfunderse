@@ -1,34 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildCanonicalClaimRecord,
+  buildCanonicalAllocationClaimRecord,
   buildCanonicalIntentRecord,
-  buildCanonicalSnapshotRecord,
+  buildEpochStateRecord,
   buildCoreExecutionRequestFromIntent,
   buildIntentAllowlistHashFromRoute,
   intentExecutionCallHash
 } from "../dist/index.js";
 
-test("buildCanonicalClaimRecord normalizes claim and hashes", () => {
-  const out = buildCanonicalClaimRecord({
-    payload: {
-      schemaId: " score_v1 ",
-      sourceType: " WEB ",
-      sourceRef: " https://example.com ",
-      selector: " .score ",
-      extracted: " 123 ",
-      extractedType: " uint ",
-      timestamp: 100n,
-      responseHash: "0x1111111111111111111111111111111111111111111111111111111111111111",
-      evidenceType: " recrawl ",
-      evidenceURI: " ipfs://abc ",
-      crawler: "0x00000000000000000000000000000000000000a1"
-    },
-    epochId: 1n
+test("buildCanonicalAllocationClaimRecord normalizes and hashes", () => {
+  const out = buildCanonicalAllocationClaimRecord({
+    claim: {
+      claimVersion: "v1",
+      fundId: " fund-1 ",
+      epochId: 1n,
+      participant: "0x00000000000000000000000000000000000000A1",
+      targetWeights: [6000n, 4000n],
+      horizonSec: 3600n,
+      nonce: 7n,
+      submittedAt: 1700000000n
+    }
   });
 
-  assert.equal(out.payload.schemaId, "score_v1");
-  assert.equal(out.epochId, 1n);
+  assert.equal(out.claim.fundId, "fund-1");
   assert.equal(out.claimHash.startsWith("0x"), true);
 });
 
@@ -56,10 +51,10 @@ test("buildCanonicalIntentRecord validates deadline and constraints", () => {
   assert.equal(out.intentHash.startsWith("0x"), true);
 });
 
-test("buildCanonicalSnapshotRecord rejects empty claim hashes", () => {
+test("buildEpochStateRecord rejects empty claim hashes", () => {
   assert.throws(
     () =>
-      buildCanonicalSnapshotRecord({
+      buildEpochStateRecord({
         epochId: 1n,
         claimHashes: []
       }),

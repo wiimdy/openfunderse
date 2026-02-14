@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
-  buildCanonicalClaimRecord,
+  buildCanonicalAllocationClaimRecord,
+  type AllocationClaimV1,
   type Address,
-  type ClaimPayload,
   type Hex,
   type IntentExecutionRouteInput,
   type TradeIntent
@@ -27,20 +27,27 @@ export interface ClaimTemplateInput {
   crawler?: Address;
 }
 
+// Legacy local shape kept only for source-fetch template handling in agents.
+export interface ClaimPayload {
+  schemaId: string;
+  sourceType: string;
+  sourceRef: string;
+  selector: string;
+  extracted: string;
+  extractedType: string;
+  timestamp: bigint;
+  responseHash: Hex;
+  evidenceType: string;
+  evidenceURI: string;
+  crawler: Address;
+  notes?: string;
+}
+
 export interface ClaimQuery {
   status?: 'PENDING' | 'APPROVED' | 'REJECTED';
   epochId?: bigint | number | string;
   limit?: number;
   offset?: number;
-}
-
-export interface ClaimAttestationInput {
-  claimHash: Hex;
-  epochId: bigint | number | string;
-  verifier: Address;
-  expiresAt: bigint | number | string;
-  nonce: bigint | number | string;
-  signature: Hex;
 }
 
 export interface IntentAttestationInput {
@@ -116,7 +123,6 @@ export interface SseSubscription {
   close: () => void;
 }
 
-type ClaimEventType = 'claim:attested' | 'snapshot:finalized';
 type IntentEventType = 'intent:attested';
 
 interface RequestConfig {
@@ -129,6 +135,25 @@ interface RequestConfig {
 
 interface SubmitClaimResponse {
   claimHash: Hex;
+}
+
+function toAllocationClaim(input: {
+  fundId: string;
+  epochId: bigint;
+  participant: Address;
+  sourcePayload: ClaimPayload;
+}): AllocationClaimV1 {
+  return {
+    claimVersion: 'v1',
+    fundId: input.fundId,
+    epochId: input.epochId,
+    participant: input.participant,
+    // v0 bridge: legacy payload is mapped into 1-asset target claim.
+    targetWeights: [10_000n],
+    horizonSec: 3600n,
+    nonce: input.sourcePayload.timestamp,
+    submittedAt: input.sourcePayload.timestamp
+  };
 }
 
 export interface IntentOnchainBundleItem {
@@ -297,12 +322,18 @@ export class RelayerClient {
     epochId: bigint | number | string
   ): Promise<SubmitClaimResponse & Record<string, unknown>> {
     const normalizedEpochId = toBigIntOrThrow(epochId, 'epochId');
+    const claim = toAllocationClaim({
+      fundId,
+      epochId: normalizedEpochId,
+      participant: this.botAddress,
+      sourcePayload: claimPayload
+    });
+    const canonical = buildCanonicalAllocationClaimRecord({ claim });
     return this.request<SubmitClaimResponse & Record<string, unknown>>({
       method: 'POST',
       path: `/api/v1/funds/${encodeURIComponent(fundId)}/claims`,
       body: {
-        epochId: normalizedEpochId.toString(),
-        claimPayload
+        claim: canonical.claim
       },
       withAuth: true
     });
@@ -321,11 +352,15 @@ export class RelayerClient {
   > {
     const normalizedEpochId = toBigIntOrThrow(epochId, 'epochId');
     const canonicalPayload = this.buildClaimPayloadFromTemplate(template);
-    const record = buildCanonicalClaimRecord({
-      payload: canonicalPayload,
-      epochId: normalizedEpochId
+    const record = buildCanonicalAllocationClaimRecord({
+      claim: toAllocationClaim({
+        fundId,
+        epochId: normalizedEpochId,
+        participant: this.botAddress,
+        sourcePayload: canonicalPayload
+      })
     });
-    const response = await this.submitClaim(fundId, record.payload, normalizedEpochId);
+    const response = await this.submitClaim(fundId, canonicalPayload, normalizedEpochId);
     if (response.claimHash.toLowerCase() !== record.claimHash.toLowerCase()) {
       throw new RelayerHttpError({
         endpoint: `POST /api/v1/funds/${fundId}/claims`,
@@ -344,7 +379,7 @@ export class RelayerClient {
     return {
       ...response,
       localClaimHash: record.claimHash,
-      canonicalPayload: record.payload
+      canonicalPayload
     };
   }
 
@@ -366,29 +401,10 @@ export class RelayerClient {
     });
   }
 
-  async submitClaimAttestation(
-    fundId: string,
-    attestation: ClaimAttestationInput
-  ): Promise<Record<string, unknown>> {
-    return this.request<Record<string, unknown>>({
-      method: 'POST',
-      path: `/api/v1/funds/${encodeURIComponent(fundId)}/attestations`,
-      body: {
-        claimHash: attestation.claimHash,
-        epochId: String(attestation.epochId),
-        verifier: attestation.verifier,
-        expiresAt: String(attestation.expiresAt),
-        nonce: String(attestation.nonce),
-        signature: attestation.signature
-      },
-      withAuth: true
-    });
-  }
-
-  async getLatestSnapshot(fundId: string): Promise<Record<string, unknown>> {
+  async getLatestEpoch(fundId: string): Promise<Record<string, unknown>> {
     return this.request<Record<string, unknown>>({
       method: 'GET',
-      path: `/api/v1/funds/${encodeURIComponent(fundId)}/snapshots/latest`,
+      path: `/api/v1/funds/${encodeURIComponent(fundId)}/epochs/latest`,
       withAuth: this.authOnRead
     });
   }
@@ -557,17 +573,6 @@ export class RelayerClient {
       },
       withAuth: true
     });
-  }
-
-  subscribeClaimEvents(
-    fundId: string,
-    handlers: SseHandlers<ClaimEventType>
-  ): SseSubscription {
-    return this.subscribeToEvents<ClaimEventType>(
-      `/api/v1/funds/${encodeURIComponent(fundId)}/events/claims`,
-      ['claim:attested', 'snapshot:finalized'],
-      handlers
-    );
   }
 
   subscribeIntentEvents(

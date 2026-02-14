@@ -2,9 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { privateKeyToAccount } from "viem/accounts";
 import {
-  claimAttestationTypedData,
   intentAttestationTypedData,
-  verifyClaimAttestationEnvelope,
   verifyIntentAttestationEnvelope,
   reachedThreshold
 } from "../dist/index.js";
@@ -20,17 +18,16 @@ const account = privateKeyToAccount(
   "0x59c6995e998f97a5a0044966f0945382db1f95b35f5f12956f10f77c34700f3d"
 );
 
-test("verifyClaimAttestationEnvelope success path", async () => {
+test("verifyIntentAttestationEnvelope success path", async () => {
   const message = {
-    claimHash: "0x3aad4f1da71a80fccb5d5842524dd1f8cf23b1e072fc6d74860abd0f0246b3ae",
-    epochId: 12n,
+    intentHash: "0xe9436fca64e752da73fe7e8912837041f27adef605c346a963c04db6ee3e70b3",
     verifier: account.address,
     expiresAt: 4102444800n,
     nonce: 10n
   };
 
-  const signature = await account.signTypedData(claimAttestationTypedData(domain, message));
-  const verified = await verifyClaimAttestationEnvelope(domain, message, signature);
+  const signature = await account.signTypedData(intentAttestationTypedData(domain, message));
+  const verified = await verifyIntentAttestationEnvelope(domain, message, signature);
 
   assert.equal(verified.ok, true);
   assert.equal(verified.recovered, account.address);
@@ -52,16 +49,15 @@ test("verifyIntentAttestationEnvelope fails for expired message", async () => {
   assert.match(verified.error ?? "", /expired/i);
 });
 
-test("verifyClaimAttestationEnvelope fails for malformed signature without throwing", async () => {
+test("verifyIntentAttestationEnvelope fails for malformed signature without throwing", async () => {
   const message = {
-    claimHash: "0x3aad4f1da71a80fccb5d5842524dd1f8cf23b1e072fc6d74860abd0f0246b3ae",
-    epochId: 12n,
+    intentHash: "0xe9436fca64e752da73fe7e8912837041f27adef605c346a963c04db6ee3e70b3",
     verifier: account.address,
     expiresAt: 4102444800n,
     nonce: 11n
   };
 
-  const verified = await verifyClaimAttestationEnvelope(domain, message, "0x1234");
+  const verified = await verifyIntentAttestationEnvelope(domain, message, "0x1234");
 
   assert.equal(verified.ok, false);
   assert.equal(typeof verified.error, "string");

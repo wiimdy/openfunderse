@@ -7,16 +7,16 @@
 - MoltBot 스킬 설치/호출 연동
 
 ## 0) 현재 상태 (중요)
-현재 `packages/relayer/app/api/v1/*` 라우트는 스캐폴드 단계이며 대부분 `501 TODO` 응답입니다.
+현재 relayer는 핵심 v1 라우트(`claims`, `epochs`, `intents`)가 구현되어 있습니다.
 
 즉, 지금 가능한 것:
 - 인증/권한 게이트 동작 확인
 - 엔드포인트 wiring 검증
 - MoltBot -> Relayer 요청 경로 검증
 
-아직 불가능한 것:
-- 실제 DB 영속화 기반 fund/bot/claim/intent 처리
-- 실제 온체인 제출 자동화
+아직 보강이 필요한 것:
+- 운영 모니터링/알림 자동화
+- 전략/참여자 자동화 고도화
 
 ## 1) Vercel 프로젝트 생성
 
@@ -43,9 +43,6 @@ Vercel 프로젝트 생성 시 Root Directory를 아래로 지정:
 권장:
 - `RPC_URL`
 - `CHAIN_ID`
-- `CLAIM_FINALIZATION_MODE` (`OFFCHAIN` or `ONCHAIN`)
-- `CLAIM_ATTESTATION_VERIFIER_ADDRESS`
-- `CLAIM_BOOK_ADDRESS` (`CLAIM_FINALIZATION_MODE=ONCHAIN`일 때만)
 - `INTENT_BOOK_ADDRESS`
 - `CLAW_VAULT_ADDRESS`
 - `RELAYER_SIGNER_PRIVATE_KEY`
@@ -56,7 +53,7 @@ AUTH_SECRET=long-random-secret
 POSTGRES_URL=postgres://user:pass@host:5432/db
 ADMIN_EMAILS=ops1@yourdomain.com,ops2@yourdomain.com
 BOT_API_KEYS=bot-strategy-1:key1,bot-participant-1:key2
-BOT_SCOPES=bot-strategy-1:intents.propose,bot-participant-1:claims.submit|claims.attest|intents.attest
+BOT_SCOPES=bot-strategy-1:intents.propose,bot-participant-1:claims.submit|intents.attest
 ```
 
 ## 3) 운영자/유저 동선
@@ -72,7 +69,7 @@ BOT_SCOPES=bot-strategy-1:intents.propose,bot-participant-1:claims.submit|claims
   - `POST /api/v1/funds/{fundId}/bots/register`
   - NextAuth 세션 + `ADMIN_EMAILS` 체크
 - 봇 API:
-  - claims/attestations/intents 라우트
+  - claims/epochs/intents 라우트
   - `x-bot-id`, `x-bot-api-key`, scope 체크
 
 ## 4) 배포 후 API 테스트
@@ -90,6 +87,7 @@ curl -i -X POST "$RELAYER_BASE_URL/api/v1/funds/fund-demo/claims"
 기대: `401 UNAUTHORIZED`
 
 ### 4.2 봇 인증 + scope 체크 (현재 501이면 정상)
+### 4.2 봇 인증 + scope 체크
 ```bash
 curl -i -X POST "$RELAYER_BASE_URL/api/v1/funds/fund-demo/claims" \
   -H "content-type: application/json" \
@@ -98,6 +96,7 @@ curl -i -X POST "$RELAYER_BASE_URL/api/v1/funds/fund-demo/claims" \
   -d '{"claim":"demo"}'
 ```
 기대: `501 TODO` (현재 로직 미구현 상태에서는 정상)
+기대: 인증 성공 시 2xx/4xx 정책 응답
 
 ### 4.3 관리자 API 체크
 1) `/login`으로 로그인
@@ -109,7 +108,7 @@ curl -i -X POST "$RELAYER_BASE_URL/api/v1/funds" \
 ```
 기대:
 - 관리자 세션 없음: `403`
-- 관리자 세션 있음: `501 TODO`
+- 관리자 세션 있음: 정책/유효성에 따른 2xx/4xx
 
 ## 5) MoltBot 연동 방식 (현재/다음 단계)
 
@@ -119,7 +118,7 @@ MoltBot 런타임에서 Relayer 호출 시 아래 헤더를 항상 포함:
 - `x-bot-api-key`
 
 역할별 scope 예시:
-- participant: `claims.submit`, `claims.attest`, `intents.attest`
+- participant: `claims.submit`, `intents.attest`
 - strategy: `intents.propose`
 
 ## 5.2 설치 UX 목표
@@ -143,7 +142,7 @@ npx clawhub@latest install claw-validation-market
 - claims/intents 라우트에 schema 검증 + `@claw/protocol-sdk` 연동
 
 2. DB 스키마 확정 (Drizzle)
-- funds, bots, bot_keys, claims, attestations, intents, snapshots
+- funds, bots, bot_keys, allocation_claims, epoch_states, intents
 
 3. Bot 인증 고도화
 - 현재 API key + scope -> 추후 EIP-712 nonce/timestamp replay 방지 강화

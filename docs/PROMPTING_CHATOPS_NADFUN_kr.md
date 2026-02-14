@@ -103,8 +103,8 @@ NadFun 컨텍스트:
 
 권장 API:
 1. `POST /v1/funds/{fundId}/claims`
-2. `POST /v1/funds/{fundId}/attestations`
-3. `GET /v1/funds/{fundId}/snapshots/latest`
+2. `POST /v1/funds/{fundId}/epochs/{epochId}/aggregate`
+3. `GET /v1/funds/{fundId}/epochs/latest`
 4. `POST /v1/funds/{fundId}/intents/propose`
 5. `POST /v1/funds/{fundId}/intents/attestations/batch`
 6. `GET /v1/funds/{fundId}/status`

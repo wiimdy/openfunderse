@@ -2,7 +2,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  claimAttestationTypedData,
   intentAttestationTypedData
 } from "@claw/protocol-sdk";
 import { privateKeyToAccount } from "viem/accounts";
@@ -33,45 +32,21 @@ if (signerKey === "0x") {
 const account = privateKeyToAccount(signerKey);
 const chainId = asBigInt("CHAIN_ID", "10143");
 const intentBookAddress = env("INTENT_BOOK_ADDRESS");
-const claimAttestationVerifierAddress = env("CLAIM_ATTESTATION_VERIFIER_ADDRESS");
-
-const claimHash = env(
-  "CLAIM_HASH",
-  "0x1111111111111111111111111111111111111111111111111111111111111111"
-);
 const intentHash = env(
   "INTENT_HASH",
   "0x2222222222222222222222222222222222222222222222222222222222222222"
 );
-const epochId = asBigInt("EPOCH_ID", "1");
-const claimNonce = asBigInt("CLAIM_NONCE", "1");
 const intentNonce = asBigInt("INTENT_NONCE", "2");
 const now = BigInt(Math.floor(Date.now() / 1000));
-const claimExpiresAt = asBigInt("CLAIM_EXPIRES_AT", (now + BigInt(3600)).toString());
 const intentExpiresAt = asBigInt("INTENT_EXPIRES_AT", (now + BigInt(3600)).toString());
 
 const verifier = account.address;
-
-const claimDomain = {
-  name: "ClawClaimBook",
-  version: "1",
-  chainId,
-  verifyingContract: claimAttestationVerifierAddress
-};
 
 const intentDomain = {
   name: "ClawIntentBook",
   version: "1",
   chainId,
   verifyingContract: intentBookAddress
-};
-
-const claimMessage = {
-  claimHash,
-  epochId,
-  verifier,
-  expiresAt: claimExpiresAt,
-  nonce: claimNonce
 };
 
 const intentMessage = {
@@ -81,17 +56,7 @@ const intentMessage = {
   nonce: intentNonce
 };
 
-const claimSignature = await account.signTypedData(claimAttestationTypedData(claimDomain, claimMessage));
 const intentSignature = await account.signTypedData(intentAttestationTypedData(intentDomain, intentMessage));
-
-const claimFixture = {
-  claimHash,
-  epochId: epochId.toString(),
-  verifier,
-  expiresAt: claimExpiresAt.toString(),
-  nonce: claimNonce.toString(),
-  signature: claimSignature
-};
 
 const intentFixture = {
   attestations: [
@@ -109,21 +74,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fixturesDir = path.join(__dirname, "fixtures");
 fs.mkdirSync(fixturesDir, { recursive: true });
 
-fs.writeFileSync(path.join(fixturesDir, "claim-attestation.json"), JSON.stringify(claimFixture, null, 2));
 fs.writeFileSync(path.join(fixturesDir, "intent-attestation-batch.json"), JSON.stringify(intentFixture, null, 2));
 
 console.log("Generated fixtures:");
-console.log(`- ${path.join(fixturesDir, "claim-attestation.json")}`);
 console.log(`- ${path.join(fixturesDir, "intent-attestation-batch.json")}`);
 console.log("\nSet these Postman environment values:");
 console.log(`participant_address=${verifier}`);
-console.log(`claim_attestation_verifier_address=${claimAttestationVerifierAddress}`);
-console.log(`claim_hash=${claimHash}`);
 console.log(`intent_hash=${intentHash}`);
-console.log(`epoch_id=${epochId.toString()}`);
-console.log(`claim_expires_at=${claimExpiresAt.toString()}`);
 console.log(`intent_expires_at=${intentExpiresAt.toString()}`);
-console.log(`claim_nonce=${claimNonce.toString()}`);
 console.log(`intent_nonce=${intentNonce.toString()}`);
-console.log(`claim_signature=${claimSignature}`);
 console.log(`intent_signature=${intentSignature}`);

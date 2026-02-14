@@ -48,6 +48,41 @@ export interface SnapshotRow {
   updated_at: number;
 }
 
+export interface AllocationClaimRow {
+  id: number;
+  fund_id: string;
+  claim_hash: string;
+  epoch_id: string;
+  participant: string;
+  claim_json: string;
+  created_by: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface EpochStateRow {
+  id: number;
+  fund_id: string;
+  epoch_id: string;
+  epoch_state_hash: string;
+  aggregate_weights_json: string;
+  claim_hashes_json: string;
+  claim_count: number;
+  finalized_at: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface StakeWeightRow {
+  id: number;
+  fund_id: string;
+  participant: string;
+  weight: string;
+  epoch_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface IntentRow {
   id: number;
   fund_id: string;
@@ -777,47 +812,56 @@ export async function markSubjectSubmitError(input: {
 
 export async function getStatusSummary(fundId: string) {
   const db = supabase();
-  const { data, error } = await db
+  const { data: intentStates, error } = await db
     .from("subject_state")
     .select("subject_type,status,threshold_weight,attested_weight")
-    .eq("fund_id", fundId);
+    .eq("fund_id", fundId)
+    .eq("subject_type", "INTENT");
   throwIfError(error, null);
 
-  let claimsPending = 0;
-  let claimsApproved = 0;
+  const { count: allocationClaimCount, error: allocationError } = await db
+    .from("allocation_claims")
+    .select("id", { count: "exact", head: true })
+    .eq("fund_id", fundId);
+  throwIfError(allocationError, null);
+
+  const { data: latestEpochRow, error: epochError } = await db
+    .from("epoch_states")
+    .select("epoch_id,epoch_state_hash,claim_count,finalized_at")
+    .eq("fund_id", fundId)
+    .order("finalized_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  throwIfError(epochError, null);
+
   let intentsPending = 0;
   let intentsApproved = 0;
-
-  let claimAttestedWeight = BigInt(0);
-  let claimThresholdWeight = BigInt(0);
   let intentAttestedWeight = BigInt(0);
   let intentThresholdWeight = BigInt(0);
 
-  for (const row of (data ?? []) as Array<{
+  for (const row of (intentStates ?? []) as Array<{
     subject_type: SubjectType;
     status: RecordStatus;
     threshold_weight: string;
     attested_weight: string;
   }>) {
-    if (row.subject_type === "CLAIM") {
-      if (row.status === "PENDING" || row.status === "READY_FOR_ONCHAIN") claimsPending += 1;
-      if (row.status === "APPROVED") claimsApproved += 1;
-      claimAttestedWeight += BigInt(row.attested_weight);
-      claimThresholdWeight += BigInt(row.threshold_weight);
-    } else {
-      if (row.status === "PENDING" || row.status === "READY_FOR_ONCHAIN") intentsPending += 1;
-      if (row.status === "APPROVED") intentsApproved += 1;
-      intentAttestedWeight += BigInt(row.attested_weight);
-      intentThresholdWeight += BigInt(row.threshold_weight);
-    }
+    if (row.status === "PENDING" || row.status === "READY_FOR_ONCHAIN") intentsPending += 1;
+    if (row.status === "APPROVED") intentsApproved += 1;
+    intentAttestedWeight += BigInt(row.attested_weight);
+    intentThresholdWeight += BigInt(row.threshold_weight);
   }
 
   return {
-    claims: {
-      pending: claimsPending,
-      approved: claimsApproved,
-      attestedWeight: claimAttestedWeight.toString(),
-      thresholdWeight: claimThresholdWeight.toString()
+    allocations: {
+      claimCount: Number(allocationClaimCount ?? 0),
+      latestEpoch: latestEpochRow
+        ? {
+            epochId: String(latestEpochRow.epoch_id),
+            epochStateHash: String(latestEpochRow.epoch_state_hash),
+            claimCount: Number(latestEpochRow.claim_count),
+            finalizedAt: Number(latestEpochRow.finalized_at)
+          }
+        : null
     },
     intents: {
       pending: intentsPending,
@@ -1384,4 +1428,161 @@ export async function markExecutionJobFailed(input: {
     })
     .eq("id", input.id);
   throwIfError(error, null);
+}
+
+export async function insertAllocationClaim(input: {
+  fundId: string;
+  claimHash: string;
+  epochId: bigint;
+  participant: string;
+  claimJson: string;
+  createdBy: string;
+}): Promise<{ ok: true; id: number } | { ok: false; reason: "DUPLICATE" }> {
+  const db = supabase();
+  const now = nowMs();
+  const { data, error } = await db
+    .from("allocation_claims")
+    .insert({
+      fund_id: input.fundId,
+      claim_hash: input.claimHash.toLowerCase(),
+      epoch_id: input.epochId.toString(),
+      participant: input.participant.toLowerCase(),
+      claim_json: input.claimJson,
+      created_by: input.createdBy,
+      created_at: now,
+      updated_at: now
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (isDuplicateError(error)) return { ok: false, reason: "DUPLICATE" };
+    throwIfError(error, null);
+  }
+
+  return { ok: true, id: Number(data!.id) };
+}
+
+export async function listAllocationClaimsByFund(input: {
+  fundId: string;
+  epochId?: bigint;
+  limit: number;
+  offset: number;
+}) {
+  const db = supabase();
+  let query = db
+    .from("allocation_claims")
+    .select(
+      "id,fund_id,claim_hash,epoch_id,participant,claim_json,created_by,created_at,updated_at",
+      { count: "exact" }
+    )
+    .eq("fund_id", input.fundId);
+  if (input.epochId !== undefined) {
+    query = query.eq("epoch_id", input.epochId.toString());
+  }
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(input.offset, input.offset + Math.max(input.limit - 1, 0));
+  throwIfError(error, null);
+
+  return {
+    rows: (data ?? []) as AllocationClaimRow[],
+    total: Number(count ?? 0)
+  };
+}
+
+export async function listAllocationClaimsByEpoch(input: {
+  fundId: string;
+  epochId: bigint;
+}): Promise<AllocationClaimRow[]> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("allocation_claims")
+    .select("id,fund_id,claim_hash,epoch_id,participant,claim_json,created_by,created_at,updated_at")
+    .eq("fund_id", input.fundId)
+    .eq("epoch_id", input.epochId.toString())
+    .order("created_at", { ascending: true });
+  throwIfError(error, null);
+  return (data ?? []) as AllocationClaimRow[];
+}
+
+export async function upsertEpochState(input: {
+  fundId: string;
+  epochId: bigint;
+  epochStateHash: string;
+  aggregateWeightsJson: string;
+  claimHashes: string[];
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const { error } = await db.from("epoch_states").upsert(
+    {
+      fund_id: input.fundId,
+      epoch_id: input.epochId.toString(),
+      epoch_state_hash: input.epochStateHash.toLowerCase(),
+      aggregate_weights_json: input.aggregateWeightsJson,
+      claim_hashes_json: JSON.stringify(input.claimHashes.map((h) => h.toLowerCase())),
+      claim_count: input.claimHashes.length,
+      finalized_at: now,
+      created_at: now,
+      updated_at: now
+    },
+    {
+      onConflict: "fund_id,epoch_id"
+    }
+  );
+  throwIfError(error, null);
+}
+
+export async function getLatestEpochState(fundId: string): Promise<EpochStateRow | undefined> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("epoch_states")
+    .select("*")
+    .eq("fund_id", fundId)
+    .order("finalized_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as EpochStateRow | null) ?? undefined;
+}
+
+export async function getEpochStateByEpoch(input: {
+  fundId: string;
+  epochId: bigint;
+}): Promise<EpochStateRow | undefined> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("epoch_states")
+    .select("*")
+    .eq("fund_id", input.fundId)
+    .eq("epoch_id", input.epochId.toString())
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as EpochStateRow | null) ?? undefined;
+}
+
+export async function listStakeWeightsByFund(
+  fundId: string
+): Promise<Array<{ participant: string; weight: bigint }>> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("stake_weights")
+    .select("participant,weight,epoch_id,updated_at")
+    .eq("fund_id", fundId)
+    .order("updated_at", { ascending: false });
+  throwIfError(error, null);
+
+  const latest = new Map<string, bigint>();
+  for (const row of (data ?? []) as Array<{ participant: string; weight: string }>) {
+    const key = String(row.participant).toLowerCase();
+    if (latest.has(key)) continue;
+    latest.set(key, BigInt(String(row.weight)));
+  }
+
+  return Array.from(latest.entries()).map(([participant, weight]) => ({
+    participant,
+    weight
+  }));
 }

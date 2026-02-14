@@ -1,15 +1,15 @@
 import { keccak256 } from "viem";
-import { canonicalClaim, canonicalIntent } from "./canonical.js";
+import { canonicalAllocationClaim, canonicalIntent } from "./canonical.js";
 import {
-  claimHash,
+  allocationClaimHash,
   intentExecutionAllowlistHash,
   intentHash,
   snapshotHashFromUnordered
 } from "./hash.js";
 import type {
-  CanonicalClaimRecord,
+  AllocationClaimV1,
+  CanonicalAllocationClaimRecord,
   CanonicalIntentRecord,
-  ClaimPayload,
   CoreExecutionRequestInput,
   Hex,
   IntentExecutionRouteInput,
@@ -30,20 +30,37 @@ function assertHex32(value: string, label: string): asserts value is Hex {
   }
 }
 
-export function buildCanonicalClaimRecord(input: {
-  payload: ClaimPayload;
-  epochId: bigint;
-}): CanonicalClaimRecord {
-  assertUint64(input.epochId, "epochId");
-  assertUint64(input.payload.timestamp, "timestamp");
+function assertWeightsSumPositive(weights: bigint[]): void {
+  const sum = weights.reduce((acc, w) => acc + w, 0n);
+  if (sum <= 0n) {
+    throw new Error("targetWeights sum must be positive");
+  }
+}
 
-  const payload = canonicalClaim(input.payload);
-  const hash = claimHash(payload);
+export function buildCanonicalAllocationClaimRecord(input: {
+  claim: AllocationClaimV1;
+}): CanonicalAllocationClaimRecord {
+  assertUint64(input.claim.epochId, "epochId");
+  assertUint64(input.claim.horizonSec, "horizonSec");
+  assertUint64(input.claim.submittedAt, "submittedAt");
+  if (input.claim.nonce < 0n) {
+    throw new Error("nonce must be non-negative");
+  }
+
+  const claim = canonicalAllocationClaim(input.claim);
+  if (claim.targetWeights.length === 0) {
+    throw new Error("targetWeights must not be empty");
+  }
+  claim.targetWeights.forEach((weight, idx) => {
+    if (weight < 0n) {
+      throw new Error(`targetWeights[${idx}] must be non-negative`);
+    }
+  });
+  assertWeightsSumPositive(claim.targetWeights);
 
   return {
-    payload,
-    epochId: input.epochId,
-    claimHash: hash
+    claim,
+    claimHash: allocationClaimHash(claim)
   };
 }
 
@@ -96,7 +113,7 @@ export function buildCanonicalIntentRecord(input: {
   };
 }
 
-export function buildCanonicalSnapshotRecord(input: {
+export function buildEpochStateRecord(input: {
   epochId: bigint;
   claimHashes: Hex[];
 }) {
@@ -108,7 +125,7 @@ export function buildCanonicalSnapshotRecord(input: {
   const hash = snapshotHashFromUnordered(input.epochId, input.claimHashes);
   return {
     epochId: input.epochId,
-    snapshotHash: hash
+    epochStateHash: hash
   };
 }
 

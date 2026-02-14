@@ -67,7 +67,6 @@ const mapCommand = (role: string, action: string): string => {
     if (action === 'verify_claim_or_intent_validity') return 'participant-verify';
     if (action === 'submit_claim') return 'participant-submit';
     if (action === 'submit_mined_claim') return 'participant-submit';
-    if (action === 'attest_claim') return 'participant-attest';
     if (action === 'participant_e2e') return 'participant-e2e';
   }
 
