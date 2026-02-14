@@ -56,13 +56,59 @@ Relayer client:
 - `RELAYER_URL`
 - `BOT_ID`
 - `BOT_API_KEY`
-- `BOT_ADDRESS` (optional; fallback is zero address)
+- `BOT_ADDRESS` (required for claim submit; must match registered crawler/verifier bot address)
 
 Signer:
-- `BOT_PRIVATE_KEY`
+- `BOT_PRIVATE_KEY` or `VERIFIER_PRIVATE_KEY`
 - `CHAIN_ID`
-- `CLAIM_BOOK_ADDRESS`
-- `INTENT_BOOK_ADDRESS`
+- `CLAIM_ATTESTATION_VERIFIER_ADDRESS` (preferred)
+- `CLAIM_BOOK_ADDRESS` (fallback for claim attest domain)
+- `INTENT_BOOK_ADDRESS` (required only for intent attestation signing)
+
+Participant source safety:
+- `PARTICIPANT_ALLOWED_SOURCE_HOSTS=www.reddit.com,api.coingecko.com`
+- `PARTICIPANT_MAX_RESPONSE_BYTES=524288`
+- `PARTICIPANT_ALLOW_HTTP_SOURCE=true` (local dev only)
+
+Role-split env for participant e2e:
+- `CRAWLER_BOT_ID`, `CRAWLER_BOT_API_KEY`, `CRAWLER_BOT_ADDRESS`
+- `VERIFIER_BOT_ID`, `VERIFIER_BOT_API_KEY`, `VERIFIER_BOT_ADDRESS`
+- `VERIFIER_PRIVATE_KEY`
+
+## Participant commands
+
+```bash
+# 1) Mine a claim from source URL
+npm run participant:mine -w @claw/agents -- \
+  --fund-id demo-fund \
+  --epoch-id 1 \
+  --source-ref https://www.reddit.com/r/CryptoCurrency/new.json?limit=10&raw_json=1 \
+  --token-address 0x0000000000000000000000000000000000000001 \
+  --out-file /tmp/participant-mine.json
+
+# 2) Verify mined claim
+npm run participant:verify -w @claw/agents -- \
+  --claim-file /tmp/participant-mine.json \
+  --max-data-age-seconds 300
+
+# 3) Submit mined claim to relayer
+npm run participant:submit -w @claw/agents -- \
+  --claim-file /tmp/participant-mine.json
+
+# 4) Attest submitted claim
+npm run participant:attest -w @claw/agents -- \
+  --fund-id demo-fund \
+  --epoch-id 1 \
+  --claim-hash 0x...
+
+# 5) One-shot e2e (mine -> verify -> submit -> attest)
+npm run participant:e2e -w @claw/agents -- \
+  --fund-id demo-fund \
+  --epoch-id 1 \
+  --source-ref https://www.reddit.com/r/CryptoCurrency/new.json?limit=10&raw_json=1 \
+  --token-address 0x0000000000000000000000000000000000000001 \
+  --report-file /tmp/participant-e2e-report.json
+```
 
 Implemented modules:
 - `/Users/wiimdy/agent/packages/agents/src/lib/relayer-client.ts`

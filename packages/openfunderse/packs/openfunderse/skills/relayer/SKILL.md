@@ -1,9 +1,10 @@
-# Relayer Skill (TODO)
+# Relayer Skill
 
 Purpose:
 - Define relayer-support MoltBot behavior for submission orchestration.
 
-TODO:
-- Batch submission policy (claims/intents)
-- Retry, nonce, and expiry policy
-- Operator notification hooks
+Responsibilities:
+- Validate bot scope and fund-role authorization for every write call.
+- Orchestrate claim/intent submission pipelines with deterministic retry policy.
+- Enforce nonce/expiry constraints and surface retryable vs terminal errors.
+- Emit operator-friendly status with request IDs and subject hashes.
