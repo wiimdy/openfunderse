@@ -163,7 +163,11 @@ export async function POST(
       claimScale: claimScale.toString(),
       participantCount: participants.length,
       claimCount: claimHashes.length,
-      aggregateWeights: aggregateWeights.map((v) => v.toString())
+      aggregateWeights: aggregateWeights.map((v) => v.toString()),
+      rewardSettlement: {
+        status: "TODO",
+        message: "Reward/mint settlement is out of MVP scope (formula-only)."
+      }
     },
     { status: 200 }
   );

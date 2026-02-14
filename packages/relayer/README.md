@@ -11,6 +11,8 @@ Supabase(Postgres) 저장소 기준으로 동작합니다.
 - Claim/Intent API 게이트웨이
 - `@claw/protocol-sdk` 기반 canonical hash/EIP-712 검증 진입점
 - 컨트랙트(`IntentBook`/`ClawVault`) 제출 오케스트레이션
+- MVP 데모 범위: 공동 claim 집계 + intent 생성/검증/실행 페이로드 제공
+- Reward mint/정산 로직은 수식 TODO 상태 (미구현)
 
 ## Run
 ```bash
@@ -39,7 +41,7 @@ npm run dev -w @claw/relayer
 - `GET /api/v1/funds/{fundId}/bots/register` (strategy bot only)
   - 등록된 봇 목록 조회
 - `POST /api/v1/funds/{fundId}/claims`
-  - claim payload 검증/정규화 -> canonical hash 계산 -> 저장/온체인 제출 큐
+  - AllocationClaimV1(`targetWeights`) 검증/정규화 -> canonical hash 계산 -> 저장
 - `GET /api/v1/funds/{fundId}/claims`
   - claim 목록/상태 조회 (status, token, epoch, pagination)
 - `POST /api/v1/funds/{fundId}/epochs/{epochId}/aggregate`
@@ -99,6 +101,7 @@ npm run dev -w @claw/relayer
 - claims 집계 기준은 epoch aggregate 기반 모델입니다.
 - intent approval은 weighted attestation + threshold 모델입니다.
 - `intents/propose`는 `allowlistHash` 직접 입력을 허용하지 않으며, relayer가 계산한 해시만 onchain constraints에 반영합니다.
+- reward score/mint budget/settlement API는 MVP에서 미구현(TODO)입니다.
 
 ## Database
 - Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`

@@ -35,6 +35,12 @@ const participantBotAddressFromEnv =
   process.env.PARTICIPANT_ADDRESS ??
   process.env.BOT_ADDRESS;
 
+const participant2BotId = process.env.PARTICIPANT2_BOT_ID ?? "bot-participant-2";
+const participant2BotApiKey = process.env.PARTICIPANT2_BOT_API_KEY;
+const participant2PrivateKey = process.env.PARTICIPANT2_PRIVATE_KEY;
+const participant2BotAddressFromEnv =
+  process.env.PARTICIPANT2_BOT_ADDRESS ?? process.env.PARTICIPANT2_ADDRESS;
+
 const intentBookAddress = process.env.INTENT_BOOK_ADDRESS;
 const chainId = process.env.CHAIN_ID ? BigInt(process.env.CHAIN_ID) : null;
 
@@ -95,6 +101,20 @@ if (participantAddress.toLowerCase() !== participantAccount.address.toLowerCase(
     "PARTICIPANT_BOT_ADDRESS/PARTICIPANT_ADDRESS must match the signer address from BOT_PRIVATE_KEY"
   );
   process.exit(1);
+}
+
+const participant2Enabled = Boolean(participant2PrivateKey && participant2BotApiKey);
+let participant2Account = null;
+let participant2Address = null;
+if (participant2Enabled) {
+  participant2Account = privateKeyToAccount(participant2PrivateKey);
+  participant2Address = participant2BotAddressFromEnv ?? participant2Account.address;
+  if (participant2Address.toLowerCase() !== participant2Account.address.toLowerCase()) {
+    console.error(
+      "PARTICIPANT2_BOT_ADDRESS/PARTICIPANT2_ADDRESS must match signer address from PARTICIPANT2_PRIVATE_KEY"
+    );
+    process.exit(1);
+  }
 }
 
 const cookieJar = new Map();
@@ -271,22 +291,7 @@ async function main() {
   });
   assertStatus(listBots.response, [200], "list bots");
 
-  const claimPayload = {
-    schemaId: "price_signal_v1",
-    sourceType: "WEB",
-    sourceRef: `https://example.com/tokens/${tokenOut}`,
-    selector: "$.signal",
-    extracted: "BUY",
-    extractedType: "string",
-    timestamp: nowSec.toString(),
-    responseHash:
-      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    evidenceType: "url",
-    evidenceURI: "https://example.com/evidence/1",
-    crawler: participantAddress,
-    notes: "smoke-all-apis"
-  };
-  const createClaim = await call("POST /claims", {
+  const createClaim = await call("POST /claims (participant-1)", {
     method: "POST",
     path: `/api/v1/funds/${fundId}/claims`,
     headers: {
@@ -295,13 +300,63 @@ async function main() {
       "x-bot-api-key": participantBotApiKey
     },
     body: JSON.stringify({
-      epochId: epochId.toString(),
-      claimPayload
+      claim: {
+        claimVersion: "v1",
+        fundId,
+        epochId: epochId.toString(),
+        participant: participantAddress,
+        targetWeights: ["700000", "300000"],
+        horizonSec: "3600",
+        nonce: "1",
+        submittedAt: nowSec.toString()
+      }
     })
   });
   assertStatus(createClaim.response, [200], "create claim");
-  const claimHash = createClaim.body?.claimHash;
-  if (!claimHash) throw new Error("claimHash missing");
+  const claimHashes = [createClaim.body?.claimHash].filter(Boolean);
+
+  if (participant2Enabled && participant2Account && participant2Address) {
+    const registerParticipant2 = await call("POST /bots/register participant-2", {
+      method: "POST",
+      path: `/api/v1/funds/${fundId}/bots/register`,
+      headers: strategyHeaders,
+      body: JSON.stringify({
+        role: "participant",
+        botId: participant2BotId,
+        botAddress: participant2Address
+      })
+    });
+    assertStatus(registerParticipant2.response, [200], "register participant-2");
+
+    const createClaim2 = await call("POST /claims (participant-2)", {
+      method: "POST",
+      path: `/api/v1/funds/${fundId}/claims`,
+      headers: {
+        "Content-Type": "application/json",
+        "x-bot-id": participant2BotId,
+        "x-bot-api-key": participant2BotApiKey
+      },
+      body: JSON.stringify({
+        claim: {
+          claimVersion: "v1",
+          fundId,
+          epochId: epochId.toString(),
+          participant: participant2Address,
+          targetWeights: ["300000", "700000"],
+          horizonSec: "3600",
+          nonce: "1",
+          submittedAt: nowSec.toString()
+        }
+      })
+    });
+    assertStatus(createClaim2.response, [200], "create claim participant-2");
+    if (createClaim2.body?.claimHash) claimHashes.push(createClaim2.body.claimHash);
+  } else {
+    console.log("\n=== NOTE ===");
+    console.log(
+      "PARTICIPANT2_PRIVATE_KEY/PARTICIPANT2_BOT_API_KEY not set; running single-participant claim demo."
+    );
+  }
 
   const listClaims = await call("GET /claims", {
     method: "GET",
@@ -426,7 +481,8 @@ async function main() {
       baseUrl,
       fundId,
       participantAddress,
-      claimHash,
+      participant2Enabled,
+      claimHashes,
       snapshotHash,
       intentHash
     })

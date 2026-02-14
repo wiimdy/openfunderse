@@ -26,6 +26,11 @@ export async function GET(
         intentThresholdWeight: cfg.intentThresholdWeight.toString(),
         validatorSnapshotTotalWeight: snapshotTotalWeight.toString()
       },
+      rewardModel: {
+        implemented: false,
+        status: "TODO",
+        message: "MVP includes co-investment + intent flow only; reward/mint settlement is formula-only."
+      },
       onchainDeployment: deployment
         ? {
             chainId: deployment.chain_id,

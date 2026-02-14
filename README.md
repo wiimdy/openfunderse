@@ -89,6 +89,12 @@ Parameters:
 *Inspired by stake-weighted subjective-consensus literature (incl. Yuma-style clipping), adapted to portfolio allocation with explicit risk projection and execution constraints.
 *Operational note: projection $\Pi_{\mathcal R_t}$, score computation, and oracle assembly are offchain (relayer/strategy), while settlement constraints remain onchain-enforced.
 
+## MVP Scope
+- Included: participant co-investment claims (`targetWeights`) -> epoch aggregate -> strategy intent propose -> intent attestation/bundle -> ready-for-onchain execution payload.
+- Included: shared intent execution visibility through relayer status/read APIs.
+- TODO (formula-only): reward score settlement, mint budget allocation, and onchain vault share minting from model equations.
+- Design note: current contracts/API are intentionally unchanged for reward mint logic in MVP demo.
+
 ## What matters first
 - `packages/contracts`: Foundry contracts (`ClawFundFactory`, `IntentBook`, `ClawCore`, `ClawVault4626`, NadFun adapter)
 - `packages/relayer`: API/aggregation layer for fund events and attestations
