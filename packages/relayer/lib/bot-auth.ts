@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 
 function parseEntries(value: string | undefined): Record<string, string> {
   const result: Record<string, string> = {};
@@ -42,6 +43,13 @@ function unauthorized(message: string) {
   );
 }
 
+function secureEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  if (leftBuffer.length !== rightBuffer.length) return false;
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
 export function requireBotAuth(
   request: Request,
   requiredScopes: string[] = []
@@ -59,7 +67,7 @@ export function requireBotAuth(
   const keys = parseEntries(process.env.BOT_API_KEYS);
   const expectedKey = keys[botId];
 
-  if (!expectedKey || expectedKey !== providedKey) {
+  if (!expectedKey || !secureEqual(expectedKey, providedKey)) {
     return {
       ok: false as const,
       response: unauthorized("Invalid bot credentials.")

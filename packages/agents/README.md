@@ -50,6 +50,24 @@ Optional env:
 - `CRAWLER_ADDRESS=0x...`
 - `REDDIT_USER_AGENT=openclaw-mvp-crawler/0.1`
 
+## Wave A runtime env (relayer client + signer)
+
+Relayer client:
+- `RELAYER_URL`
+- `BOT_ID`
+- `BOT_API_KEY`
+- `BOT_ADDRESS` (optional; fallback is zero address)
+
+Signer:
+- `BOT_PRIVATE_KEY`
+- `CHAIN_ID`
+- `CLAIM_BOOK_ADDRESS`
+- `INTENT_BOOK_ADDRESS`
+
+Implemented modules:
+- `/Users/wiimdy/agent/packages/agents/src/lib/relayer-client.ts`
+- `/Users/wiimdy/agent/packages/agents/src/lib/signer.ts`
+
 ## Install-pack canonical source
 Target onboarding UX:
 

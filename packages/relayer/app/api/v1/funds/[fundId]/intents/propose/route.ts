@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireBotAuth } from "@/lib/bot-auth";
+import { requireFundBotRole } from "@/lib/fund-bot-authz";
 import {
   buildIntentAllowlistHashFromRoute,
   buildCanonicalIntentRecord,
@@ -13,6 +14,12 @@ import {
   upsertSubjectState
 } from "@/lib/supabase";
 
+function jsonWithBigInt(value: unknown): string {
+  return JSON.stringify(value, (_, inner) =>
+    typeof inner === "bigint" ? inner.toString() : inner
+  );
+}
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ fundId: string }> }
@@ -21,6 +28,14 @@ export async function POST(
   const botAuth = requireBotAuth(request, ["intents.propose"]);
   if (!botAuth.ok) {
     return botAuth.response;
+  }
+  const membership = await requireFundBotRole({
+    fundId,
+    botId: botAuth.botId,
+    allowedRoles: ["strategy"]
+  });
+  if (!membership.ok) {
+    return membership.response;
   }
 
   const fund = await getFund(fundId);
@@ -53,13 +68,13 @@ export async function POST(
     );
   }
 
-  const intent = (body.intent ?? body.tradeIntent) as TradeIntent | undefined;
+  const intentRaw = (body.intent ?? body.tradeIntent) as Record<string, unknown> | undefined;
   const executionRoute = body.executionRoute as
     | Record<string, unknown>
     | undefined;
   const intentUri = body.intentURI ? String(body.intentURI) : null;
 
-  if (!intent) {
+  if (!intentRaw) {
     return NextResponse.json(
       { error: "BAD_REQUEST", message: "intent is required" },
       { status: 400 }
@@ -70,6 +85,37 @@ export async function POST(
       {
         error: "BAD_REQUEST",
         message: "executionRoute is required"
+      },
+      { status: 400 }
+    );
+  }
+
+  let intent: TradeIntent;
+  try {
+    const action = String(intentRaw.action ?? "");
+    if (action !== "BUY" && action !== "SELL") {
+      throw new Error("intent.action must be BUY or SELL");
+    }
+
+    intent = {
+      intentVersion: String(intentRaw.intentVersion ?? "v1"),
+      vault: String(intentRaw.vault ?? "") as `0x${string}`,
+      action,
+      tokenIn: String(intentRaw.tokenIn ?? "") as `0x${string}`,
+      tokenOut: String(intentRaw.tokenOut ?? "") as `0x${string}`,
+      amountIn: BigInt(String(intentRaw.amountIn ?? "")),
+      minAmountOut: BigInt(String(intentRaw.minAmountOut ?? "")),
+      deadline: BigInt(String(intentRaw.deadline ?? "")),
+      maxSlippageBps: BigInt(String(intentRaw.maxSlippageBps ?? "")),
+      snapshotHash: String(intentRaw.snapshotHash ?? "") as `0x${string}`,
+      reason: intentRaw.reason ? String(intentRaw.reason) : undefined
+    };
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: "BAD_REQUEST",
+        message:
+          error instanceof Error ? `invalid intent: ${error.message}` : "invalid intent"
       },
       { status: 400 }
     );
@@ -173,10 +219,8 @@ export async function POST(
     intentHash: built.intentHash,
     snapshotHash: built.intent.snapshotHash,
     intentUri,
-    intentJson: JSON.stringify(built.intent),
-    executionRouteJson: JSON.stringify(normalizedExecutionRoute, (_, value) =>
-      typeof value === "bigint" ? value.toString() : value
-    ),
+    intentJson: jsonWithBigInt(built.intent),
+    executionRouteJson: jsonWithBigInt(normalizedExecutionRoute),
     allowlistHash: built.constraints.allowlistHash,
     maxSlippageBps: built.constraints.maxSlippageBps,
     maxNotional: built.constraints.maxNotional,

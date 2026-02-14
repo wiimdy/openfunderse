@@ -14,6 +14,8 @@
     "flow:reddit": "tsx src/index.ts mvp-reddit-flow"
   },
   "dependencies": {
+    "@claw/protocol-sdk": "file:../sdk",
+    "eventsource": "^3.0.7",
     "viem": "^2.38.2"
   }
 }

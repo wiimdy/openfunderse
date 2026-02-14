@@ -102,6 +102,14 @@ export interface ExecutionJobRow {
   updated_at: number;
 }
 
+export interface SubjectStateRow {
+  threshold_weight: string;
+  attested_weight: string;
+  status: RecordStatus;
+  submit_attempts: number;
+  tx_hash: string | null;
+}
+
 let supabaseSingleton: SupabaseClient | null = null;
 
 function envFirst(...keys: string[]): string {
@@ -323,6 +331,33 @@ export async function listFundBots(fundId: string) {
   }>;
 }
 
+export async function getFundBot(fundId: string, botId: string) {
+  const db = supabase();
+  const { data, error } = await db
+    .from('fund_bots')
+    .select(
+      'fund_id,bot_id,role,bot_address,status,policy_uri,telegram_handle,registered_by,created_at,updated_at'
+    )
+    .eq('fund_id', fundId)
+    .eq('bot_id', botId)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as
+    | {
+        fund_id: string;
+        bot_id: string;
+        role: string;
+        bot_address: string;
+        status: string;
+        policy_uri: string | null;
+        telegram_handle: string | null;
+        registered_by: string;
+        created_at: number;
+        updated_at: number;
+      }
+    | null) ?? undefined;
+}
+
 export async function insertAttestation(input: {
   fundId: string;
   subjectType: SubjectType;
@@ -332,9 +367,13 @@ export async function insertAttestation(input: {
   expiresAt: bigint;
   nonce: bigint;
   signature: string;
+  status?: RecordStatus;
+  txHash?: string | null;
 }): Promise<{ ok: true; id: number } | { ok: false; reason: "DUPLICATE" }> {
   const db = supabase();
   const now = nowMs();
+  const status = input.status ?? "PENDING";
+  const txHash = input.txHash ? input.txHash.toLowerCase() : null;
   const { data, error } = await db
     .from("attestations")
     .insert({
@@ -346,7 +385,8 @@ export async function insertAttestation(input: {
       expires_at: input.expiresAt.toString(),
       nonce: input.nonce.toString(),
       signature: input.signature,
-      status: "PENDING",
+      status,
+      tx_hash: txHash,
       created_at: now,
       updated_at: now
     })
@@ -437,19 +477,12 @@ export async function getSubjectState(subjectType: SubjectType, subjectHash: str
   const db = supabase();
   const { data, error } = await db
     .from("subject_state")
-    .select("threshold_weight,attested_weight,status,submit_attempts")
+    .select("threshold_weight,attested_weight,status,submit_attempts,tx_hash")
     .eq("subject_type", subjectType)
     .eq("subject_hash", subjectHash.toLowerCase())
     .maybeSingle();
   throwIfError(error, null);
-  return (data as
-    | {
-        threshold_weight: string;
-        attested_weight: string;
-        status: RecordStatus;
-        submit_attempts: number;
-      }
-    | null) ?? undefined;
+  return (data as SubjectStateRow | null) ?? undefined;
 }
 
 export async function listPendingAttestations(
@@ -471,12 +504,23 @@ export async function listPendingAttestations(
 export async function markSubjectApproved(input: {
   subjectType: SubjectType;
   subjectHash: string;
-  txHash: string;
+  txHash?: string | null;
 }): Promise<void> {
   const db = supabase();
   const now = nowMs();
   const key = input.subjectHash.toLowerCase();
-  const txHash = input.txHash.toLowerCase();
+  let txHash = input.txHash ? input.txHash.toLowerCase() : null;
+
+  if (txHash === null) {
+    const { data: existing, error: existingError } = await db
+      .from("subject_state")
+      .select("tx_hash")
+      .eq("subject_type", input.subjectType)
+      .eq("subject_hash", key)
+      .maybeSingle();
+    throwIfError(existingError, null);
+    txHash = existing?.tx_hash ? String(existing.tx_hash).toLowerCase() : null;
+  }
 
   {
     const { error } = await db

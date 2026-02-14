@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireBotAuth } from "@/lib/bot-auth";
+import { isSameAddress, requireFundBotRole } from "@/lib/fund-bot-authz";
 import { ingestIntentAttestation } from "@/lib/aggregator";
 
 export async function POST(
@@ -11,6 +12,15 @@ export async function POST(
   const botAuth = requireBotAuth(request, ["intents.attest"]);
   if (!botAuth.ok) {
     return botAuth.response;
+  }
+
+  const membership = await requireFundBotRole({
+    fundId,
+    botId: botAuth.botId,
+    allowedRoles: ["verifier"]
+  });
+  if (!membership.ok) {
+    return membership.response;
   }
 
   let body: Record<string, unknown>;
@@ -28,6 +38,20 @@ export async function POST(
   let hasError = false;
 
   for (const item of attestations) {
+    const claimedVerifier = String(item.verifier ?? "");
+    if (!isSameAddress(claimedVerifier, membership.membership.botAddress)) {
+      hasError = true;
+      results.push({
+        ok: false,
+        error: "verifier address must match registered bot address",
+        expectedVerifier: membership.membership.botAddress,
+        receivedVerifier: claimedVerifier,
+        status: 403,
+        intentHash: item.intentHash ?? null
+      });
+      continue;
+    }
+
     let result;
     try {
       result = await ingestIntentAttestation({
