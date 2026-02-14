@@ -11,12 +11,12 @@
     },
     {
       "id": "strategy",
-      "skill": "skills/strategy/SKILL.md",
+      "skill": "skills/openfunderse-strategy/SKILL.md",
       "prompt": "prompts/strategy/system.md"
     },
     {
       "id": "participant",
-      "skill": "skills/participant/SKILL.md",
+      "skill": "skills/openfunderse-participant/SKILL.md",
       "prompt": "prompts/participant/system.md"
     },
     {

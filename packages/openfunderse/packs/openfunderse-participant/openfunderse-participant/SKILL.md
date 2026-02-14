@@ -1,5 +1,5 @@
 ---
-name: participant-skill
+name: openfunderse-participant
 description: Participant MoltBot for data mining (claims) and cross-verification (attestations)
 metadata:
   openclaw:
@@ -21,6 +21,14 @@ metadata:
 # Participant MoltBot Skill
 
 The Participant MoltBot is responsible for mining data claims from specified sources and verifying claims or intents proposed by other agents. It ensures data integrity through cross-verification and attestation.
+
+## Quick Start (ClawHub Users)
+
+Install the skill first:
+
+```bash
+npx clawhub@latest install openfunderse-participant
+```
 
 ## Credential Scope
 

@@ -70,14 +70,14 @@ Usage:
   openfunderse list
   openfunderse bot-init [--role <strategy|participant>] [--skill-name <name>] [--env-path <path>] [--wallet-dir <dir>] [--wallet-name <name>] [--force] [--yes]
   openfunderse install <pack-name> [--dest <skills-dir>] [--codex-home <dir>] [--force] [--with-runtime]
-                     [--init-env] [--env-path <path>] [--env-profile <strategy|participant|all>]
+                     [--no-init-env] [--env-path <path>] [--env-profile <strategy|participant|all>]
                      [--runtime-package <name>] [--runtime-dir <dir>] [--runtime-manager <npm|pnpm|yarn|bun>]
 
 Examples:
   openfunderse list
   openfunderse install openfunderse
   openfunderse install openfunderse --with-runtime
-  openfunderse install openfunderse --with-runtime --init-env --env-profile strategy
+  openfunderse install openfunderse-strategy --with-runtime
   openfunderse install openfunderse --codex-home /tmp/codex-home
   openfunderse bot-init --env-path .env.participant --wallet-name participant-bot --yes
   openfunderse bot-init --skill-name strategy --env-path .env.strategy --force
@@ -92,9 +92,11 @@ function parseArgs(argv) {
     dest: "",
     codexHome: "",
     withRuntime: false,
-    initEnv: false,
+    initEnv: true,
+    initEnvExplicit: false,
     envFile: "",
-    envProfile: "strategy",
+    envProfile: "",
+    envProfileExplicit: false,
     runtimePackage: "",
     runtimeDir: "",
     runtimeManager: "",
@@ -136,6 +138,12 @@ function parseArgs(argv) {
     }
     if (token === "--init-env") {
       options.initEnv = true;
+      options.initEnvExplicit = true;
+      continue;
+    }
+    if (token === "--no-init-env") {
+      options.initEnv = false;
+      options.initEnvExplicit = true;
       continue;
     }
     if (token === "--env-file" || token === "--env-path") {
@@ -145,6 +153,7 @@ function parseArgs(argv) {
     }
     if (token === "--env-profile") {
       options.envProfile = args[i + 1] ?? "";
+      options.envProfileExplicit = true;
       i += 1;
       continue;
     }
@@ -232,6 +241,17 @@ function normalizeEnvProfile(rawProfile) {
   );
 }
 
+function defaultEnvProfileForPack(packName) {
+  const normalized = String(packName || "").trim().toLowerCase();
+  if (normalized.includes("participant")) {
+    return "participant";
+  }
+  if (normalized.includes("strategy")) {
+    return "strategy";
+  }
+  return "all";
+}
+
 function normalizeBotInitRole(rawRole) {
   const role = (rawRole || "").trim().toLowerCase();
   if (SUPPORTED_BOT_INIT_ROLES.has(role)) {
@@ -315,7 +335,11 @@ async function buildEnvScaffold(profile, runtimeDir, runtimePackage) {
 async function writeEnvScaffold(options) {
   const runtimeDir = options.runtimeDir ? path.resolve(options.runtimeDir) : process.cwd();
   const runtimePackage = options.runtimePackage || DEFAULT_RUNTIME_PACKAGE;
-  const profile = normalizeEnvProfile(options.envProfile);
+  const rawProfile =
+    typeof options.envProfile === "string" && options.envProfile.trim().length > 0
+      ? options.envProfile
+      : "all";
+  const profile = normalizeEnvProfile(rawProfile);
   const envTarget = options.envFile
     ? path.resolve(options.envFile)
     : path.join(runtimeDir, ".env.openfunderse");
@@ -757,8 +781,12 @@ async function installPack(packName, options) {
 
   let envScaffoldMeta = null;
   if (options.initEnv) {
+    const resolvedEnvProfile = options.envProfileExplicit
+      ? options.envProfile
+      : defaultEnvProfileForPack(packName);
     const envOptions = {
       ...options,
+      envProfile: resolvedEnvProfile,
       runtimeDir: runtimeInstallMeta?.runtimeDir ?? options.runtimeDir,
       runtimePackage: runtimeInstallMeta?.runtimePackage ?? options.runtimePackage
     };
