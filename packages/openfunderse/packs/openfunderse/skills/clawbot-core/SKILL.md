@@ -132,7 +132,10 @@ CLI mapping: `participant-verify`
 ### `submit_claim`
 CLI mapping: `participant-submit`
 ```json
-{ "claimFile": "/path/claim.json" }
+{
+  "claimFile": "/path/claim.json",
+  "submit": true
+}
 ```
 
 ### `attest_claim`
@@ -141,7 +144,8 @@ CLI mapping: `participant-attest`
 {
   "fundId": "string",
   "epochId": 1,
-  "claimHash": "0x<32bytes>"
+  "claimHash": "0x<32bytes>",
+  "submit": true
 }
 ```
 
@@ -150,3 +154,4 @@ CLI mapping: `participant-attest`
 2. Never bypass SDK canonical hashing and EIP-712 signing.
 3. Use `dry_run_intent_execution` before execute in production flows.
 4. Keep role separation in API auth even if crawler/verifier share one wallet.
+5. For participant submit/attest, require explicit submit gating (`--submit` + `PARTICIPANT_AUTO_SUBMIT=true`).

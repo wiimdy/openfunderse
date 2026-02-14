@@ -106,20 +106,29 @@ export interface SubmitMinedClaimInput {
   epochId: number;
   observation: MineClaimObservation;
   clientOptions?: RelayerClientOptions;
+  submit?: boolean;
 }
 
 export interface SubmitMinedClaimOutput {
   status: 'OK' | 'ERROR';
   fundId: string;
   epochId: number;
+  decision?: 'READY' | 'SUBMITTED';
   claimHash?: string;
   response?: Record<string, unknown>;
   reasonCode?:
     | 'OK'
     | 'CLAIM_HASH_MISMATCH'
+    | 'SAFETY_BLOCKED'
     | 'RELAYER_REJECTED'
     | 'NETWORK_ERROR';
   error?: string;
+  safety?: {
+    submitRequested: boolean;
+    autoSubmitEnabled: boolean;
+    requireExplicitSubmit: boolean;
+    trustedRelayerHosts: string[];
+  };
 }
 
 export interface AttestClaimInput {
@@ -130,23 +139,34 @@ export interface AttestClaimInput {
   nonce?: bigint | number | string;
   clientOptions?: RelayerClientOptions;
   signerOptions?: BotSignerOptions;
+  submit?: boolean;
 }
 
 export interface AttestClaimOutput {
   status: 'OK' | 'ERROR';
   fundId: string;
   claimHash: `0x${string}`;
+  decision?: 'READY' | 'SUBMITTED';
   response?: Record<string, unknown>;
   reasonCode?:
     | 'OK'
+    | 'SAFETY_BLOCKED'
     | 'ATTESTATION_DOMAIN_MISMATCH'
     | 'RELAYER_REJECTED'
     | 'NETWORK_ERROR';
   error?: string;
+  safety?: {
+    submitRequested: boolean;
+    autoSubmitEnabled: boolean;
+    requireExplicitSubmit: boolean;
+    trustedRelayerHosts: string[];
+  };
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 const DEFAULT_MAX_RESPONSE_BYTES = 512 * 1024;
+const DEFAULT_REQUIRE_EXPLICIT_SUBMIT = true;
+const DEFAULT_AUTO_SUBMIT = false;
 const PRIVATE_HOST_PATTERNS = [
   /^localhost$/i,
   /^127\./,
@@ -187,6 +207,15 @@ const parseEnvCsv = (value: string | undefined): string[] => {
     .filter(Boolean);
 };
 
+const envBool = (name: string, fallback: boolean): boolean => {
+  const raw = process.env[name];
+  if (!raw || raw.trim().length === 0) return fallback;
+  const normalized = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
+};
+
 const normalizedHostAllowlist = (hosts: string[] | undefined): Set<string> => {
   const envHosts = parseEnvCsv(process.env.PARTICIPANT_ALLOWED_SOURCE_HOSTS);
   const allHosts = [...envHosts, ...(hosts ?? [])]
@@ -199,6 +228,64 @@ const isPrivateHostname = (hostname: string): boolean => {
   const host = hostname.trim().toLowerCase();
   if (host.endsWith('.local')) return true;
   return PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(host));
+};
+
+const trustedRelayerHosts = (): string[] => {
+  return parseEnvCsv(process.env.PARTICIPANT_TRUSTED_RELAYER_HOSTS);
+};
+
+const validateParticipantRelayerUrl = (rawUrl: string, hosts: string[]): void => {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`RELAYER_URL is invalid: ${rawUrl}`);
+  }
+
+  const allowHttp = envBool('PARTICIPANT_ALLOW_HTTP_RELAYER', false);
+  if (parsed.protocol !== 'https:' && !(allowHttp && parsed.protocol === 'http:')) {
+    throw new Error(
+      'RELAYER_URL must use https (set PARTICIPANT_ALLOW_HTTP_RELAYER=true only for local development)'
+    );
+  }
+
+  const host = parsed.hostname.trim().toLowerCase();
+  if (hosts.length > 0 && !hosts.includes(host)) {
+    throw new Error(
+      `RELAYER_URL host is not in PARTICIPANT_TRUSTED_RELAYER_HOSTS: host=${host}`
+    );
+  }
+
+  if (hosts.length === 0 && isPrivateHostname(host) && parsed.protocol === 'https:') {
+    throw new Error(
+      'RELAYER_URL points to a private/local host over https. Configure PARTICIPANT_TRUSTED_RELAYER_HOSTS explicitly.'
+    );
+  }
+};
+
+const participantSubmitSafety = (
+  submitRequested: boolean
+): {
+  submitRequested: boolean;
+  autoSubmitEnabled: boolean;
+  requireExplicitSubmit: boolean;
+  trustedRelayerHosts: string[];
+  shouldSubmit: boolean;
+} => {
+  const requireExplicitSubmit = envBool(
+    'PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT',
+    DEFAULT_REQUIRE_EXPLICIT_SUBMIT
+  );
+  const autoSubmitEnabled = envBool('PARTICIPANT_AUTO_SUBMIT', DEFAULT_AUTO_SUBMIT);
+  const hosts = trustedRelayerHosts();
+  const shouldSubmit = submitRequested || (!requireExplicitSubmit && autoSubmitEnabled);
+  return {
+    submitRequested,
+    autoSubmitEnabled,
+    requireExplicitSubmit,
+    trustedRelayerHosts: hosts,
+    shouldSubmit
+  };
 };
 
 const maxResponseBytesFromEnv = (override?: number): number => {
@@ -561,7 +648,6 @@ export async function submitMinedClaim(
   input: SubmitMinedClaimInput
 ): Promise<SubmitMinedClaimOutput> {
   try {
-    const client = createRelayerClient(input.clientOptions ?? {});
     const canonicalPayload = input.observation.canonicalPayload
       ? deserializeClaimPayload(input.observation.canonicalPayload)
       : claimPayloadFromMine({
@@ -588,6 +674,61 @@ export async function submitMinedClaim(
       };
     }
 
+    const safety = participantSubmitSafety(input.submit ?? false);
+    if (safety.submitRequested && !safety.autoSubmitEnabled) {
+      return {
+        status: 'ERROR',
+        fundId: input.fundId,
+        epochId: input.epochId,
+        claimHash: record.claimHash,
+        reasonCode: 'SAFETY_BLOCKED',
+        error:
+          'submit was requested but PARTICIPANT_AUTO_SUBMIT is disabled. Set PARTICIPANT_AUTO_SUBMIT=true to allow external submission.',
+        safety
+      };
+    }
+
+    if (!safety.shouldSubmit) {
+      return {
+        status: 'OK',
+        fundId: input.fundId,
+        epochId: input.epochId,
+        decision: 'READY',
+        claimHash: record.claimHash,
+        reasonCode: 'OK',
+        safety
+      };
+    }
+
+    const relayerUrl = process.env.RELAYER_URL ?? '';
+    if (!relayerUrl) {
+      return {
+        status: 'ERROR',
+        fundId: input.fundId,
+        epochId: input.epochId,
+        reasonCode: 'NETWORK_ERROR',
+        error: 'RELAYER_URL is required',
+        safety
+      };
+    }
+
+    try {
+      validateParticipantRelayerUrl(relayerUrl, safety.trustedRelayerHosts);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        status: 'ERROR',
+        fundId: input.fundId,
+        epochId: input.epochId,
+        claimHash: record.claimHash,
+        reasonCode: 'SAFETY_BLOCKED',
+        error: message,
+        safety
+      };
+    }
+
+    const client = createRelayerClient(input.clientOptions ?? {});
+
     const response = await client.submitClaim(
       input.fundId,
       canonicalPayload,
@@ -607,9 +748,11 @@ export async function submitMinedClaim(
       status: 'OK',
       fundId: input.fundId,
       epochId: input.epochId,
+      decision: 'SUBMITTED',
       claimHash: response.claimHash,
       response,
-      reasonCode: 'OK'
+      reasonCode: 'OK',
+      safety
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -625,6 +768,57 @@ export async function submitMinedClaim(
 
 export async function attestClaim(input: AttestClaimInput): Promise<AttestClaimOutput> {
   try {
+    const safety = participantSubmitSafety(input.submit ?? false);
+
+    if (safety.submitRequested && !safety.autoSubmitEnabled) {
+      return {
+        status: 'ERROR',
+        fundId: input.fundId,
+        claimHash: input.claimHash,
+        reasonCode: 'SAFETY_BLOCKED',
+        error:
+          'submit was requested but PARTICIPANT_AUTO_SUBMIT is disabled. Set PARTICIPANT_AUTO_SUBMIT=true to allow external submission.',
+        safety
+      };
+    }
+
+    if (!safety.shouldSubmit) {
+      return {
+        status: 'OK',
+        fundId: input.fundId,
+        claimHash: input.claimHash,
+        decision: 'READY',
+        reasonCode: 'OK',
+        safety
+      };
+    }
+
+    const relayerUrl = process.env.RELAYER_URL ?? '';
+    if (!relayerUrl) {
+      return {
+        status: 'ERROR',
+        fundId: input.fundId,
+        claimHash: input.claimHash,
+        reasonCode: 'NETWORK_ERROR',
+        error: 'RELAYER_URL is required',
+        safety
+      };
+    }
+
+    try {
+      validateParticipantRelayerUrl(relayerUrl, safety.trustedRelayerHosts);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        status: 'ERROR',
+        fundId: input.fundId,
+        claimHash: input.claimHash,
+        reasonCode: 'SAFETY_BLOCKED',
+        error: message,
+        safety
+      };
+    }
+
     const signer = createBotSigner(input.signerOptions ?? {});
     const client = createRelayerClient(input.clientOptions ?? {});
     const expiresAt = BigInt(
@@ -650,8 +844,10 @@ export async function attestClaim(input: AttestClaimInput): Promise<AttestClaimO
       status: 'OK',
       fundId: input.fundId,
       claimHash: input.claimHash,
+      decision: 'SUBMITTED',
       response,
-      reasonCode: 'OK'
+      reasonCode: 'OK',
+      safety
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -89,6 +89,10 @@ Participant source safety:
 - `PARTICIPANT_ALLOWED_SOURCE_HOSTS=www.reddit.com,api.coingecko.com`
 - `PARTICIPANT_MAX_RESPONSE_BYTES=524288`
 - `PARTICIPANT_ALLOW_HTTP_SOURCE=true` (local dev only)
+- `PARTICIPANT_AUTO_SUBMIT` (`false` by default)
+- `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT` (`true` by default)
+- optional host allowlist: `PARTICIPANT_TRUSTED_RELAYER_HOSTS=relayer.example.com`
+- local dev only: `PARTICIPANT_ALLOW_HTTP_RELAYER=true`
 
 Participant optional scoped env:
 - `PARTICIPANT_BOT_ID`, `PARTICIPANT_BOT_API_KEY`, `PARTICIPANT_BOT_ADDRESS`
@@ -133,13 +137,15 @@ npm run participant:verify -w @claw/agents -- \
 
 # 3) Submit mined claim to relayer
 npm run participant:submit -w @claw/agents -- \
-  --claim-file /tmp/participant-mine.json
+  --claim-file /tmp/participant-mine.json \
+  --submit
 
 # 4) Attest submitted claim
 npm run participant:attest -w @claw/agents -- \
   --fund-id demo-fund \
   --epoch-id 1 \
-  --claim-hash 0x...
+  --claim-hash 0x... \
+  --submit
 
 # 5) One-shot e2e (mine -> verify -> submit -> attest)
 npm run participant:e2e -w @claw/agents -- \
@@ -147,8 +153,13 @@ npm run participant:e2e -w @claw/agents -- \
   --epoch-id 1 \
   --source-ref https://www.reddit.com/r/CryptoCurrency/new.json?limit=10&raw_json=1 \
   --token-address 0x0000000000000000000000000000000000000001 \
-  --report-file /tmp/participant-e2e-report.json
+  --report-file /tmp/participant-e2e-report.json \
+  --submit
 ```
+
+Default participant safety behavior:
+- `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` and no `--submit` => `decision: "READY"` (no relayer transmission)
+- `--submit` but `PARTICIPANT_AUTO_SUBMIT=false` => fail-closed with `SAFETY_BLOCKED`
 
 ## Strategy commands (AA)
 
