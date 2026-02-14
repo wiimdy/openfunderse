@@ -40,13 +40,11 @@ npx @wiimdy/openfunderse@latest install openfunderse \
 # initialize bot env + fresh Monad wallet (strategy)
 npx @wiimdy/openfunderse@latest bot-init \
   --skill-name strategy \
-  --env-path .env.strategy \
   --yes
 
 # initialize participant bot env + wallet
 npx @wiimdy/openfunderse@latest bot-init \
   --skill-name participant \
-  --env-path .env.participant \
   --yes
 ```
 
@@ -56,7 +54,7 @@ npx @wiimdy/openfunderse@latest bot-init \
 - Pack metadata/prompts are copied into `$CODEX_HOME/packs/<pack-name>`.
 - Use `--force` to overwrite existing installed skills.
 - `--with-runtime` installs `@wiimdy/openfunderse-agents` into the current project (`package.json` required).
-- Env scaffold generation is enabled by default (default path: `.env.openfunderse`).
+- Env scaffold generation is enabled by default (default path: `.env`).
 - `--env-profile` controls scaffold scope: `strategy` | `participant` | `all` (auto-selected by pack when omitted).
 - Use `--no-init-env` to skip env scaffold generation.
 - `--env-path` sets a custom env scaffold path.
@@ -66,6 +64,7 @@ npx @wiimdy/openfunderse@latest bot-init \
 - Prefer `--env-path` (Node 20+ reserves `--env-file` as a runtime flag).
 - `bot-init` uses `cast wallet new --json` (Foundry) to generate a new wallet for Monad testnet.
 - `bot-init` infers role from `--skill-name`, `--env-path`, or `--wallet-name` when `--role` is omitted.
+- `bot-init` writes to `.env` by default. Use `--env-path` to split strategy/participant env files.
 - It also infers from active skill env hints (`OPENCLAW_SKILL_KEY`, `OPENCLAW_ACTIVE_SKILL`, `SKILL_KEY`, `SKILL_NAME`).
 - `bot-init` writes role-specific key fields:
   - `strategy`: `STRATEGY_PRIVATE_KEY`, `BOT_ADDRESS`

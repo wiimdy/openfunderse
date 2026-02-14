@@ -79,8 +79,8 @@ Examples:
   openfunderse install openfunderse --with-runtime
   openfunderse install openfunderse-strategy --with-runtime
   openfunderse install openfunderse --codex-home /tmp/codex-home
-  openfunderse bot-init --env-path .env.participant --wallet-name participant-bot --yes
-  openfunderse bot-init --skill-name strategy --env-path .env.strategy --force
+  openfunderse bot-init --skill-name participant --wallet-name participant-bot --yes
+  openfunderse bot-init --skill-name strategy --force
 `);
 }
 
@@ -342,7 +342,7 @@ async function writeEnvScaffold(options) {
   const profile = normalizeEnvProfile(rawProfile);
   const envTarget = options.envFile
     ? path.resolve(options.envFile)
-    : path.join(runtimeDir, ".env.openfunderse");
+    : path.join(runtimeDir, ".env");
 
   const alreadyExists = existsSync(envTarget);
   if (alreadyExists && !options.force) {
@@ -369,7 +369,7 @@ async function writeEnvScaffold(options) {
 }
 
 function defaultEnvPathForRole(role) {
-  return path.join(process.cwd(), `.env.${role}`);
+  return path.join(process.cwd(), ".env");
 }
 
 function readAssignedEnvValue(content, key) {

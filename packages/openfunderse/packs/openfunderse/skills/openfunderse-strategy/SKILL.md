@@ -5,6 +5,7 @@ always: false
 disable-model-invocation: false
 metadata:
   openclaw:
+    installCommand: npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
     requires:
       env:
         - RELAYER_URL
@@ -46,41 +47,35 @@ In runtime, use `proposeIntentAndSubmit` to build a canonical proposal first, th
 
 ## Quick Start (ClawHub Users)
 
-Install the skill first:
+1) Install the skill:
 
 ```bash
 npx clawhub@latest install openfunderse-strategy
 ```
 
-This skill is instruction-only. You need the runtime package:
+2) Install runtime + generate env scaffold:
 
 ```bash
-npm init -y && npm i @wiimdy/openfunderse-agents@0.1.1 --ignore-scripts
+npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
 ```
 
-Create editable env scaffold in one line:
+3) Rotate the temporary bootstrap key and write a fresh strategy wallet to env:
 
 ```bash
-cp node_modules/@wiimdy/openfunderse-agents/.env.strategy.example .env.openfunderse
+npx @wiimdy/openfunderse@latest bot-init \
+  --skill-name strategy \
+  --yes
 ```
 
-Verify source before install (recommended):
+4) Load env for the current shell:
 
 ```bash
-npm view @wiimdy/openfunderse-agents@0.1.1 repository.url homepage dist.integrity
+set -a; source .env; set +a
 ```
 
-Then configure env and run commands from:
-
-- `packages/agents/.env.strategy.example`
-- `packages/agents/README.md`
-
-Runtime sources:
-
-- npm package: `https://www.npmjs.com/package/@wiimdy/openfunderse-agents`
-- repository: `https://github.com/wiimdy/openfunderse/tree/main/packages/agents`
-
-Do not use `@latest` in production; pin an explicit version and keep lockfile reviewed.
+Note:
+- The scaffold includes a temporary public key placeholder by default.
+- Always run `bot-init` before funding or running production actions.
 
 ## Credential Scope
 
