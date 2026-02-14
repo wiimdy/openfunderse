@@ -1,4 +1,28 @@
-import { createPublicClient, getAddress, http, isAddress, parseAbi } from 'viem';
+import {
+  buildCanonicalIntentRecord,
+  buildIntentAllowlistHashFromRoute,
+  encodeNadfunExecutionDataV1,
+  type ExecutionVenue,
+  type IntentExecutionRouteInput,
+  type TradeIntent
+} from '@claw/protocol-sdk';
+import {
+  RelayerHttpError,
+  createRelayerClient,
+  type RelayerProposeIntentInput
+} from '../../lib/relayer-client.js';
+import { StrategyAaClient } from '../../lib/aa-client.js';
+import {
+  createPublicClient,
+  defineChain,
+  encodeFunctionData,
+  getAddress,
+  http,
+  isAddress,
+  parseAbi,
+  type Address,
+  type Hex
+} from 'viem';
 
 export interface ProposeIntentInput {
   taskType: 'propose_intent';
@@ -60,6 +84,11 @@ export interface ProposeDecision {
     maxSlippageBps: number;
     snapshotHash: string;
   };
+  executionPlan: {
+    venue: ExecutionVenue;
+    router: string;
+    quoteAmountOut: string;
+  };
   reason: string;
   riskChecks: RiskChecks;
   confidence: number;
@@ -79,6 +108,43 @@ export interface HoldDecision {
 }
 
 export type ProposeIntentOutput = ProposeDecision | HoldDecision;
+
+export interface ProposeIntentAndSubmitInput extends ProposeIntentInput {
+  intentURI?: string;
+  intentBookAddress?: string;
+  strategyAaAccountAddress?: string;
+  adapterAddress?: string;
+  allowExistingOnchainIntent?: boolean;
+}
+
+export interface ProposeIntentAndSubmitOutput {
+  status: 'OK';
+  taskType: 'propose_intent';
+  fundId: string;
+  decision: 'HOLD' | 'SUBMITTED';
+  proposal: ProposeIntentOutput;
+  intentHash?: string;
+  executionRoute?: {
+    tokenIn: string;
+    tokenOut: string;
+    quoteAmountOut: string;
+    minAmountOut: string;
+    adapter: string;
+    adapterData: string;
+    allowlistHash: string;
+  };
+  relayer?: {
+    submitted: boolean;
+    duplicate: boolean;
+    response?: Record<string, unknown>;
+  };
+  onchain?: {
+    submitted: boolean;
+    skippedExisting: boolean;
+    userOpHash?: string;
+    txHash?: string;
+  };
+}
 
 interface NadfunNetworkConfig {
   chainId: number;
@@ -118,6 +184,16 @@ interface SellCandidate {
   urgency: number;
 }
 
+type IntentExecutionDataTuple = readonly [
+  exists: boolean,
+  approved: boolean,
+  snapshotHash: Hex,
+  deadline: bigint,
+  maxSlippageBps: number,
+  maxNotional: bigint,
+  allowlistHash: Hex
+];
+
 const NADFUN_NETWORKS: Record<number, NadfunNetworkConfig> = {
   10143: {
     chainId: 10143,
@@ -137,6 +213,11 @@ const NADFUN_NETWORKS: Record<number, NadfunNetworkConfig> = {
 
 const LENS_ABI = parseAbi([
   'function getAmountOut(address token, uint256 amountIn, bool isBuy) view returns (address router, uint256 amountOut)'
+]);
+
+const INTENT_BOOK_SUBMISSION_ABI = parseAbi([
+  'function proposeIntent(bytes32 intentHash, string intentURI, bytes32 snapshotHash, (bytes32 allowlistHash, uint16 maxSlippageBps, uint256 maxNotional, uint64 deadline) constraints)',
+  'function getIntentExecutionData(bytes32 intentHash) view returns (bool exists, bool approved, bytes32 snapshotHash, uint64 deadline, uint16 maxSlippageBps, uint256 maxNotional, bytes32 allowlistHash)'
 ]);
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -247,6 +328,42 @@ const parsePositiveBigInt = (value: string): bigint | null => {
   } catch {
     return null;
   }
+};
+
+const requireAddress = (value: string | undefined, label: string): Address => {
+  if (!value || !isAddress(value)) {
+    throw new Error(`${label} must be a valid address`);
+  }
+  return getAddress(value) as Address;
+};
+
+const requirePositiveBigInt = (value: string, label: string): bigint => {
+  const parsed = parsePositiveBigInt(value);
+  if (!parsed) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  return parsed;
+};
+
+const uint16FromBigInt = (value: bigint, label: string): number => {
+  if (value < 0n || value > 65_535n) {
+    throw new Error(`${label} must be between 0 and 65535`);
+  }
+  return Number(value);
+};
+
+const resolveNadfunVenue = (
+  router: `0x${string}`,
+  bondingRouter: `0x${string}`,
+  dexRouter: `0x${string}`
+): ExecutionVenue | null => {
+  if (router.toLowerCase() === bondingRouter.toLowerCase()) {
+    return 'NADFUN_BONDING_CURVE';
+  }
+  if (router.toLowerCase() === dexRouter.toLowerCase()) {
+    return 'NADFUN_DEX';
+  }
+  return null;
 };
 
 const parseBigIntValue = (value: unknown): bigint | null => {
@@ -719,10 +836,18 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
   const wmon = (process.env.NADFUN_WMON_ADDRESS && isAddress(process.env.NADFUN_WMON_ADDRESS))
     ? getAddress(process.env.NADFUN_WMON_ADDRESS)
     : network.wmon;
+  const bondingRouter = (process.env.NADFUN_BONDING_CURVE_ROUTER &&
+    isAddress(process.env.NADFUN_BONDING_CURVE_ROUTER))
+    ? getAddress(process.env.NADFUN_BONDING_CURVE_ROUTER)
+    : network.bondingRouter;
+  const dexRouter = (process.env.NADFUN_DEX_ROUTER &&
+    isAddress(process.env.NADFUN_DEX_ROUTER))
+    ? getAddress(process.env.NADFUN_DEX_ROUTER)
+    : network.dexRouter;
 
   const allowedRouters = normalizedAddressSet([
-    process.env.NADFUN_BONDING_CURVE_ROUTER ?? network.bondingRouter,
-    process.env.NADFUN_DEX_ROUTER ?? network.dexRouter
+    bondingRouter,
+    dexRouter
   ]);
 
   if (allowedRouters.size === 0) {
@@ -788,6 +913,11 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
 
   const sellPick = sellCandidates[0];
   if (sellPick) {
+    const venue = resolveNadfunVenue(sellPick.router, bondingRouter, dexRouter);
+    if (!venue) {
+      return holdDecision(input, `unsupported NadFun router for SELL: ${sellPick.router}`);
+    }
+
     return {
       status: 'OK',
       taskType: 'propose_intent',
@@ -808,6 +938,11 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
         deadline,
         maxSlippageBps: riskPolicy.maxSlippageBps,
         snapshotHash: snapshot.snapshotHash
+      },
+      executionPlan: {
+        venue,
+        router: sellPick.router,
+        quoteAmountOut: sellPick.quoteAmountOut.toString()
       },
       reason: `NadFun SELL trigger=${sellPick.trigger} token=${sellPick.token} router=${sellPick.router}`,
       riskChecks,
@@ -851,6 +986,10 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
   });
 
   const buyPick = buyCandidates[0];
+  const buyVenue = resolveNadfunVenue(buyPick.router, bondingRouter, dexRouter);
+  if (!buyVenue) {
+    return holdDecision(input, `unsupported NadFun router for BUY: ${buyPick.router}`);
+  }
 
   return {
     status: 'OK',
@@ -873,6 +1012,11 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
       maxSlippageBps: riskPolicy.maxSlippageBps,
       snapshotHash: snapshot.snapshotHash
     },
+    executionPlan: {
+      venue: buyVenue,
+      router: buyPick.router,
+      quoteAmountOut: buyPick.quoteAmountOut.toString()
+    },
     reason: `NadFun BUY token=${buyPick.token} router=${buyPick.router} impactBps=${buyPick.impactBps}`,
     riskChecks,
     confidence: 0.9,
@@ -882,5 +1026,218 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
       'execution route must use the same router returned by NadFun lens',
       `deadlineTtlSeconds=${deadlineTtlSeconds}`
     ]
+  };
+}
+
+export async function proposeIntentAndSubmit(
+  input: ProposeIntentAndSubmitInput
+): Promise<ProposeIntentAndSubmitOutput> {
+  const proposal = await proposeIntent(input);
+  if (proposal.decision === 'HOLD') {
+    return {
+      status: 'OK',
+      taskType: 'propose_intent',
+      fundId: input.fundId,
+      decision: 'HOLD',
+      proposal
+    };
+  }
+
+  const adapterAddress = requireAddress(
+    input.adapterAddress ??
+      process.env.NADFUN_EXECUTION_ADAPTER_ADDRESS ??
+      process.env.ADAPTER_ADDRESS,
+    'NADFUN_EXECUTION_ADAPTER_ADDRESS'
+  );
+  const intentBookAddress = requireAddress(
+    input.intentBookAddress ?? process.env.INTENT_BOOK_ADDRESS,
+    'INTENT_BOOK_ADDRESS'
+  );
+  const strategyAaAccountAddress = requireAddress(
+    input.strategyAaAccountAddress ?? process.env.STRATEGY_AA_ACCOUNT_ADDRESS,
+    'STRATEGY_AA_ACCOUNT_ADDRESS'
+  );
+  const vaultAddress = requireAddress(proposal.intent.vault, 'intent.vault');
+
+  const intent: TradeIntent = {
+    intentVersion: proposal.intent.intentVersion,
+    vault: vaultAddress,
+    action: proposal.intent.action,
+    tokenIn: requireAddress(proposal.intent.tokenIn, 'intent.tokenIn'),
+    tokenOut: requireAddress(proposal.intent.tokenOut, 'intent.tokenOut'),
+    amountIn: requirePositiveBigInt(proposal.intent.amountIn, 'intent.amountIn'),
+    minAmountOut: requirePositiveBigInt(proposal.intent.minAmountOut, 'intent.minAmountOut'),
+    deadline: BigInt(proposal.intent.deadline),
+    maxSlippageBps: BigInt(proposal.intent.maxSlippageBps),
+    snapshotHash: proposal.intent.snapshotHash as Hex,
+    reason: proposal.reason
+  };
+  const quoteAmountOut = requirePositiveBigInt(
+    proposal.executionPlan.quoteAmountOut,
+    'executionPlan.quoteAmountOut'
+  );
+
+  const recipient =
+    intent.action === 'BUY' ? vaultAddress : adapterAddress;
+  const token = intent.action === 'BUY' ? intent.tokenOut : intent.tokenIn;
+  const adapterData = encodeNadfunExecutionDataV1({
+    version: 1,
+    action: intent.action,
+    venue: proposal.executionPlan.venue,
+    router: requireAddress(proposal.executionPlan.router, 'executionPlan.router'),
+    recipient,
+    token,
+    deadline: intent.deadline,
+    amountOutMin: intent.minAmountOut,
+    extra: '0x'
+  });
+  const executionRoute: IntentExecutionRouteInput = {
+    tokenIn: intent.tokenIn,
+    tokenOut: intent.tokenOut,
+    quoteAmountOut,
+    minAmountOut: intent.minAmountOut,
+    adapter: adapterAddress,
+    adapterData
+  };
+  const allowlistHash = buildIntentAllowlistHashFromRoute(executionRoute);
+  const maxNotional = requirePositiveBigInt(input.riskPolicy.maxNotional, 'riskPolicy.maxNotional');
+  const canonical = buildCanonicalIntentRecord({
+    intent,
+    allowlistHash,
+    maxNotional
+  });
+
+  const relayer = createRelayerClient();
+  let relayerSubmitted = false;
+  let relayerDuplicate = false;
+  let relayerResponse: Record<string, unknown> | undefined;
+  try {
+    const payload: RelayerProposeIntentInput = {
+      intent: canonical.intent,
+      executionRoute,
+      maxNotional: canonical.constraints.maxNotional,
+      intentURI: input.intentURI
+    };
+    relayerResponse = await relayer.proposeIntent(input.fundId, payload);
+    relayerSubmitted = true;
+  } catch (error) {
+    if (error instanceof RelayerHttpError && error.status === 409) {
+      relayerDuplicate = true;
+    } else {
+      throw error;
+    }
+  }
+
+  const chainIdRaw = Number(process.env.CHAIN_ID ?? '10143');
+  if (!Number.isFinite(chainIdRaw) || chainIdRaw <= 0) {
+    throw new Error('CHAIN_ID must be a positive number');
+  }
+  const rpcUrl = process.env.STRATEGY_AA_RPC_URL ?? process.env.RPC_URL ?? '';
+  if (!rpcUrl) {
+    throw new Error('STRATEGY_AA_RPC_URL (or RPC_URL) is required');
+  }
+
+  const chainId = Math.trunc(chainIdRaw);
+  const publicClient = createPublicClient({
+    chain: defineChain({
+      id: chainId,
+      name: `strategy-aa-${chainId}`,
+      nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
+      rpcUrls: {
+        default: { http: [rpcUrl] },
+        public: { http: [rpcUrl] }
+      }
+    }),
+    transport: http(rpcUrl)
+  });
+
+  const existing = (await publicClient.readContract({
+    address: intentBookAddress,
+    abi: INTENT_BOOK_SUBMISSION_ABI,
+    functionName: 'getIntentExecutionData',
+    args: [canonical.intentHash]
+  })) as IntentExecutionDataTuple;
+
+  const allowExistingOnchainIntent = input.allowExistingOnchainIntent ?? true;
+  let onchainSubmitted = false;
+  let onchainSkippedExisting = false;
+  let userOpHash: Hex | undefined;
+  let txHash: Hex | undefined;
+
+  if (existing[0]) {
+    if (!allowExistingOnchainIntent) {
+      throw new Error(
+        `onchain intent already exists: ${canonical.intentHash} (set allowExistingOnchainIntent=true to continue)`
+      );
+    }
+    onchainSkippedExisting = true;
+  } else {
+    const aa = StrategyAaClient.fromEnv({
+      smartAccount: strategyAaAccountAddress
+    });
+    const data = encodeFunctionData({
+      abi: INTENT_BOOK_SUBMISSION_ABI,
+      functionName: 'proposeIntent',
+      args: [
+        canonical.intentHash,
+        input.intentURI ?? '',
+        canonical.intent.snapshotHash,
+        {
+          allowlistHash: canonical.constraints.allowlistHash,
+          maxSlippageBps: uint16FromBigInt(
+            canonical.constraints.maxSlippageBps,
+            'constraints.maxSlippageBps'
+          ),
+          maxNotional: canonical.constraints.maxNotional,
+          deadline: canonical.constraints.deadline
+        }
+      ]
+    });
+    const userOp = await aa.sendExecute({
+      target: intentBookAddress,
+      data
+    });
+    if (!userOp.transactionHash) {
+      throw new Error('missing transactionHash in user operation receipt');
+    }
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash: userOp.transactionHash
+    });
+    if (receipt.status !== 'success') {
+      throw new Error(`proposeIntent transaction reverted: ${userOp.transactionHash}`);
+    }
+
+    onchainSubmitted = true;
+    userOpHash = userOp.userOpHash;
+    txHash = userOp.transactionHash;
+  }
+
+  return {
+    status: 'OK',
+    taskType: 'propose_intent',
+    fundId: input.fundId,
+    decision: 'SUBMITTED',
+    proposal,
+    intentHash: canonical.intentHash,
+    executionRoute: {
+      tokenIn: executionRoute.tokenIn,
+      tokenOut: executionRoute.tokenOut,
+      quoteAmountOut: executionRoute.quoteAmountOut.toString(),
+      minAmountOut: executionRoute.minAmountOut.toString(),
+      adapter: executionRoute.adapter,
+      adapterData: executionRoute.adapterData ?? '0x',
+      allowlistHash: canonical.constraints.allowlistHash
+    },
+    relayer: {
+      submitted: relayerSubmitted,
+      duplicate: relayerDuplicate,
+      response: relayerResponse
+    },
+    onchain: {
+      submitted: onchainSubmitted,
+      skippedExisting: onchainSkippedExisting,
+      userOpHash,
+      txHash
+    }
   };
 }
