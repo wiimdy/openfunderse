@@ -80,7 +80,7 @@ npm run clawbot:run -w @claw/agents -- \
 # Mine
 npm run clawbot:run -w @claw/agents -- \
   --role participant \
-  --action mine_claim \
+  --action propose_allocation \
   --fund-id "$FUND_ID" \
   --epoch-id 1 \
   --target-weights 7000,3000 \
@@ -89,12 +89,12 @@ npm run clawbot:run -w @claw/agents -- \
 # Verify
 npm run clawbot:run -w @claw/agents -- \
   --role participant \
-  --action verify_claim \
+  --action validate_allocation \
   --claim-file /tmp/claim.mine.json
 
 # Submit
 npm run clawbot:run -w @claw/agents -- \
   --role participant \
-  --action submit_claim \
+  --action submit_allocation \
   --claim-file /tmp/claim.mine.json
 ```

@@ -61,12 +61,19 @@ const mapCommand = (role: string, action: string): string => {
   }
 
   if (role === 'participant') {
-    if (action === 'mine_claim') return 'participant-mine';
-    if (action === 'verify_claim') return 'participant-verify';
-    if (action === 'verify_claim_or_intent_validity') return 'participant-verify';
-    if (action === 'submit_claim') return 'participant-submit';
-    if (action === 'submit_mined_claim') return 'participant-submit';
-    if (action === 'participant_e2e') return 'participant-e2e';
+    // Backward-compatible aliases for one release window.
+    if (action === 'mine_claim') return 'participant-propose-allocation';
+    if (action === 'verify_claim') return 'participant-validate-allocation';
+    if (action === 'verify_claim_or_intent_validity') return 'participant-validate-allocation';
+    if (action === 'submit_claim') return 'participant-submit-allocation';
+    if (action === 'submit_mined_claim') return 'participant-submit-allocation';
+    if (action === 'participant_e2e') return 'participant-allocation-e2e';
+
+    if (action === 'propose_allocation') return 'participant-propose-allocation';
+    if (action === 'validate_allocation') return 'participant-validate-allocation';
+    if (action === 'validate_allocation_or_intent') return 'participant-validate-allocation';
+    if (action === 'submit_allocation') return 'participant-submit-allocation';
+    if (action === 'allocation_e2e') return 'participant-allocation-e2e';
   }
 
   throw new Error(`unsupported clawbot action: role=${role}, action=${action}`);
@@ -80,7 +87,7 @@ clawbot-run --role <strategy|participant> --action <action> [action options...]
 
 Examples:
   clawbot-run --role strategy --action propose_intent --fund-id demo-fund --intent-file ./intent.json --execution-route-file ./route.json
-  clawbot-run --role participant --action mine_claim --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000
+  clawbot-run --role participant --action propose_allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000
 `);
 };
 

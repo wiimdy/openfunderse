@@ -10,7 +10,7 @@ import {
 import { isAddress } from 'viem';
 
 export interface MineClaimInput {
-  taskType: 'mine_claim';
+  taskType: 'propose_allocation';
   fundId: string;
   roomId: string;
   epochId: number;
@@ -45,7 +45,7 @@ export interface MineClaimObservation {
 
 export interface MineClaimOutput {
   status: 'OK' | 'ERROR';
-  taskType: 'mine_claim';
+  taskType: 'propose_allocation';
   fundId: string;
   epochId: number;
   observation?: MineClaimObservation;
@@ -56,7 +56,7 @@ export interface MineClaimOutput {
 }
 
 export interface VerifyClaimInput {
-  taskType: 'verify_claim_or_intent_validity';
+  taskType: 'validate_allocation_or_intent';
   fundId: string;
   roomId: string;
   epochId: number;
@@ -71,7 +71,7 @@ export interface VerifyClaimInput {
 
 export interface VerifyClaimOutput {
   status: 'OK' | 'ERROR';
-  taskType: 'verify_claim_or_intent_validity';
+  taskType: 'validate_allocation_or_intent';
   fundId: string;
   roomId: string;
   epochId: number;
@@ -302,7 +302,7 @@ export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput>
 
     return {
       status: 'OK',
-      taskType: 'mine_claim',
+      taskType: 'propose_allocation',
       fundId,
       epochId,
       observation: {
@@ -322,7 +322,7 @@ export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput>
     const message = err instanceof Error ? err.message : String(err);
     return {
       status: 'ERROR',
-      taskType: 'mine_claim',
+      taskType: 'propose_allocation',
       fundId,
       epochId,
       confidence: 0,
@@ -338,7 +338,7 @@ export async function verifyClaim(input: VerifyClaimInput): Promise<VerifyClaimO
 
   const base = {
     status: 'OK' as const,
-    taskType: 'verify_claim_or_intent_validity' as const,
+    taskType: 'validate_allocation_or_intent' as const,
     fundId,
     roomId,
     epochId,

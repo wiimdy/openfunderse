@@ -198,7 +198,7 @@ const runParticipantMine = async (parsed: ParsedCli): Promise<void> => {
   }
 
   const output = await mineClaim({
-    taskType: 'mine_claim',
+    taskType: 'propose_allocation',
     fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
     epochId: Math.trunc(epochId),
@@ -226,7 +226,7 @@ const runParticipantVerify = async (parsed: ParsedCli): Promise<void> => {
   const claimFile = requiredOption(parsed, 'claim-file');
   const bundle = await readObservationFromFile(claimFile);
   const output = await verifyClaim({
-    taskType: 'verify_claim_or_intent_validity',
+    taskType: 'validate_allocation_or_intent',
     fundId: bundle.fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
     epochId: bundle.epochId,
@@ -275,7 +275,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
   }
 
   const mine = await mineClaim({
-    taskType: 'mine_claim',
+    taskType: 'propose_allocation',
     fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
     epochId: Math.trunc(epochId),
@@ -295,7 +295,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
   }
 
   const verify = await verifyClaim({
-    taskType: 'verify_claim_or_intent_validity',
+    taskType: 'validate_allocation_or_intent',
     fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
     epochId: Math.trunc(epochId),
@@ -327,7 +327,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
   }
 
   const report = {
-    step: 'participant-e2e',
+    step: 'participant-allocation-e2e',
     mode: submit.decision === 'SUBMITTED' ? 'SUBMITTED' : 'READY',
     fundId,
     epochId: Math.trunc(epochId),
@@ -357,18 +357,18 @@ const printUsage = (): void => {
   console.log(`
 [agents] participant commands
 
-participant-mine
+participant-propose-allocation
   --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
   [--participant <0x...>] [--horizon-sec <n>] [--nonce <n>] [--room-id <id>] [--out-file <path>]
 
-participant-verify
+participant-validate-allocation
   --claim-file <path>
   [--max-data-age-seconds <n>] [--out-file <path>]
 
-participant-submit
+participant-submit-allocation
   --claim-file <path> [--submit]
 
-participant-e2e
+participant-allocation-e2e
   --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
   [--participant <0x...>] [--horizon-sec <n>] [--report-file <path>] [--submit]
 `);
@@ -386,19 +386,19 @@ export const runParticipantCli = async (argv: string[]): Promise<boolean> => {
     return true;
   }
 
-  if (command === 'participant-mine') {
+  if (command === 'participant-propose-allocation') {
     await runParticipantMine(parsed);
     return true;
   }
-  if (command === 'participant-verify') {
+  if (command === 'participant-validate-allocation') {
     await runParticipantVerify(parsed);
     return true;
   }
-  if (command === 'participant-submit') {
+  if (command === 'participant-submit-allocation') {
     await runParticipantSubmit(parsed);
     return true;
   }
-  if (command === 'participant-e2e') {
+  if (command === 'participant-allocation-e2e') {
     await runParticipantE2E(parsed);
     return true;
   }
