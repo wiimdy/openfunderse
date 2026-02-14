@@ -1,4 +1,5 @@
 import { runRedditMvpCli } from './reddit-mvp.js';
+import { runParticipantCli } from './participant-cli.js';
 
 export { createRelayerClient, RelayerClient } from './lib/relayer-client.js';
 export type {
@@ -53,7 +54,15 @@ console.log(`[agents] strategy key set=${Boolean(process.env.STRATEGY_PRIVATE_KE
 console.log(`[agents] verifier key set=${Boolean(process.env.VERIFIER_PRIVATE_KEY)}`);
 console.log(`[agents] crawler key set=${Boolean(process.env.CRAWLER_PRIVATE_KEY)}`);
 
-runRedditMvpCli(process.argv.slice(2)).catch((error: unknown) => {
+const main = async (): Promise<void> => {
+  const argv = process.argv.slice(2);
+  const handledByParticipant = await runParticipantCli(argv);
+  if (!handledByParticipant) {
+    await runRedditMvpCli(argv);
+  }
+};
+
+main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`[agents] error: ${message}`);
   process.exitCode = 1;

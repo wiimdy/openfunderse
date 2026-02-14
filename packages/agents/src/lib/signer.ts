@@ -15,6 +15,7 @@ const DOMAIN_VERSION = '1';
 export interface BotSignerOptions {
   privateKey?: Hex;
   chainId?: bigint;
+  claimAttestationVerifierAddress?: Address;
   claimBookAddress?: Address;
   intentBookAddress?: Address;
 }
@@ -39,6 +40,16 @@ const readEnv = (name: string): string => {
   return value;
 };
 
+const readFirstEnv = (names: string[]): string => {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.length > 0) {
+      return value;
+    }
+  }
+  throw new Error(`one of [${names.join(', ')}] is required`);
+};
+
 const parseBigIntOrThrow = (
   value: string | number | bigint | undefined,
   label: string
@@ -56,17 +67,26 @@ const parseBigIntOrThrow = (
 export class BotSigner {
   private readonly account: ReturnType<typeof privateKeyToAccount>;
   private readonly chainId: bigint;
-  private readonly claimBookAddress: Address;
-  private readonly intentBookAddress: Address;
+  private readonly claimAttestationVerifierAddress: Address;
+  private readonly intentBookAddress?: Address;
 
   constructor(options: BotSignerOptions = {}) {
-    const privateKey = (options.privateKey ?? readEnv('BOT_PRIVATE_KEY')) as Hex;
-    this.chainId =
-      options.chainId ?? parseBigIntOrThrow(readEnv('CHAIN_ID'), 'CHAIN_ID');
-    this.claimBookAddress =
-      options.claimBookAddress ?? (readEnv('CLAIM_BOOK_ADDRESS') as Address);
+    const privateKey =
+      (options.privateKey ?? readFirstEnv(['BOT_PRIVATE_KEY', 'VERIFIER_PRIVATE_KEY'])) as Hex;
+    this.chainId = options.chainId ?? parseBigIntOrThrow(readEnv('CHAIN_ID'), 'CHAIN_ID');
+    this.claimAttestationVerifierAddress =
+      options.claimAttestationVerifierAddress ??
+      (process.env.CLAIM_ATTESTATION_VERIFIER_ADDRESS as Address | undefined) ??
+      (options.claimBookAddress as Address | undefined) ??
+      (process.env.CLAIM_BOOK_ADDRESS as Address | undefined) ??
+      (() => {
+        throw new Error(
+          'CLAIM_ATTESTATION_VERIFIER_ADDRESS (or CLAIM_BOOK_ADDRESS fallback) is required'
+        );
+      })();
     this.intentBookAddress =
-      options.intentBookAddress ?? (readEnv('INTENT_BOOK_ADDRESS') as Address);
+      options.intentBookAddress ??
+      (process.env.INTENT_BOOK_ADDRESS as Address | undefined);
     this.account = privateKeyToAccount(privateKey);
   }
 
@@ -93,7 +113,7 @@ export class BotSigner {
           name: CLAIM_DOMAIN_NAME,
           version: DOMAIN_VERSION,
           chainId: this.chainId,
-          verifyingContract: this.claimBookAddress
+          verifyingContract: this.claimAttestationVerifierAddress
         },
         message
       )
@@ -110,6 +130,9 @@ export class BotSigner {
     expiresAt: bigint | number | string;
     nonce: bigint | number | string;
   }): Promise<SignedIntentAttestation> {
+    if (!this.intentBookAddress) {
+      throw new Error('INTENT_BOOK_ADDRESS is required for intent attestation signing');
+    }
     const message: IntentAttestationMessage = {
       intentHash: input.intentHash,
       verifier: this.account.address,

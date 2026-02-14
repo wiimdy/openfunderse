@@ -15,7 +15,7 @@ The Participant MoltBot is responsible for mining data claims from specified sou
 
 ## Input
 
-The skill supports two primary modes: **Mining** and **Verification**.
+The skill supports four operational modes: **Mining**, **Verification**, **Submission**, and **Attestation**.
 
 ### Mode A: Mining (`mine_claim`)
 Used to extract data from a source and create a claim.
@@ -55,6 +55,30 @@ Used to verify an existing claim or the technical validity of an intent.
     "reproducible": "boolean",
     "maxDataAgeSeconds": "number"
   }
+}
+```
+
+### Mode C: Submit (`submit_mined_claim`)
+Submits canonical claim payload to relayer.
+
+```json
+{
+  "taskType": "submit_mined_claim",
+  "fundId": "string",
+  "epochId": "number",
+  "observation": "object"
+}
+```
+
+### Mode D: Attest (`attest_claim`)
+Signs and submits claim attestation envelope.
+
+```json
+{
+  "taskType": "attest_claim",
+  "fundId": "string",
+  "epochId": "number",
+  "claimHash": "0x..."
 }
 ```
 
@@ -112,3 +136,5 @@ Used to verify an existing claim or the technical validity of an intent.
 5. **Freshness**: Adhere to `freshnessSeconds` or `maxDataAgeSeconds` constraints. If data is stale, the verdict should reflect this.
 6. **Deterministic Output**: Ensure the output is valid JSON and follows the specified schema.
 7. **Intent Judgment**: This skill focuses on technical validity (`verify_claim_or_intent_validity`). Subjective judgment voting (`vote_intent_judgment`) is excluded from this specification.
+8. **Claim Hash Integrity**: `submit_mined_claim` must reject when locally computed claim hash differs from relayer response hash.
+9. **Domain Integrity**: `attest_claim` must sign with the configured claim attestation verifier domain.

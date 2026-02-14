@@ -12,6 +12,7 @@ metadata:
 # Strategy MoltBot Skill
 
 The Strategy MoltBot is responsible for proposing structured trade intents based on finalized data snapshots. It evaluates market conditions, liquidity, and risk policies to decide whether to propose a trade or hold.
+For NadFun venues, it must use lens quotes to derive `minAmountOut` and reject router mismatch.
 
 ## Input
 
@@ -136,3 +137,6 @@ Returned when no trade is proposed due to risk constraints or market conditions.
 4. **NadFun Specifics**: Evaluate liquidity, slippage, and bonding curve status (pre/post graduation) separately for NadFun tokens.
 5. **Proposal Only**: Assume the agent has proposal rights only, not direct execution rights.
 6. **Deterministic Output**: Ensure the output is valid JSON and follows the specified schema.
+7. **Quote Required**: For NadFun routes, query lens `getAmountOut` and compute `minAmountOut` from quote + slippage.
+8. **No Zero MinOut**: Never propose with `minAmountOut=0`.
+9. **Fail Closed**: If quote fails or returned router is not allowlisted, return `HOLD`.
