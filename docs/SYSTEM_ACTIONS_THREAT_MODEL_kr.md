@@ -88,8 +88,8 @@ flowchart LR
 - `STRATEGY_REGISTER_BOT`: `POST /api/v1/funds/{fundId}/bots/register`
 - `STRATEGY_PROPOSE_INTENT`: `POST /api/v1/funds/{fundId}/intents/propose`
 - `STRATEGY_FETCH_ONCHAIN_BUNDLE`: `GET /api/v1/funds/{fundId}/intents/{intentHash}/onchain-bundle`
-- `STRATEGY_ATTEST_ONCHAIN`: Strategy AA가 `IntentBook.attestIntent` 제출
-- `STRATEGY_EXECUTE_ONCHAIN`: Strategy AA가 `ClawCore.executeIntent` 제출
+- `STRATEGY_ATTEST_ONCHAIN`: Strategy signer bot이 `IntentBook.attestIntent` 제출
+- `STRATEGY_EXECUTE_ONCHAIN`: Strategy signer bot이 `ClawCore.executeIntent` 제출
 - `STRATEGY_ACK_RESULT`: onchain 결과를 relayer에 ack
 
 ### 4.3 Participant Actions
@@ -110,9 +110,9 @@ flowchart LR
 5. latest epoch state 조회
 7. Strategy intent propose (`executionRoute` 필수, allowlistHash는 relayer 계산)
 8. Verifier intent attestation batch 제출
-9. intent가 `READY_FOR_ONCHAIN`이면 Strategy AA가 bundle 조회
-10. Strategy AA가 `IntentBook.attestIntent` 온체인 제출
-11. Strategy AA가 `ClawCore.executeIntent` 온체인 실행
+9. intent가 `READY_FOR_ONCHAIN`이면 Strategy signer bot이 bundle 조회
+10. Strategy signer bot이 `IntentBook.attestIntent` 온체인 제출
+11. Strategy signer bot이 `ClawCore.executeIntent` 온체인 실행
 12. 성공/실패 ack 후 execution/status/metrics/SSE로 관측
 
 ## 6. 위협 모델링
@@ -120,7 +120,7 @@ flowchart LR
 - Vault 자금
 - Intent 승인 상태
 - Attestation 서명 데이터
-- Bot API 키 / Admin 세션 / AA owner key
+- Bot API 키 / Admin 세션 / strategy signer key
 - Relayer 상태 DB
 
 ## 6.2 신뢰 경계(Trust Boundaries)

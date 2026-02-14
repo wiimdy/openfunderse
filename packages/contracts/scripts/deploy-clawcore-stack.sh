@@ -39,7 +39,11 @@ if [[ ! -f "$RUN_JSON" ]]; then
   exit 1
 fi
 
-mapfile -t PROXY_ADDRESSES < <(
+PROXY_ADDRESSES=()
+while IFS= read -r addr; do
+  [[ -n "$addr" ]] || continue
+  PROXY_ADDRESSES+=("$addr")
+done < <(
   jq -r '.transactions[]
     | select(.transactionType=="CREATE" and .contractName=="ERC1967Proxy")
     | .contractAddress' "$RUN_JSON"

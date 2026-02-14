@@ -30,10 +30,7 @@ Required minimum:
 For onchain actions additionally:
 - `INTENT_BOOK_ADDRESS`
 - `CLAW_CORE_ADDRESS`
-- `STRATEGY_AA_ACCOUNT_ADDRESS`
-- `STRATEGY_AA_OWNER_PRIVATE_KEY`
-- `STRATEGY_AA_BUNDLER_URL`
-- `STRATEGY_AA_ENTRYPOINT_ADDRESS`
+- `STRATEGY_PRIVATE_KEY`
 
 ## 3) Core smoke (single command)
 ```bash
@@ -43,7 +40,7 @@ npm run bot:smoke:e2e -w @claw/agents
 This runs:
 1. `clawbot-run --help`
 2. participant verify routing
-3. strategy set_aa routing
+3. strategy help routing
 4. strategy propose_intent (only when network env is complete)
 
 ## 4) Manual strategy flow

@@ -11,11 +11,10 @@ import {
   createRelayerClient,
   type RelayerProposeIntentInput
 } from '../../lib/relayer-client.js';
-import { StrategyAaClient } from '../../lib/aa-client.js';
 import {
+  createWalletClient,
   createPublicClient,
   defineChain,
-  encodeFunctionData,
   getAddress,
   http,
   isAddress,
@@ -23,6 +22,7 @@ import {
   type Address,
   type Hex
 } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 
 export interface ProposeIntentInput {
   taskType: 'propose_intent';
@@ -112,7 +112,7 @@ export type ProposeIntentOutput = ProposeDecision | HoldDecision;
 export interface ProposeIntentAndSubmitInput extends ProposeIntentInput {
   intentURI?: string;
   intentBookAddress?: string;
-  strategyAaAccountAddress?: string;
+  strategySignerAddress?: string;
   adapterAddress?: string;
   allowExistingOnchainIntent?: boolean;
   submit?: boolean;
@@ -142,7 +142,6 @@ export interface ProposeIntentAndSubmitOutput {
   onchain?: {
     submitted: boolean;
     skippedExisting: boolean;
-    userOpHash?: string;
     txHash?: string;
   };
   safety?: {
@@ -422,6 +421,42 @@ const uint16FromBigInt = (value: bigint, label: string): number => {
     throw new Error(`${label} must be between 0 and 65535`);
   }
   return Number(value);
+};
+
+const requireStrategyPrivateKey = (): Hex => {
+  const raw = process.env.STRATEGY_PRIVATE_KEY ?? '';
+  if (!/^0x[0-9a-fA-F]{64}$/.test(raw)) {
+    throw new Error('STRATEGY_PRIVATE_KEY is required and must be a 32-byte hex private key');
+  }
+  return raw as Hex;
+};
+
+const strategyRuntime = (): {
+  chainId: number;
+  rpcUrl: string;
+  chain: ReturnType<typeof defineChain>;
+} => {
+  const chainIdRaw = Number(process.env.CHAIN_ID ?? '10143');
+  if (!Number.isFinite(chainIdRaw) || chainIdRaw <= 0) {
+    throw new Error('CHAIN_ID must be a positive number');
+  }
+  const rpcUrl = process.env.RPC_URL ?? '';
+  if (!rpcUrl) {
+    throw new Error('RPC_URL is required');
+  }
+
+  const chainId = Math.trunc(chainIdRaw);
+  const chain = defineChain({
+    id: chainId,
+    name: `strategy-signer-${chainId}`,
+    nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
+    rpcUrls: {
+      default: { http: [rpcUrl] },
+      public: { http: [rpcUrl] }
+    }
+  });
+
+  return { chainId, rpcUrl, chain };
 };
 
 const resolveNadfunVenue = (
@@ -1230,9 +1265,9 @@ export async function proposeIntentAndSubmit(
     input.intentBookAddress ?? process.env.INTENT_BOOK_ADDRESS,
     'INTENT_BOOK_ADDRESS'
   );
-  const strategyAaAccountAddress = requireAddress(
-    input.strategyAaAccountAddress ?? process.env.STRATEGY_AA_ACCOUNT_ADDRESS,
-    'STRATEGY_AA_ACCOUNT_ADDRESS'
+  const strategySignerAddress = requireAddress(
+    input.strategySignerAddress ?? process.env.BOT_ADDRESS,
+    'BOT_ADDRESS (strategy signer)'
   );
 
   const relayer = createRelayerClient();
@@ -1256,26 +1291,20 @@ export async function proposeIntentAndSubmit(
     }
   }
 
-  const chainIdRaw = Number(process.env.CHAIN_ID ?? '10143');
-  if (!Number.isFinite(chainIdRaw) || chainIdRaw <= 0) {
-    throw new Error('CHAIN_ID must be a positive number');
-  }
-  const rpcUrl = process.env.STRATEGY_AA_RPC_URL ?? process.env.RPC_URL ?? '';
-  if (!rpcUrl) {
-    throw new Error('STRATEGY_AA_RPC_URL (or RPC_URL) is required');
-  }
-
-  const chainId = Math.trunc(chainIdRaw);
+  const { chain, rpcUrl } = strategyRuntime();
   const publicClient = createPublicClient({
-    chain: defineChain({
-      id: chainId,
-      name: `strategy-aa-${chainId}`,
-      nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
-      rpcUrls: {
-        default: { http: [rpcUrl] },
-        public: { http: [rpcUrl] }
-      }
-    }),
+    chain,
+    transport: http(rpcUrl)
+  });
+  const strategySignerAccount = privateKeyToAccount(requireStrategyPrivateKey());
+  if (strategySignerAccount.address.toLowerCase() !== strategySignerAddress.toLowerCase()) {
+    throw new Error(
+      `strategy signer mismatch: signer=${strategySignerAccount.address} expected=${strategySignerAddress}`
+    );
+  }
+  const walletClient = createWalletClient({
+    account: strategySignerAccount,
+    chain,
     transport: http(rpcUrl)
   });
 
@@ -1289,7 +1318,6 @@ export async function proposeIntentAndSubmit(
   const allowExistingOnchainIntent = input.allowExistingOnchainIntent ?? true;
   let onchainSubmitted = false;
   let onchainSkippedExisting = false;
-  let userOpHash: Hex | undefined;
   let txHash: Hex | undefined;
 
   if (existing[0]) {
@@ -1300,10 +1328,9 @@ export async function proposeIntentAndSubmit(
     }
     onchainSkippedExisting = true;
   } else {
-    const aa = StrategyAaClient.fromEnv({
-      smartAccount: strategyAaAccountAddress
-    });
-    const data = encodeFunctionData({
+    const simulation = await publicClient.simulateContract({
+      account: strategySignerAccount,
+      address: intentBookAddress,
       abi: INTENT_BOOK_SUBMISSION_ABI,
       functionName: 'proposeIntent',
       args: [
@@ -1321,23 +1348,16 @@ export async function proposeIntentAndSubmit(
         }
       ]
     });
-    const userOp = await aa.sendExecute({
-      target: intentBookAddress,
-      data
-    });
-    if (!userOp.transactionHash) {
-      throw new Error('missing transactionHash in user operation receipt');
-    }
+    const onchainTxHash = await walletClient.writeContract(simulation.request);
     const receipt = await publicClient.waitForTransactionReceipt({
-      hash: userOp.transactionHash
+      hash: onchainTxHash
     });
     if (receipt.status !== 'success') {
-      throw new Error(`proposeIntent transaction reverted: ${userOp.transactionHash}`);
+      throw new Error(`proposeIntent transaction reverted: ${onchainTxHash}`);
     }
 
     onchainSubmitted = true;
-    userOpHash = userOp.userOpHash;
-    txHash = userOp.transactionHash;
+    txHash = onchainTxHash;
   }
 
   return {
@@ -1364,7 +1384,6 @@ export async function proposeIntentAndSubmit(
     onchain: {
       submitted: onchainSubmitted,
       skippedExisting: onchainSkippedExisting,
-      userOpHash,
       txHash
     },
     safety: {

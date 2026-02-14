@@ -79,7 +79,7 @@ Relayer client:
 - `BOT_ADDRESS` (required for claim submit; must match registered participant bot address)
 
 Signer:
-- `BOT_PRIVATE_KEY` or `VERIFIER_PRIVATE_KEY`
+- `PARTICIPANT_PRIVATE_KEY`
 - `CHAIN_ID`
 - `INTENT_BOOK_ADDRESS` (required only for intent attestation signing)
 
@@ -96,12 +96,8 @@ Participant optional scoped env:
 - `PARTICIPANT_BOT_ID`, `PARTICIPANT_BOT_API_KEY`, `PARTICIPANT_BOT_ADDRESS`
 - if omitted, participant flow uses `BOT_ID`, `BOT_API_KEY`, `BOT_ADDRESS`
 
-Strategy AA env:
-- `STRATEGY_AA_BUNDLER_URL`
-- `STRATEGY_AA_USER_OP_VERSION` (`v06` or `v07`)
-- `STRATEGY_AA_ENTRYPOINT_ADDRESS`
-- `STRATEGY_AA_ACCOUNT_ADDRESS`
-- `STRATEGY_AA_OWNER_PRIVATE_KEY` (or `STRATEGY_PRIVATE_KEY`)
+Strategy signer env:
+- `STRATEGY_PRIVATE_KEY`
 - `STRATEGY_AUTO_SUBMIT` (`false` by default)
 - `STRATEGY_REQUIRE_EXPLICIT_SUBMIT` (`true` by default)
 - optional host allowlist: `STRATEGY_TRUSTED_RELAYER_HOSTS=relayer.example.com`
@@ -109,13 +105,7 @@ Strategy AA env:
 - `CLAW_FUND_FACTORY_ADDRESS`
 - `INTENT_BOOK_ADDRESS`, `CLAW_CORE_ADDRESS`
 - `NADFUN_EXECUTION_ADAPTER_ADDRESS` (fallback: `ADAPTER_ADDRESS`)
-- optional preflight: `STRATEGY_CREATE_MIN_AA_BALANCE_WEI`
-- optional tuning: `STRATEGY_AA_CALL_GAS_LIMIT`, `STRATEGY_AA_VERIFICATION_GAS_LIMIT`, `STRATEGY_AA_PRE_VERIFICATION_GAS`, `STRATEGY_AA_MAX_PRIORITY_FEE_PER_GAS`, `STRATEGY_AA_MAX_FEE_PER_GAS`
-
-Monad testnet reference values:
-- public bundler: `https://public.pimlico.io/v2/10143/rpc`
-- `v06` + EntryPoint `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789`
-- `v07` + EntryPoint `0x0000000071727De22E5E9d8BAf0edAc6f37da032` (when your bundler supports packed UserOp)
+- optional preflight: `STRATEGY_CREATE_MIN_SIGNER_BALANCE_WEI`
 
 ## Participant commands
 
@@ -152,18 +142,17 @@ Default participant safety behavior:
 - `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` and no `--submit` => `decision: "READY"` (no relayer transmission)
 - `--submit` but `PARTICIPANT_AUTO_SUBMIT=false` => fail-closed with `SAFETY_BLOCKED`
 
-## Strategy commands (AA)
+## Strategy commands (EOA signer)
 
 ```bash
+# 0) Copy deploy config template and edit values
+cp packages/agents/config/deploy-config.template.json /tmp/deploy-config.json
+
 # 0) Create fund directly onchain via Factory (dry-run only)
 npm run strategy:create:fund -w @claw/agents -- \
   --fund-id demo-fund-001 \
   --fund-name "Demo Fund 001" \
   --deploy-config-file /absolute/path/to/deploy-config.json
-
-# 0-a) Set default strategy AA address in agents .env
-npm run strategy:set:aa -w @claw/agents -- \
-  --address 0xYourStrategySmartAccount
 
 # 0-1) Submit createFund onchain + sync deployment metadata to relayer
 npm run strategy:create:fund -w @claw/agents -- \
@@ -173,12 +162,12 @@ npm run strategy:create:fund -w @claw/agents -- \
   --telegram-room-id -1001234567890 \
   --submit
 
-# 1) READY_FOR_ONCHAIN intent attestation submit (IntentBook.attestIntent via UserOp)
+# 1) READY_FOR_ONCHAIN intent attestation submit (IntentBook.attestIntent via signer tx)
 npm run strategy:attest:onchain -w @claw/agents -- \
   --fund-id demo-fund \
   --intent-hash 0x...
 
-# 2) READY execution jobs submit (ClawCore.executeIntent via UserOp)
+# 2) READY execution jobs submit (ClawCore.executeIntent via signer tx)
 npm run strategy:execute:ready -w @claw/agents -- \
   --fund-id demo-fund \
   --limit 10
@@ -190,13 +179,43 @@ npm run strategy:dry-run:intent -w @claw/agents -- \
   --execution-route-file /tmp/route.json
 ```
 
+### `deploy-config.json` location and schema
+
+The repository now includes a starter template:
+
+- `packages/agents/config/deploy-config.template.json`
+
+`strategy-create-fund` requires one of:
+
+- `--deploy-config-file <path>`
+- `--deploy-config-json '<json>'`
+
+Copy the template and update values:
+
+```bash
+cp packages/agents/config/deploy-config.template.json /tmp/deploy-config.json
+```
+
+Field guide:
+
+- `fundOwner` (required): final owner of the fund.
+- `strategyAgent` (optional): strategy bot address. if omitted, CLI fallback is `--strategy-bot-address` or `BOT_ADDRESS`.
+- `snapshotBook` (required): deployed snapshot book address.
+- `asset` (required): vault asset token (for Monad testnet usually WMON).
+- `vaultName` / `vaultSymbol` (required): ERC4626 metadata.
+- `intentThresholdWeight` (required): total verifier weight required for intent approval.
+- `nadfunLens` (optional): NadFun lens address (`0x000...0000` allowed).
+- `initialVerifiers` + `initialVerifierWeights` (required together): same length, each weight must be positive.
+- `initialAllowedTokens` (optional): allowlist for tradable tokens.
+- `initialAllowedAdapters` (optional): allowlist for execution adapters. use your deployed NadFun adapter address.
+
 ## Strategy skill guarded submit
 
 Programmatic skill path builds proposal first, then submits only when submit gates are explicitly enabled.
 
 1. build strategy decision (`proposeIntent`)
 2. if `submit=true` and `STRATEGY_AUTO_SUBMIT=true`, submit canonical intent to relayer (`POST /intents/propose`)
-3. if step 2 passed, send onchain `IntentBook.proposeIntent` via strategy AA
+3. if step 2 passed, send onchain `IntentBook.proposeIntent` via strategy signer tx
 
 ```ts
 import { proposeIntentAndSubmit } from '@claw/agents';

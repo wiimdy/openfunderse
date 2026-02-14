@@ -26,14 +26,6 @@ export type {
   SignedIntentAttestation
 } from './lib/signer.js';
 
-export { StrategyAaClient } from './lib/aa-client.js';
-export type {
-  ExecuteViaAaInput,
-  StrategyAaClientEnvOverrides,
-  StrategyAaClientConfig,
-  UserOperationResult
-} from './lib/aa-client.js';
-
 export {
   mineClaim,
   submitMinedClaim,
@@ -61,7 +53,11 @@ export type {
 } from './skills/strategy/index.js';
 
 console.log('[agents] boot');
-console.log(`[agents] strategy key set=${Boolean(process.env.STRATEGY_PRIVATE_KEY)}`);
+console.log(
+  `[agents] strategy key set=${Boolean(
+    process.env.STRATEGY_PRIVATE_KEY
+  )}`
+);
 console.log(
   `[agents] participant key set=${Boolean(
     process.env.PARTICIPANT_PRIVATE_KEY ||

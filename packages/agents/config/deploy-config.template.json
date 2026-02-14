@@ -1,0 +1,22 @@
+{
+  "fundOwner": "0x0000000000000000000000000000000000000001",
+  "strategyAgent": "0x0000000000000000000000000000000000000002",
+  "snapshotBook": "0x0000000000000000000000000000000000000003",
+  "asset": "0xFb8bE43D65FBC1290D6178C6DbA6E58c6D18fA60",
+  "vaultName": "OpenClaw Fund Share",
+  "vaultSymbol": "OCFS",
+  "intentThresholdWeight": "100",
+  "nadfunLens": "0xB056d79CA5257589692699a46623F901a3BB76f1",
+  "initialVerifiers": [
+    "0x0000000000000000000000000000000000000101"
+  ],
+  "initialVerifierWeights": [
+    "100"
+  ],
+  "initialAllowedTokens": [
+    "0xFb8bE43D65FBC1290D6178C6DbA6E58c6D18fA60"
+  ],
+  "initialAllowedAdapters": [
+    "0x0000000000000000000000000000000000000201"
+  ]
+}

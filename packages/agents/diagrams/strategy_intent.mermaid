@@ -1,0 +1,72 @@
+```mermaid
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "background": "#0b0f19",
+    "primaryColor": "#1f2937",
+    "primaryBorderColor": "#94a3b8",
+    "primaryTextColor": "#e5e7eb",
+    "lineColor": "#cbd5e1",
+    "actorBorder": "#94a3b8",
+    "actorBkg": "#111827",
+    "actorTextColor": "#f3f4f6",
+    "signalColor": "#e5e7eb",
+    "signalTextColor": "#f3f4f6",
+    "labelBoxBkgColor": "#111827",
+    "labelBoxBorderColor": "#64748b",
+    "labelTextColor": "#f8fafc",
+    "noteBkgColor": "#0f172a",
+    "noteBorderColor": "#475569",
+    "noteTextColor": "#e2e8f0"
+  }
+}}%%
+sequenceDiagram
+    autonumber
+
+    box "Offchain Control Plane" #0f172a
+      participant S as Strategy Bot
+      participant R as Relayer
+      participant P as Participant Bots
+    end
+    participant C as Monad (Onchain)
+
+    rect rgba(30,41,59,0.35)
+      S->>R: POST /intents/propose
+      Note over R: validate + canonical hash + save(PENDING)
+
+      S->>C: IntentBook.proposeIntent(intentHash, constraints)
+      C-->>S: tx mined (intent exists)
+    end
+
+    rect rgba(15,23,42,0.45)
+      P->>R: POST /intents/attestations/batch
+      Note over R: EIP-712 verify + weighted threshold
+      Note over R: status -> READY_FOR_ONCHAIN
+    end
+
+    rect rgba(30,41,59,0.35)
+      S->>R: GET /intents/{intentHash}/onchain-bundle
+      R-->>S: verifiers + signatures + attestations
+
+      S->>C: IntentBook.attestIntent(...)
+      C-->>S: tx mined (approved=true)
+
+      S->>R: POST /onchain-attested(txHash)
+      Note over R: status -> APPROVED\nexecution_job -> READY
+    end
+
+    rect rgba(15,23,42,0.45)
+      S->>R: GET /intents/ready-execution
+      R-->>S: intent + executionRoute
+      S->>C: ClawCore.executeIntent(intentHash, req)
+
+      alt success
+        C-->>S: tx mined
+        S->>R: POST /onchain-executed(txHash)
+      else failed
+        C-->>S: revert/failure
+        S->>R: POST /onchain-failed(error, retryDelayMs)
+      end
+    end
+
+```

@@ -11,6 +11,51 @@ const THIS_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(THIS_FILE), "..");
 const PACKS_ROOT = path.join(PACKAGE_ROOT, "packs");
 const DEFAULT_RUNTIME_PACKAGE = "@wiimdy/openfunderse-agents";
+const SUPPORTED_ENV_PROFILES = new Set(["strategy", "participant", "all"]);
+
+const STRATEGY_ENV_TEMPLATE = `# OpenFunderse strategy env scaffold
+# Copy values from your relayer + deployed contracts.
+
+RELAYER_URL=https://your-relayer.example.com
+BOT_ID=bot-strategy-1
+BOT_API_KEY=replace_me
+BOT_ADDRESS=0x0000000000000000000000000000000000000000
+CHAIN_ID=10143
+RPC_URL=https://testnet-rpc.monad.xyz
+
+# NadFun / protocol addresses
+INTENT_BOOK_ADDRESS=0x0000000000000000000000000000000000000000
+NADFUN_EXECUTION_ADAPTER_ADDRESS=0x0000000000000000000000000000000000000000
+VAULT_ADDRESS=0x0000000000000000000000000000000000000000
+NADFUN_LENS_ADDRESS=0x0000000000000000000000000000000000000000
+NADFUN_BONDING_CURVE_ROUTER=0x0000000000000000000000000000000000000000
+NADFUN_DEX_ROUTER=0x0000000000000000000000000000000000000000
+NADFUN_WMON_ADDRESS=0x0000000000000000000000000000000000000000
+
+# Strategy signer (EOA)
+STRATEGY_PRIVATE_KEY=0xYOUR_STRATEGY_PRIVATE_KEY
+# STRATEGY_CREATE_MIN_SIGNER_BALANCE_WEI=10000000000000000
+
+# Safety defaults
+STRATEGY_REQUIRE_EXPLICIT_SUBMIT=true
+STRATEGY_AUTO_SUBMIT=false
+# STRATEGY_TRUSTED_RELAYER_HOSTS=openfunderse-relayer.example.com
+# STRATEGY_ALLOW_HTTP_RELAYER=true
+`;
+
+const PARTICIPANT_ENV_TEMPLATE = `# OpenFunderse participant env scaffold
+RELAYER_URL=https://your-relayer.example.com
+BOT_ID=bot-participant-1
+BOT_API_KEY=replace_me
+BOT_ADDRESS=0x0000000000000000000000000000000000000000
+CHAIN_ID=10143
+BOT_PRIVATE_KEY=0xYOUR_PARTICIPANT_PRIVATE_KEY
+CLAIM_ATTESTATION_VERIFIER_ADDRESS=0x0000000000000000000000000000000000000000
+PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true
+PARTICIPANT_AUTO_SUBMIT=false
+# PARTICIPANT_TRUSTED_RELAYER_HOSTS=openfunderse-relayer.example.com
+# PARTICIPANT_ALLOW_HTTP_RELAYER=true
+`;
 
 function printUsage() {
   console.log(`openfunderse
@@ -18,12 +63,14 @@ function printUsage() {
 Usage:
   openfunderse list
   openfunderse install <pack-name> [--dest <skills-dir>] [--codex-home <dir>] [--force] [--with-runtime]
+                     [--init-env] [--env-file <path>] [--env-profile <strategy|participant|all>]
                      [--runtime-package <name>] [--runtime-dir <dir>] [--runtime-manager <npm|pnpm|yarn|bun>]
 
 Examples:
   openfunderse list
   openfunderse install openfunderse
   openfunderse install openfunderse --with-runtime
+  openfunderse install openfunderse --with-runtime --init-env --env-profile strategy
   openfunderse install openfunderse --codex-home /tmp/codex-home
 `);
 }
@@ -36,6 +83,9 @@ function parseArgs(argv) {
     dest: "",
     codexHome: "",
     withRuntime: false,
+    initEnv: false,
+    envFile: "",
+    envProfile: "strategy",
     runtimePackage: "",
     runtimeDir: "",
     runtimeManager: ""
@@ -64,6 +114,20 @@ function parseArgs(argv) {
     }
     if (token === "--with-runtime") {
       options.withRuntime = true;
+      continue;
+    }
+    if (token === "--init-env") {
+      options.initEnv = true;
+      continue;
+    }
+    if (token === "--env-file") {
+      options.envFile = args[i + 1] ?? "";
+      i += 1;
+      continue;
+    }
+    if (token === "--env-profile") {
+      options.envProfile = args[i + 1] ?? "";
+      i += 1;
       continue;
     }
     if (token === "--runtime-package") {
@@ -118,6 +182,68 @@ async function listPacks() {
   for (const pack of packs) {
     console.log(pack);
   }
+}
+
+function normalizeEnvProfile(rawProfile) {
+  const profile = (rawProfile || "").trim().toLowerCase();
+  if (SUPPORTED_ENV_PROFILES.has(profile)) {
+    return profile;
+  }
+  throw new Error(
+    `invalid --env-profile value: ${rawProfile} (expected strategy|participant|all)`
+  );
+}
+
+function runtimeEnvExamplePath(runtimeDir, runtimePackage) {
+  return path.join(runtimeDir, "node_modules", ...runtimePackage.split("/"), ".env.example");
+}
+
+async function buildEnvScaffold(profile, runtimeDir, runtimePackage) {
+  if (profile === "strategy") {
+    return STRATEGY_ENV_TEMPLATE;
+  }
+  if (profile === "participant") {
+    return PARTICIPANT_ENV_TEMPLATE;
+  }
+
+  const runtimeTemplate = runtimeEnvExamplePath(runtimeDir, runtimePackage);
+  if (existsSync(runtimeTemplate)) {
+    return readFile(runtimeTemplate, "utf8");
+  }
+
+  return `${STRATEGY_ENV_TEMPLATE}\n\n${PARTICIPANT_ENV_TEMPLATE}`;
+}
+
+async function writeEnvScaffold(options) {
+  const runtimeDir = options.runtimeDir ? path.resolve(options.runtimeDir) : process.cwd();
+  const runtimePackage = options.runtimePackage || DEFAULT_RUNTIME_PACKAGE;
+  const profile = normalizeEnvProfile(options.envProfile);
+  const envTarget = options.envFile
+    ? path.resolve(options.envFile)
+    : path.join(runtimeDir, ".env.openfunderse");
+
+  const alreadyExists = existsSync(envTarget);
+  if (alreadyExists && !options.force) {
+    return {
+      written: false,
+      envFile: envTarget,
+      profile
+    };
+  }
+
+  if (alreadyExists && options.force) {
+    await rm(envTarget, { force: true });
+  }
+
+  const scaffold = await buildEnvScaffold(profile, runtimeDir, runtimePackage);
+  await mkdir(path.dirname(envTarget), { recursive: true });
+  await writeFile(envTarget, scaffold.endsWith("\n") ? scaffold : `${scaffold}\n`);
+
+  return {
+    written: true,
+    envFile: envTarget,
+    profile
+  };
 }
 
 async function loadManifest(packDir) {
@@ -271,6 +397,16 @@ async function installPack(packName, options) {
     runtimeInstallMeta = await installRuntimePackage(options);
   }
 
+  let envScaffoldMeta = null;
+  if (options.initEnv) {
+    const envOptions = {
+      ...options,
+      runtimeDir: runtimeInstallMeta?.runtimeDir ?? options.runtimeDir,
+      runtimePackage: runtimeInstallMeta?.runtimePackage ?? options.runtimePackage
+    };
+    envScaffoldMeta = await writeEnvScaffold(envOptions);
+  }
+
   console.log(`Installed pack: ${packName}`);
   console.log(`Skills root: ${skillsRoot}`);
   console.log(`Installed skills: ${installed.join(", ")}`);
@@ -280,6 +416,15 @@ async function installPack(packName, options) {
       `Installed runtime package: ${runtimeInstallMeta.runtimePackage} (${runtimeInstallMeta.runtimeManager})`
     );
     console.log(`Runtime install dir: ${runtimeInstallMeta.runtimeDir}`);
+  }
+  if (envScaffoldMeta) {
+    if (envScaffoldMeta.written) {
+      console.log(`Generated env scaffold (${envScaffoldMeta.profile}): ${envScaffoldMeta.envFile}`);
+    } else {
+      console.log(
+        `Env scaffold already exists (use --force to overwrite): ${envScaffoldMeta.envFile}`
+      );
+    }
   }
   console.log("Restart Codex to pick up new skills.");
 }
