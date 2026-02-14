@@ -1,6 +1,7 @@
 import { runRedditMvpCli } from './reddit-mvp.js';
 import { runParticipantCli } from './participant-cli.js';
 import { runStrategyCli } from './strategy-cli.js';
+import { runClawbotCli } from './clawbot-cli.js';
 
 export { createRelayerClient, RelayerClient } from './lib/relayer-client.js';
 export type {
@@ -74,6 +75,10 @@ console.log(
 
 const main = async (): Promise<void> => {
   const argv = process.argv.slice(2);
+  const handledByClawbot = await runClawbotCli(argv);
+  if (handledByClawbot) {
+    return;
+  }
   const handledByStrategy = await runStrategyCli(argv);
   if (handledByStrategy) {
     return;

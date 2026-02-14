@@ -7,6 +7,7 @@ Use this page as the primary docs entrypoint.
 - Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - Current implementation status (KR): [`CURRENT_STATUS_kr.md`](CURRENT_STATUS_kr.md)
 - System actions + threat model (KR): [`SYSTEM_ACTIONS_THREAT_MODEL_kr.md`](SYSTEM_ACTIONS_THREAT_MODEL_kr.md)
+- Unified skill/runtime refactor plan (KR): [`UNIFIED_SKILL_RUNTIME_PLAN_kr.md`](UNIFIED_SKILL_RUNTIME_PLAN_kr.md)
 - Roadmap: [`ROADMAP.md`](ROADMAP.md)
 
 ## Contracts / Protocol

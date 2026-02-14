@@ -24,3 +24,4 @@ npx @wiimdy/openfunderse@latest install openfunderse --codex-home /custom/.codex
 - Skills are copied into `$CODEX_HOME/skills` (default `~/.codex/skills`).
 - Pack metadata/prompts are copied into `$CODEX_HOME/packs/<pack-name>`.
 - Use `--force` to overwrite existing installed skills.
+- Default unified bundle is `clawbot-core` (strategy + participant role actions).

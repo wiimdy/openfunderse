@@ -2,6 +2,26 @@
 
 Runtime entry for participant/strategy MoltBots.
 
+ER2 quickstart:
+- runbook: `packages/agents/ER2_RUNBOOK.md`
+- env template: `packages/agents/.env.er2.example`
+
+Unified entrypoint:
+
+```bash
+npm run clawbot:run -w @claw/agents -- \
+  --role strategy \
+  --action propose_intent \
+  --fund-id demo-fund \
+  --intent-file /tmp/intent.json \
+  --execution-route-file /tmp/route.json
+```
+
+One-command smoke:
+```bash
+npm run bot:smoke:e2e -w @claw/agents
+```
+
 ## Role
 - Monorepo bot runtime package (execution code), not installer/distribution.
 - Owns crawl/verify/propose runtime flows used by local smoke/E2E paths.
@@ -155,6 +175,12 @@ npm run strategy:attest:onchain -w @claw/agents -- \
 npm run strategy:execute:ready -w @claw/agents -- \
   --fund-id demo-fund \
   --limit 10
+
+# 3) Dry-run intent execution against core
+npm run strategy:dry-run:intent -w @claw/agents -- \
+  --intent-hash 0x... \
+  --intent-file /tmp/intent.json \
+  --execution-route-file /tmp/route.json
 ```
 
 Implemented modules:
@@ -170,6 +196,8 @@ npx @wiimdy/openfunderse@latest install openfunderse
 
 Canonical pack files are maintained at:
 - `packages/openfunderse/packs/openfunderse/config/setup-manifest.json`
+- `packages/openfunderse/packs/openfunderse/skills/clawbot-core/SKILL.md`
+- `packages/openfunderse/packs/openfunderse/prompts/core/system.md`
 - `packages/openfunderse/packs/openfunderse/skills/strategy/SKILL.md`
 - `packages/openfunderse/packs/openfunderse/skills/participant/SKILL.md`
 - `packages/openfunderse/packs/openfunderse/skills/relayer/SKILL.md`

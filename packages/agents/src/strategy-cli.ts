@@ -10,7 +10,11 @@ import {
   type Address,
   type Hex
 } from 'viem';
-import type { IntentExecutionRouteInput, TradeIntent } from '@claw/protocol-sdk';
+import {
+  buildCoreExecutionRequestFromIntent,
+  type IntentExecutionRouteInput,
+  type TradeIntent
+} from '@claw/protocol-sdk';
 import { StrategyAaClient } from './lib/aa-client.js';
 import { createRelayerClient, type ReadyExecutionPayloadItem } from './lib/relayer-client.js';
 
@@ -197,6 +201,62 @@ const parseHex = (value: string, label: string): Hex => {
     throw new Error(`${label} must be a hex string`);
   }
   return value as Hex;
+};
+
+const parseTradeIntent = (
+  value: unknown,
+  label: string
+): TradeIntent => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+
+  const source = value as Record<string, unknown>;
+  const actionRaw = String(source.action ?? '').toUpperCase();
+  if (actionRaw !== 'BUY' && actionRaw !== 'SELL') {
+    throw new Error(`${label}.action must be BUY or SELL`);
+  }
+
+  return {
+    intentVersion: String(source.intentVersion ?? 'V1'),
+    vault: parseAddress(String(source.vault ?? ''), `${label}.vault`),
+    action: actionRaw,
+    tokenIn: parseAddress(String(source.tokenIn ?? ''), `${label}.tokenIn`),
+    tokenOut: parseAddress(String(source.tokenOut ?? ''), `${label}.tokenOut`),
+    amountIn: BigInt(String(source.amountIn ?? '0')),
+    minAmountOut: BigInt(String(source.minAmountOut ?? '0')),
+    deadline: BigInt(String(source.deadline ?? '0')),
+    maxSlippageBps: BigInt(String(source.maxSlippageBps ?? '0')),
+    snapshotHash: parseHex(String(source.snapshotHash ?? ''), `${label}.snapshotHash`) as `0x${string}`,
+    reason:
+      source.reason === undefined || source.reason === null
+        ? undefined
+        : String(source.reason)
+  };
+};
+
+const parseExecutionRoute = (
+  value: unknown,
+  label: string
+): IntentExecutionRouteInput => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+
+  const source = value as Record<string, unknown>;
+  const adapterDataValue = source.adapterData;
+
+  return {
+    tokenIn: parseAddress(String(source.tokenIn ?? ''), `${label}.tokenIn`),
+    tokenOut: parseAddress(String(source.tokenOut ?? ''), `${label}.tokenOut`),
+    quoteAmountOut: BigInt(String(source.quoteAmountOut ?? '0')),
+    minAmountOut: BigInt(String(source.minAmountOut ?? '0')),
+    adapter: parseAddress(String(source.adapter ?? ''), `${label}.adapter`),
+    adapterData:
+      adapterDataValue === undefined || adapterDataValue === null
+        ? undefined
+        : parseHex(String(adapterDataValue), `${label}.adapterData`)
+  };
 };
 
 const upsertEnvValue = async (envFilePath: string, key: string, value: string): Promise<void> => {
@@ -882,9 +942,113 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
   );
 };
 
+const runStrategyPropose = async (parsed: ParsedCli): Promise<void> => {
+  const fundId = requiredOption(parsed, 'fund-id');
+  const intentFile = requiredOption(parsed, 'intent-file');
+  const routeFile = requiredOption(parsed, 'execution-route-file');
+  const intentUri = parsed.options.get('intent-uri');
+  const maxNotional = optionBigInt(parsed, 'max-notional');
+
+  const intentRaw = JSON.parse(await readFile(intentFile, 'utf8')) as unknown;
+  const routeRaw = JSON.parse(await readFile(routeFile, 'utf8')) as unknown;
+
+  const intent = parseTradeIntent(intentRaw, 'intent');
+  const executionRoute = parseExecutionRoute(routeRaw, 'executionRoute');
+
+  // Fail early if route and intent are inconsistent with core execution schema.
+  buildCoreExecutionRequestFromIntent({
+    intent,
+    executionRoute: {
+      ...executionRoute,
+      adapterData: executionRoute.adapterData ?? '0x'
+    }
+  });
+
+  const relayer = createRelayerClient();
+  const response = await relayer.proposeIntent(fundId, {
+    intent,
+    executionRoute: {
+      ...executionRoute,
+      adapterData: executionRoute.adapterData ?? '0x'
+    },
+    maxNotional: maxNotional ?? intent.amountIn,
+    intentURI: intentUri
+  });
+
+  console.log(
+    jsonStringify({
+      status: 'OK',
+      command: 'strategy-propose',
+      fundId,
+      intentHash: response.intentHash ?? null,
+      subjectState: response.subjectState ?? null,
+      response
+    })
+  );
+};
+
+const runStrategyDryRunIntent = async (parsed: ParsedCli): Promise<void> => {
+  const intentHash = parseHex(requiredOption(parsed, 'intent-hash'), 'intent-hash');
+  const intentFile = requiredOption(parsed, 'intent-file');
+  const routeFile = requiredOption(parsed, 'execution-route-file');
+  const coreAddress = parseAddress(
+    optionOrEnv(parsed, 'core-address', 'CLAW_CORE_ADDRESS'),
+    'core-address'
+  );
+
+  const intentRaw = JSON.parse(await readFile(intentFile, 'utf8')) as unknown;
+  const routeRaw = JSON.parse(await readFile(routeFile, 'utf8')) as unknown;
+  const intent = parseTradeIntent(intentRaw, 'intent');
+  const route = parseExecutionRoute(routeRaw, 'executionRoute');
+  const req = buildCoreExecutionRequestFromIntent({
+    intent,
+    executionRoute: {
+      ...route,
+      adapterData: route.adapterData ?? '0x'
+    }
+  });
+
+  const chainId = Number(process.env.CHAIN_ID ?? '10143');
+  const rpcUrl = process.env.STRATEGY_AA_RPC_URL ?? process.env.RPC_URL ?? '';
+  if (!rpcUrl) {
+    throw new Error('STRATEGY_AA_RPC_URL (or RPC_URL) is required');
+  }
+  const publicClient = createPublicClient({
+    chain: defineChain({
+      id: chainId,
+      name: `strategy-aa-${chainId}`,
+      nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
+      rpcUrls: {
+        default: { http: [rpcUrl] },
+        public: { http: [rpcUrl] }
+      }
+    }),
+    transport: http(rpcUrl)
+  });
+
+  const dryRun = (await publicClient.readContract({
+    address: coreAddress,
+    abi: CORE_ABI,
+    functionName: 'dryRunIntentExecution',
+    args: [intentHash, req]
+  })) as CoreDryRunResult;
+
+  console.log(
+    jsonStringify({
+      status: 'OK',
+      command: 'strategy-dry-run-intent',
+      intentHash,
+      coreAddress,
+      pass: dryRunPass(dryRun, req.minAmountOut),
+      dryRun
+    })
+  );
+};
+
 const runStrategySetAa = async (parsed: ParsedCli): Promise<void> => {
   const address = parseAddress(requiredOption(parsed, 'address'), 'address');
   const envFile =
+    parsed.options.get('env-path') ??
     parsed.options.get('env-file') ??
     process.env.STRATEGY_AA_ENV_FILE ??
     DEFAULT_AGENTS_ENV_PATH;
@@ -921,6 +1085,14 @@ strategy-execute-ready
   [--limit <n>] [--offset <n>]
   [--retry-delay-ms <n>] [--skip-relayer-ack]
 
+strategy-propose
+  --fund-id <id> --intent-file <path> --execution-route-file <path>
+  [--max-notional <wei>] [--intent-uri <uri>]
+
+strategy-dry-run-intent
+  --intent-hash <0x...> --intent-file <path> --execution-route-file <path>
+  [--core-address <0x...>]
+
 strategy-create-fund
   --fund-id <id> --fund-name <name>
   [--strategy-bot-id <id>] [--strategy-bot-address <0x...>]
@@ -931,7 +1103,7 @@ strategy-create-fund
   [--min-aa-balance-wei <wei>] [--submit] [--skip-gas-check] [--skip-relayer-sync]
 
 strategy-set-aa
-  --address <0x...> [--env-file <path>] [--also-bot-address]
+  --address <0x...> [--env-path <path>] [--also-bot-address]
 `);
 };
 
@@ -953,6 +1125,14 @@ export const runStrategyCli = async (argv: string[]): Promise<boolean> => {
   }
   if (command === 'strategy-execute-ready') {
     await runStrategyExecuteReady(parsed);
+    return true;
+  }
+  if (command === 'strategy-propose') {
+    await runStrategyPropose(parsed);
+    return true;
+  }
+  if (command === 'strategy-dry-run-intent') {
+    await runStrategyDryRunIntent(parsed);
     return true;
   }
   if (command === 'strategy-create-fund') {

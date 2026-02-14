@@ -5,6 +5,11 @@
   "description": "Scaffold manifest for future MoltBot skills/prompts packaging.",
   "bundles": [
     {
+      "id": "clawbot-core",
+      "skill": "skills/clawbot-core/SKILL.md",
+      "prompt": "prompts/core/system.md"
+    },
+    {
       "id": "strategy",
       "skill": "skills/strategy/SKILL.md",
       "prompt": "prompts/strategy/system.md"

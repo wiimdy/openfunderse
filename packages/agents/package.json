@@ -21,7 +21,11 @@
     "strategy:set:aa": "tsx src/index.ts strategy-set-aa",
     "strategy:create:fund": "tsx src/index.ts strategy-create-fund",
     "strategy:attest:onchain": "tsx src/index.ts strategy-attest-onchain",
-    "strategy:execute:ready": "tsx src/index.ts strategy-execute-ready"
+    "strategy:execute:ready": "tsx src/index.ts strategy-execute-ready",
+    "strategy:propose": "tsx src/index.ts strategy-propose",
+    "strategy:dry-run:intent": "tsx src/index.ts strategy-dry-run-intent",
+    "clawbot:run": "tsx src/index.ts clawbot-run",
+    "bot:smoke:e2e": "node scripts/clawbot-e2e-smoke.mjs"
   },
   "dependencies": {
     "@claw/protocol-sdk": "file:../sdk",
