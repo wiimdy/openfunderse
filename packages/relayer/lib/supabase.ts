@@ -1248,7 +1248,7 @@ export async function listReadyExecutionPayloads(input: {
     .from("execution_jobs")
     .select("*", { count: "exact" })
     .eq("fund_id", input.fundId)
-    .eq("status", "READY")
+    .in("status", ["READY", "READY_FOR_ONCHAIN"])
     .order("created_at", { ascending: true })
     .range(input.offset, input.offset + input.limit - 1);
   throwIfError(jobsError, null);
@@ -1327,7 +1327,7 @@ export async function claimReadyExecutionJobs(limit: number): Promise<ExecutionJ
   const { data, error } = await db
     .from("execution_jobs")
     .select("*")
-    .in("status", ["READY", "FAILED_RETRYABLE"])
+    .in("status", ["READY", "READY_FOR_ONCHAIN", "FAILED_RETRYABLE"])
     .lte("next_run_at", now)
     .order("created_at", { ascending: true })
     .limit(limit);
