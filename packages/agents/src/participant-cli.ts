@@ -287,11 +287,13 @@ const runParticipantVerify = async (parsed: ParsedCli): Promise<void> => {
 const runParticipantSubmit = async (parsed: ParsedCli): Promise<void> => {
   const claimFile = requiredOption(parsed, 'claim-file');
   const bundle = await readObservationFromFile(claimFile);
+  const submitRequested = parsed.flags.has('submit');
   const output = await submitMinedClaim({
     fundId: bundle.fundId,
     epochId: bundle.epochId,
     observation: bundle.observation,
-    clientOptions: buildParticipantClientOptions()
+    clientOptions: buildParticipantClientOptions(),
+    submit: submitRequested
   });
   console.log(jsonStringify(output));
   if (output.status !== 'OK') {
@@ -306,13 +308,15 @@ const runParticipantAttest = async (parsed: ParsedCli): Promise<void> => {
     throw new Error('--epoch-id must be a number');
   }
   const claimHash = requiredOption(parsed, 'claim-hash');
+  const submitRequested = parsed.flags.has('submit');
   const output = await attestClaim({
     fundId,
     claimHash: claimHash as `0x${string}`,
     epochId: Math.trunc(epochId),
     expiresInSeconds: toNumberOption(parsed, 'expires-in-seconds', 900),
     clientOptions: buildParticipantClientOptions(),
-    signerOptions: buildVerifierSignerOptions()
+    signerOptions: buildVerifierSignerOptions(),
+    submit: submitRequested
   });
   console.log(jsonStringify(output));
   if (output.status !== 'OK') {
@@ -323,6 +327,7 @@ const runParticipantAttest = async (parsed: ParsedCli): Promise<void> => {
 const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
   const fundId = requiredOption(parsed, 'fund-id');
   const epochId = Number(requiredOption(parsed, 'epoch-id'));
+  const submitRequested = parsed.flags.has('submit');
   if (!Number.isFinite(epochId)) {
     throw new Error('--epoch-id must be a number');
   }
@@ -373,11 +378,32 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     fundId,
     epochId: Math.trunc(epochId),
     observation: mine.observation,
-    clientOptions: buildParticipantClientOptions()
+    clientOptions: buildParticipantClientOptions(),
+    submit: submitRequested
   });
   if (submit.status !== 'OK' || !submit.claimHash) {
     console.log(jsonStringify({ step: 'submit', result: submit }));
     process.exitCode = 2;
+    return;
+  }
+
+  if (submit.decision !== 'SUBMITTED') {
+    const report = {
+      step: 'participant-e2e',
+      mode: 'READY',
+      fundId,
+      epochId: Math.trunc(epochId),
+      claimHash: submit.claimHash,
+      mine,
+      verify,
+      submit,
+      attest: { status: 'SKIPPED', reason: 'participant submit gate is not enabled; pass --submit and set PARTICIPANT_AUTO_SUBMIT=true' }
+    };
+    console.log(jsonStringify(report));
+    const reportFile = parsed.options.get('report-file');
+    if (reportFile) {
+      await writeJsonFile(reportFile, report);
+    }
     return;
   }
 
@@ -387,7 +413,8 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     epochId: Math.trunc(epochId),
     expiresInSeconds: toNumberOption(parsed, 'expires-in-seconds', 900),
     clientOptions: buildParticipantClientOptions(),
-    signerOptions: buildVerifierSignerOptions()
+    signerOptions: buildVerifierSignerOptions(),
+    submit: submitRequested
   });
 
   const report = {
@@ -426,15 +453,15 @@ participant-verify
   [--reproducible true|false] [--max-data-age-seconds <n>] [--out-file <path>]
 
 participant-submit
-  --claim-file <path>
+  --claim-file <path> [--submit]
 
 participant-attest
   --fund-id <id> --epoch-id <n> --claim-hash <0x...>
-  [--expires-in-seconds <n>]
+  [--expires-in-seconds <n>] [--submit]
 
 participant-e2e
   --fund-id <id> --epoch-id <n> --source-ref <url> --token-address <0x...>
-  [--token-symbol <sym>] [--reproducible true|false] [--report-file <path>]
+  [--token-symbol <sym>] [--reproducible true|false] [--report-file <path>] [--submit]
 `);
 };
 
