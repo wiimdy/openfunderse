@@ -6,6 +6,7 @@ Use this page as the primary docs entrypoint.
 - Product context: [`PRD.md`](PRD.md)
 - Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - Current implementation status (KR): [`CURRENT_STATUS_kr.md`](CURRENT_STATUS_kr.md)
+- System actions + threat model (KR): [`SYSTEM_ACTIONS_THREAT_MODEL_kr.md`](SYSTEM_ACTIONS_THREAT_MODEL_kr.md)
 - Roadmap: [`ROADMAP.md`](ROADMAP.md)
 
 ## Contracts / Protocol
