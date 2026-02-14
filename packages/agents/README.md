@@ -4,7 +4,9 @@ Runtime entry for participant/strategy MoltBots.
 
 ER2 quickstart:
 - runbook: `packages/agents/ER2_RUNBOOK.md`
-- env template: `packages/agents/.env.er2.example`
+- strategy env template: `packages/agents/.env.strategy.example`
+- participant env template: `packages/agents/.env.participant.example`
+- legacy combined template: `packages/agents/.env.example`
 
 Unified entrypoint:
 

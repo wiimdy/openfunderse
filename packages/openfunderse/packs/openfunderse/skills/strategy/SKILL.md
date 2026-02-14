@@ -61,7 +61,7 @@ npm init -y && npm i @wiimdy/openfunderse-agents@0.1.1 --ignore-scripts
 Create editable env scaffold in one line:
 
 ```bash
-cp node_modules/@wiimdy/openfunderse-agents/.env.example .env.openfunderse
+cp node_modules/@wiimdy/openfunderse-agents/.env.strategy.example .env.openfunderse
 ```
 
 Verify source before install (recommended):
@@ -72,7 +72,7 @@ npm view @wiimdy/openfunderse-agents@0.1.1 repository.url homepage dist.integrit
 
 Then configure env and run commands from:
 
-- `packages/agents/.env.example`
+- `packages/agents/.env.strategy.example`
 - `packages/agents/README.md`
 
 Runtime sources:
