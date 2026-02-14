@@ -16,6 +16,7 @@
   },
   "scripts": {
     "start": "node ./bin/openfunderse.mjs",
-    "check": "node ./bin/openfunderse.mjs list"
+    "check": "node ./bin/openfunderse.mjs list",
+    "publish:clawhub:roles": "bash ./scripts/publish-clawhub-roles.sh"
   }
 }
