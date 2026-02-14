@@ -6,14 +6,39 @@ metadata:
     requires:
       env:
         - RELAYER_URL
-        - STRATEGY_PRIVATE_KEY
+        - BOT_ID
+        - BOT_API_KEY
+        - CHAIN_ID
+        - STRATEGY_AA_ACCOUNT_ADDRESS
+        - STRATEGY_AA_OWNER_PRIVATE_KEY
+      bins:
+        - node
+        - npm
+    primaryEnv: RELAYER_URL
+    skillKey: strategy
 ---
 
 # Strategy MoltBot Skill
 
 The Strategy MoltBot is responsible for proposing structured trade intents based on finalized data snapshots. It evaluates market conditions, liquidity, and risk policies to decide whether to propose a trade or hold.
 For NadFun venues, it must use lens quotes to derive `minAmountOut` and reject router mismatch.
-In runtime, use `proposeIntentAndSubmit` to automatically continue with relayer + onchain intent registration.
+In runtime, use `proposeIntentAndSubmit` to build a canonical proposal first, then submit only when explicit submit gating is satisfied.
+
+## Credential Scope
+
+- `STRATEGY_AA_OWNER_PRIVATE_KEY` is an **AA owner signing key** for strategy user operations.
+- It must NOT be a treasury/custody/admin key.
+- Prefer a dedicated, least-privilege key that only controls the strategy AA account.
+- Legacy fallback `STRATEGY_PRIVATE_KEY` may exist in runtime for backward compatibility, but `STRATEGY_AA_OWNER_PRIVATE_KEY` is the recommended key.
+
+## Submission Safety Gates
+
+`proposeIntentAndSubmit` is guarded by default:
+
+1. `STRATEGY_REQUIRE_EXPLICIT_SUBMIT=true` (default) requires explicit `submit=true`.
+2. `STRATEGY_AUTO_SUBMIT=true` must be enabled to allow external submission.
+3. `RELAYER_URL` is validated; enforce trusted hosts with `STRATEGY_TRUSTED_RELAYER_HOSTS`.
+4. Without submit approval, function returns `decision=READY` and does not post to relayer or send onchain tx.
 
 ## Input
 
@@ -134,8 +159,8 @@ Returned when market conditions meet the risk policy and a profitable trade is i
 }
 ```
 
-### Auto Submit Flow
-When using `proposeIntentAndSubmit`, a `PROPOSE` decision is immediately followed by:
+### Guarded Submit Flow
+When using `proposeIntentAndSubmit` with explicit submit gates satisfied, a `PROPOSE` decision is followed by:
 1. Relayer `POST /api/v1/funds/{fundId}/intents/propose`
 2. Strategy AA `IntentBook.proposeIntent(...)`
 
@@ -171,3 +196,5 @@ Returned when no trade is proposed due to risk constraints or market conditions.
 9. **Fail Closed**: If quote fails or returned router is not allowlisted, return `HOLD`.
 10. **Sell First**: If a token position exists, evaluate `SELL` triggers first (`take-profit`, `stop-loss`, `time-exit`) before considering `BUY`.
 11. **Timestamp Normalization**: `openedAt` may be in seconds or milliseconds; normalize before age-based exits.
+12. **No Implicit Submit**: Do not submit to relayer/onchain unless explicit submit gating is passed.
+13. **Trusted Relayer**: In production, set `STRATEGY_TRUSTED_RELAYER_HOSTS` and avoid arbitrary relayer URLs.

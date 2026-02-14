@@ -100,6 +100,10 @@ Strategy AA env:
 - `STRATEGY_AA_ENTRYPOINT_ADDRESS`
 - `STRATEGY_AA_ACCOUNT_ADDRESS`
 - `STRATEGY_AA_OWNER_PRIVATE_KEY` (or `STRATEGY_PRIVATE_KEY`)
+- `STRATEGY_AUTO_SUBMIT` (`false` by default)
+- `STRATEGY_REQUIRE_EXPLICIT_SUBMIT` (`true` by default)
+- optional host allowlist: `STRATEGY_TRUSTED_RELAYER_HOSTS=relayer.example.com`
+- local dev only: `STRATEGY_ALLOW_HTTP_RELAYER=true`
 - `CLAW_FUND_FACTORY_ADDRESS`
 - `INTENT_BOOK_ADDRESS`, `CLAW_CORE_ADDRESS`
 - `NADFUN_EXECUTION_ADAPTER_ADDRESS` (fallback: `ADAPTER_ADDRESS`)
@@ -184,13 +188,13 @@ npm run strategy:dry-run:intent -w @claw/agents -- \
   --execution-route-file /tmp/route.json
 ```
 
-## Strategy skill auto submit (recommended)
+## Strategy skill guarded submit
 
-Programmatic skill path can now run proposal + submission in one call:
+Programmatic skill path builds proposal first, then submits only when submit gates are explicitly enabled.
 
 1. build strategy decision (`proposeIntent`)
-2. submit canonical intent to relayer (`POST /intents/propose`)
-3. send onchain `IntentBook.proposeIntent` via strategy AA
+2. if `submit=true` and `STRATEGY_AUTO_SUBMIT=true`, submit canonical intent to relayer (`POST /intents/propose`)
+3. if step 2 passed, send onchain `IntentBook.proposeIntent` via strategy AA
 
 ```ts
 import { proposeIntentAndSubmit } from '@claw/agents';
@@ -216,9 +220,14 @@ const out = await proposeIntentAndSubmit({
     maxSlippageBps: 500,
     allowlistTokens: ['0x...'],
     allowlistVenues: ['nadfun']
-  }
+  },
+  submit: true
 });
 ```
+
+Default safety behavior:
+- `STRATEGY_REQUIRE_EXPLICIT_SUBMIT=true` and no `submit` => returns `decision: "READY"` (no relayer/onchain submission)
+- `submit: true` but `STRATEGY_AUTO_SUBMIT=false` => throws fail-closed error
 
 Implemented modules:
 - `/Users/wiimdy/agent/packages/agents/src/lib/relayer-client.ts`
