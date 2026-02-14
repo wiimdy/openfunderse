@@ -109,6 +109,40 @@
             },
             "description": "Creates/updates fund config and pins single strategy bot for this fund."
           }
+        },
+        {
+          "name": "POST bootstrap fund (onchain deploy + persist)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Cookie",
+                "value": "{{admin_auth_cookie}}",
+                "disabled": false
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/bootstrap",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "bootstrap"
+              ]
+            },
+            "description": "Deploys a new fund stack via ClawFundFactory and persists metadata in Supabase.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fundId\": \"{{fund_id}}\",\n  \"fundName\": \"OpenClaw Demo Fund\",\n  \"strategyBotId\": \"{{strategy_bot_id}}\",\n  \"strategyBotAddress\": \"{{strategy_bot_address}}\",\n  \"verifierThresholdWeight\": \"{{verifier_threshold_weight}}\",\n  \"intentThresholdWeight\": \"{{intent_threshold_weight}}\",\n  \"strategyPolicyUri\": \"ipfs://todo\",\n  \"telegramRoomId\": \"-1001234567890\",\n  \"deployConfig\": {\n    \"fundOwner\": \"{{deploy_fund_owner}}\",\n    \"strategyAgent\": \"{{deploy_strategy_agent}}\",\n    \"snapshotBook\": \"{{deploy_snapshot_book}}\",\n    \"asset\": \"{{deploy_asset}}\",\n    \"vaultName\": \"{{deploy_vault_name}}\",\n    \"vaultSymbol\": \"{{deploy_vault_symbol}}\",\n    \"intentThresholdWeight\": \"{{intent_threshold_weight}}\",\n    \"nadfunLens\": \"{{deploy_nadfun_lens}}\",\n    \"initialVerifiers\": [\n      \"{{deploy_verifier_1}}\"\n    ],\n    \"initialVerifierWeights\": [\n      \"{{deploy_verifier_weight_1}}\"\n    ],\n    \"initialAllowedTokens\": [\n      \"{{deploy_allowed_token_1}}\"\n    ],\n    \"initialAllowedAdapters\": [\n      \"{{deploy_allowed_adapter_1}}\"\n    ]\n  }\n}"
+            }
+          }
         }
       ]
     },
@@ -464,6 +498,120 @@
               ]
             },
             "description": "Returns latest snapshot. If absent, relayer auto-builds from latest approved claims."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Ops / Execution APIs",
+      "item": [
+        {
+          "name": "GET executions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/executions?fundId={{fund_id}}&status={{execution_status}}&limit=20&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "executions?fundId={{fund_id}}&status={{execution_status}}&limit=20&offset=0"
+              ]
+            },
+            "description": "Lists execution jobs for approved intents."
+          }
+        },
+        {
+          "name": "POST cron execute intents",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-cron-secret",
+                "value": "{{cron_secret}}",
+                "disabled": false
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/cron/execute-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "cron",
+                "execute-intents"
+              ]
+            },
+            "description": "Runs execution worker batch (use CRON secret when enabled)."
+          }
+        },
+        {
+          "name": "GET claim events (SSE)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              },
+              {
+                "key": "Last-Event-ID",
+                "value": "{{last_event_id}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/events/claims",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "events",
+                "claims"
+              ]
+            },
+            "description": "Server-sent events stream for claim attestation/snapshot events."
+          }
+        },
+        {
+          "name": "GET intent events (SSE)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              },
+              {
+                "key": "Last-Event-ID",
+                "value": "{{last_event_id}}",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/events/intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "funds",
+                "{{fund_id}}",
+                "events",
+                "intents"
+              ]
+            },
+            "description": "Server-sent events stream for intent attestation events."
           }
         }
       ]
