@@ -35,6 +35,8 @@
   "files": [
     "dist",
     "README.md",
-    ".env.example"
+    ".env.example",
+    ".env.strategy.example",
+    ".env.participant.example"
   ]
 }
