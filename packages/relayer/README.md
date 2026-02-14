@@ -21,19 +21,15 @@ npm run dev -w @claw/relayer
 ```
 
 ## Baseline API (v1)
-일부 엔드포인트는 실제 동작하며, 일부는 스캐폴드(`501`) 상태입니다.
-
-- `POST /api/v1/funds` (admin only)
-  - 펀드 생성/업데이트 (threshold weight, policy, metadata, single strategy bot binding)
+- `POST /api/v1/funds` (disabled: `410`)
+- `POST /api/v1/funds/bootstrap` (disabled: `410`)
 - `GET /api/v1/funds`
   - 공개 노출용 verified fund 목록 조회 (`is_verified=true`, `visibility=PUBLIC`)
 - `POST /api/v1/funds/sync-by-strategy` (strategy bot only)
-  - strategy AA가 이미 실행한 `ClawFundFactory.createFund` txHash를 검증하고 relayer DB projection 동기화
+  - strategy signer bot이 이미 실행한 `ClawFundFactory.createFund` txHash를 검증하고 relayer DB projection 동기화
   - relayer는 tx를 보내지 않고 receipt/event 검증 + metadata 저장만 수행
 - `POST /api/v1/funds/{fundId}/verify` (admin only)
   - fund 노출 상태(`is_verified`, `visibility`) 갱신
-- `POST /api/v1/funds/bootstrap` (admin only)
-  - `DEPRECATED`: 기존 admin-triggered onchain deploy 경로
 - `POST /api/v1/funds/{fundId}/bots/register` (strategy bot only)
   - participant 봇 등록
 - `GET /api/v1/funds/{fundId}/bots/register` (strategy bot only)
@@ -55,19 +51,19 @@ npm run dev -w @claw/relayer
 - `GET /api/v1/funds/{fundId}/intents/{intentHash}/onchain-bundle`
   - strategy bot가 `IntentBook.attestIntent`에 필요한 verifiers/attestations bundle 조회
 - `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-attested`
-  - strategy AA가 onchain attestation 완료 후 relayer 상태를 `APPROVED`(+execution `READY`)로 ack
+  - strategy signer bot이 onchain attestation 완료 후 relayer 상태를 `APPROVED`(+execution `READY`)로 ack
 - `GET /api/v1/funds/{fundId}/intents/ready-execution`
-  - strategy AA가 `ClawCore.executeIntent`에 필요한 intent/executionRoute payload 조회
+  - strategy signer bot이 `ClawCore.executeIntent`에 필요한 intent/executionRoute payload 조회
 - `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-executed`
-  - strategy AA 실행 성공 tx를 execution job(`EXECUTED`)로 ack
+  - strategy signer bot 실행 성공 tx를 execution job(`EXECUTED`)로 ack
 - `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-failed`
-  - strategy AA 실행 실패를 retryable 상태로 기록
+  - strategy signer bot 실행 실패를 retryable 상태로 기록
 - `GET /api/v1/funds/{fundId}/status`
   - DB 기반 pending/approved 요약 + in-memory metrics 카운터 조회
 - `GET /api/v1/metrics`
   - 요청/검증/중복/온체인 제출 성공/실패 카운터 조회
 - `POST /api/v1/cron/execute-intents`
-  - keyless 모드에서 비활성화(410). 온체인 실행은 strategy AA가 수행.
+  - keyless 모드에서 비활성화(410). 온체인 실행은 strategy signer bot이 수행.
 - `GET /api/v1/executions`
   - 실행 잡 상태 조회
 
@@ -75,7 +71,7 @@ npm run dev -w @claw/relayer
 - `admin`:
   - NextAuth credentials session + `ADMIN_LOGIN_ID` / `ADMIN_LOGIN_PASSWORD(_HASH)` 로그인
   - `ADMIN_IDS` 기반 권한 체크
-  - 펀드 생성 API 접근
+  - fund 검증/노출 상태 API 접근
 - `user`:
   - 튜토리얼 페이지 접근 (`/join`)
 - `bot`:
@@ -89,7 +85,7 @@ npm run dev -w @claw/relayer
 ## Implementation TODOs
 - 요청 schema 정의(zod or valibot)
 - DB 스키마(Drizzle + Postgres) 설계
-- onchain submitter는 strategy AA 책임. relayer는 bundle/payload 제공 + 상태 저장 역할.
+- onchain submitter는 strategy signer bot 책임. relayer는 bundle/payload 제공 + 상태 저장 역할.
 - 인증/권한(운영자, verifier allowlist, strategy-only bot registration)
 - strategy bot -> Telegram room/role mapping 동기화
 
@@ -109,47 +105,7 @@ npm run dev -w @claw/relayer
 - `CLAIM_THRESHOLD_WEIGHT`, `INTENT_THRESHOLD_WEIGHT`
 - `VERIFIER_WEIGHT_SNAPSHOT` (`address:weight,address:weight,...`)
 - `CLAW_FUND_FACTORY_ADDRESS` (for `POST /api/v1/funds/sync-by-strategy`)
-- `FACTORY_SIGNER_PRIVATE_KEY` (needed only for legacy `POST /api/v1/funds/bootstrap` or `factory:create-fund`)
 - `CLAIM_FINALIZATION_MODE` (`OFFCHAIN`/`ONCHAIN`)
 - `CLAIM_ATTESTATION_VERIFIER_ADDRESS` (claim EIP-712 domain address)
 - `CLAIM_BOOK_ADDRESS` (only when `CLAIM_FINALIZATION_MODE=ONCHAIN`)
 - relayer keyless 운영에서는 `RELAYER_SIGNER_PRIVATE_KEY`가 필요하지 않음
-
-## Web2 viem example (factory struct payload)
-```bash
-# repo root
-npm run -w @claw/relayer factory:create-fund
-```
-
-Script path:
-- `scripts/factory-create-fund.mjs`
-
-Bootstrap API payload example:
-```json
-{
-  "fundId": "fund-monad-001",
-  "fundName": "Monad Meme Momentum",
-  "strategyBotId": "bot-strategy-1",
-  "strategyBotAddress": "0x1111111111111111111111111111111111111111",
-  "verifierThresholdWeight": "3",
-  "intentThresholdWeight": "5",
-  "deployConfig": {
-    "fundOwner": "0x2222222222222222222222222222222222222222",
-    "strategyAgent": "0x3333333333333333333333333333333333333333",
-    "snapshotBook": "0x4444444444444444444444444444444444444444",
-    "asset": "0x5555555555555555555555555555555555555555",
-    "vaultName": "Fund Vault Share",
-    "vaultSymbol": "FVS",
-    "intentThresholdWeight": "5",
-    "nadfunLens": "0x0000000000000000000000000000000000000000",
-    "initialVerifiers": [
-      "0x6666666666666666666666666666666666666666"
-    ],
-    "initialVerifierWeights": ["5"],
-    "initialAllowedTokens": [
-      "0x5555555555555555555555555555555555555555"
-    ],
-    "initialAllowedAdapters": []
-  }
-}
-```

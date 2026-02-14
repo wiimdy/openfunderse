@@ -125,7 +125,7 @@ async function maybeFinalizeSubject(
 
   // Keyless relayer policy:
   // - CLAIM in ONCHAIN mode: unsupported (no relayer signer), keep pending with explicit error.
-  // - INTENT: mark READY_FOR_ONCHAIN so strategy AA submits onchain attest/execute.
+  // - INTENT: mark READY_FOR_ONCHAIN so strategy signer bot submits onchain attest/execute.
   if (subjectType === "CLAIM") {
     const message =
       "CLAIM_FINALIZATION_MODE=ONCHAIN is not supported in keyless relayer mode; use OFFCHAIN.";

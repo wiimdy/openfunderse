@@ -78,7 +78,6 @@ packages/
 - `packages/agents/src/skills/strategy/index.ts`
 - `packages/agents/src/lib/relayer-client.ts`
 - `packages/agents/src/lib/signer.ts`
-- `packages/agents/src/lib/aa-client.ts`
 
 ## 6.2 추가
 - `packages/agents/src/clawbot-cli.ts`

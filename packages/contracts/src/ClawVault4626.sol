@@ -59,7 +59,7 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     // Performance fee (on realized profit), minted as shares to avoid immediate asset outflow.
     uint16 public performanceFeeBps;
     address public performanceFeeRecipient;
-    // Deposit-time gas reserve fee for strategy AA operations.
+    // Deposit-time gas reserve fee for strategy signer operations.
     uint16 public gasFeeBps;
     uint256 public gasFeeCapPerDeposit;
     address public strategySmartAccount;

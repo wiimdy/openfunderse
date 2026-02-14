@@ -25,7 +25,6 @@ const nowSeconds = () => Math.floor(Date.now() / 1000);
 async function main() {
   const tmp = join(tmpdir(), `clawbot-smoke-${Date.now()}`);
   const claimPath = `${tmp}.claim.json`;
-  const envPath = `${tmp}.env`;
   const intentPath = `${tmp}.intent.json`;
   const routePath = `${tmp}.route.json`;
 
@@ -110,7 +109,7 @@ async function main() {
       '86400'
     ]);
 
-    console.log('\n[smoke] 3) strategy set_aa routing');
+    console.log('\n[smoke] 3) strategy help routing');
     await run('npm', [
       'run',
       'clawbot:run',
@@ -118,11 +117,8 @@ async function main() {
       '--role',
       'strategy',
       '--action',
-      'set_aa',
-      '--address',
-      '0x00000000000000000000000000000000000000a1',
-      '--env-path',
-      envPath
+      'propose_intent',
+      '--help'
     ]);
 
     const canNetwork =
@@ -159,8 +155,7 @@ async function main() {
     await Promise.allSettled([
       rm(claimPath, { force: true }),
       rm(intentPath, { force: true }),
-      rm(routePath, { force: true }),
-      rm(envPath, { force: true })
+      rm(routePath, { force: true })
     ]);
   }
 }

@@ -1,6 +1,6 @@
 {
-  "name": "@claw/protocol-sdk",
-  "version": "0.1.0",
+  "name": "@wiimdy/openfunderse-sdk",
+  "version": "0.1.1",
   "description": "Canonical hashing and EIP-712 helpers for Claw protocol components.",
   "license": "MIT",
   "type": "module",
@@ -17,11 +17,13 @@
     "README.md"
   ],
   "scripts": {
+    "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/**/*.test.mjs",
-    "intent:compute:nadfun": "npm run build && node scripts/compute-nadfun-intent.mjs"
+    "intent:compute:nadfun": "npm run build && node scripts/compute-nadfun-intent.mjs",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "viem": "^2.38.2"

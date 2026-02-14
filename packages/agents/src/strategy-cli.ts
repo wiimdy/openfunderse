@@ -1,21 +1,20 @@
-import { readFile, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import {
   createPublicClient,
+  createWalletClient,
   decodeEventLog,
   defineChain,
-  encodeFunctionData,
   http,
   parseAbi,
   type Address,
   type Hex
 } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import {
   buildCoreExecutionRequestFromIntent,
   type IntentExecutionRouteInput,
   type TradeIntent
 } from '@claw/protocol-sdk';
-import { StrategyAaClient } from './lib/aa-client.js';
 import { createRelayerClient, type ReadyExecutionPayloadItem } from './lib/relayer-client.js';
 
 interface ParsedCli {
@@ -85,8 +84,7 @@ const FUND_FACTORY_ABI = parseAbi([
 ]);
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
-const DEFAULT_MIN_AA_BALANCE_WEI = 10_000_000_000_000_000n; // 0.01 MON
-const DEFAULT_AGENTS_ENV_PATH = fileURLToPath(new URL('../.env', import.meta.url));
+const DEFAULT_MIN_SIGNER_BALANCE_WEI = 10_000_000_000_000_000n; // 0.01 MON
 
 const parseCli = (argv: string[]): ParsedCli => {
   const [command, ...rest] = argv;
@@ -257,30 +255,6 @@ const parseExecutionRoute = (
         ? undefined
         : parseHex(String(adapterDataValue), `${label}.adapterData`)
   };
-};
-
-const upsertEnvValue = async (envFilePath: string, key: string, value: string): Promise<void> => {
-  let raw = '';
-  try {
-    raw = await readFile(envFilePath, 'utf8');
-  } catch (error) {
-    const code = (error as { code?: string } | null)?.code;
-    if (code !== 'ENOENT') {
-      throw error;
-    }
-  }
-
-  const lines = raw.length > 0 ? raw.split(/\r?\n/) : [];
-  const entry = `${key}=${value}`;
-  const index = lines.findIndex((line) => line.startsWith(`${key}=`));
-  if (index >= 0) {
-    lines[index] = entry;
-  } else {
-    lines.push(entry);
-  }
-
-  const normalized = lines.filter((_line, idx) => !(idx === lines.length - 1 && lines[idx] === ''));
-  await writeFile(envFilePath, `${normalized.join('\n')}\n`, 'utf8');
 };
 
 const parseOptionalAddress = (
@@ -499,12 +473,62 @@ const dryRunPass = (result: CoreDryRunResult, minAmountOut: bigint): boolean => 
   );
 };
 
+const strategyRuntime = (): {
+  chainId: number;
+  rpcUrl: string;
+  chain: ReturnType<typeof defineChain>;
+} => {
+  const chainIdRaw = Number(process.env.CHAIN_ID ?? '10143');
+  if (!Number.isFinite(chainIdRaw) || chainIdRaw <= 0) {
+    throw new Error('CHAIN_ID must be a positive number');
+  }
+  const rpcUrl = process.env.RPC_URL ?? '';
+  if (!rpcUrl) {
+    throw new Error('RPC_URL is required');
+  }
+
+  const chainId = Math.trunc(chainIdRaw);
+  const chain = defineChain({
+    id: chainId,
+    name: `strategy-signer-${chainId}`,
+    nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
+    rpcUrls: {
+      default: { http: [rpcUrl] },
+      public: { http: [rpcUrl] }
+    }
+  });
+  return { chainId, rpcUrl, chain };
+};
+
+const strategyPrivateKey = (): Hex => {
+  const raw = process.env.STRATEGY_PRIVATE_KEY ?? '';
+  if (!/^0x[0-9a-fA-F]{64}$/.test(raw)) {
+    throw new Error('STRATEGY_PRIVATE_KEY is required and must be a 32-byte hex private key');
+  }
+  return raw as Hex;
+};
+
+const strategySignerClients = () => {
+  const { chainId, rpcUrl, chain } = strategyRuntime();
+  const account = privateKeyToAccount(strategyPrivateKey());
+  const publicClient = createPublicClient({
+    chain,
+    transport: http(rpcUrl)
+  });
+  const walletClient = createWalletClient({
+    account,
+    chain,
+    transport: http(rpcUrl)
+  });
+  return { chainId, rpcUrl, account, publicClient, walletClient };
+};
+
 const runStrategyAttestOnchain = async (parsed: ParsedCli): Promise<void> => {
   const fundId = requiredOption(parsed, 'fund-id');
   const intentHash = parseHex(requiredOption(parsed, 'intent-hash'), 'intent-hash');
-  const strategyAaAddress = parseAddress(
-    optionOrEnv(parsed, 'strategy-aa-account-address', 'STRATEGY_AA_ACCOUNT_ADDRESS'),
-    'strategy-aa-account-address'
+  const strategySignerAddress = parseAddress(
+    optionOrEnv(parsed, 'strategy-signer-address', 'BOT_ADDRESS'),
+    'strategy-signer-address'
   );
   const intentBookAddress = parseAddress(
     optionOrEnv(parsed, 'intent-book-address', 'INTENT_BOOK_ADDRESS'),
@@ -517,9 +541,12 @@ const runStrategyAttestOnchain = async (parsed: ParsedCli): Promise<void> => {
   }
 
   const relayer = createRelayerClient();
-  const aa = StrategyAaClient.fromEnv({
-    smartAccount: strategyAaAddress
-  });
+  const { account, publicClient, walletClient } = strategySignerClients();
+  if (account.address.toLowerCase() !== strategySignerAddress.toLowerCase()) {
+    throw new Error(
+      `strategy signer mismatch: signer=${account.address} expected=${strategySignerAddress}`
+    );
+  }
   const bundle = await relayer.getIntentOnchainBundle(fundId, intentHash);
 
   const thresholdReached =
@@ -554,40 +581,19 @@ const runStrategyAttestOnchain = async (parsed: ParsedCli): Promise<void> => {
     signature: parseHex(String(item.signature), 'attestation.signature')
   }));
 
-  const chainId = Number(process.env.CHAIN_ID ?? '10143');
-  if (!Number.isFinite(chainId) || chainId <= 0) {
-    throw new Error('CHAIN_ID must be a positive number');
-  }
-  const rpcUrl = process.env.STRATEGY_AA_RPC_URL ?? process.env.RPC_URL ?? '';
-  if (!rpcUrl) {
-    throw new Error('STRATEGY_AA_RPC_URL (or RPC_URL) is required');
-  }
-  const publicClient = createPublicClient({
-    chain: defineChain({
-      id: Math.trunc(chainId),
-      name: `strategy-aa-${Math.trunc(chainId)}`,
-      nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
-      rpcUrls: {
-        default: { http: [rpcUrl] },
-        public: { http: [rpcUrl] }
-      }
-    }),
-    transport: http(rpcUrl)
-  });
-
-  const data = encodeFunctionData({
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: intentBookAddress,
     abi: INTENT_BOOK_ABI,
     functionName: 'attestIntent',
     args: [intentHash, verifiers, attestations]
   });
-
-  const userOp = await aa.sendExecute({
-    target: intentBookAddress,
-    data
+  const txHash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({
+    hash: txHash
   });
-
-  if (!userOp.transactionHash) {
-    const reason = 'missing transactionHash in user operation receipt';
+  if (receipt.status !== 'success') {
+    const reason = `attestIntent transaction reverted: ${txHash}`;
     if (!skipAck) {
       await relayer.markIntentOnchainFailed(fundId, intentHash, reason, 30_000);
     }
@@ -609,7 +615,7 @@ const runStrategyAttestOnchain = async (parsed: ParsedCli): Promise<void> => {
   }
 
   if (!skipAck) {
-    await relayer.markIntentOnchainAttested(fundId, intentHash, userOp.transactionHash);
+    await relayer.markIntentOnchainAttested(fundId, intentHash, txHash);
   }
 
   console.log(
@@ -620,8 +626,7 @@ const runStrategyAttestOnchain = async (parsed: ParsedCli): Promise<void> => {
       intentHash,
       attestationCount: attestations.length,
       filteredExpiredCount,
-      userOpHash: userOp.userOpHash,
-      txHash: userOp.transactionHash,
+      txHash,
       relayerAck: !skipAck
     })
   );
@@ -629,9 +634,9 @@ const runStrategyAttestOnchain = async (parsed: ParsedCli): Promise<void> => {
 
 const runStrategyExecuteReady = async (parsed: ParsedCli): Promise<void> => {
   const fundId = requiredOption(parsed, 'fund-id');
-  const strategyAaAddress = parseAddress(
-    optionOrEnv(parsed, 'strategy-aa-account-address', 'STRATEGY_AA_ACCOUNT_ADDRESS'),
-    'strategy-aa-account-address'
+  const strategySignerAddress = parseAddress(
+    optionOrEnv(parsed, 'strategy-signer-address', 'BOT_ADDRESS'),
+    'strategy-signer-address'
   );
   const coreAddress = parseAddress(
     optionOrEnv(parsed, 'core-address', 'CLAW_CORE_ADDRESS'),
@@ -643,28 +648,13 @@ const runStrategyExecuteReady = async (parsed: ParsedCli): Promise<void> => {
   const retryDelayMs = optionNumber(parsed, 'retry-delay-ms', 30_000);
 
   const relayer = createRelayerClient();
-  const aa = StrategyAaClient.fromEnv({
-    smartAccount: strategyAaAddress
-  });
-  const payload = await relayer.listReadyExecutionPayloads(fundId, { limit, offset });
-
-  const chainId = Number(process.env.CHAIN_ID ?? '10143');
-  const rpcUrl = process.env.STRATEGY_AA_RPC_URL ?? process.env.RPC_URL ?? '';
-  if (!rpcUrl) {
-    throw new Error('STRATEGY_AA_RPC_URL (or RPC_URL) is required');
+  const { account, publicClient, walletClient } = strategySignerClients();
+  if (account.address.toLowerCase() !== strategySignerAddress.toLowerCase()) {
+    throw new Error(
+      `strategy signer mismatch: signer=${account.address} expected=${strategySignerAddress}`
+    );
   }
-  const publicClient = createPublicClient({
-    chain: defineChain({
-      id: chainId,
-      name: `strategy-aa-${chainId}`,
-      nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
-      rpcUrls: {
-        default: { http: [rpcUrl] },
-        public: { http: [rpcUrl] }
-      }
-    }),
-    transport: http(rpcUrl)
-  });
+  const payload = await relayer.listReadyExecutionPayloads(fundId, { limit, offset });
 
   const results: Array<Record<string, unknown>> = [];
   for (const item of payload.items ?? []) {
@@ -691,25 +681,24 @@ const runStrategyExecuteReady = async (parsed: ParsedCli): Promise<void> => {
         continue;
       }
 
-      const data = encodeFunctionData({
+      const simulation = await publicClient.simulateContract({
+        account,
+        address: coreAddress,
         abi: CORE_ABI,
         functionName: 'executeIntent',
         args: [intentHash, req]
       });
-      const userOp = await aa.sendExecute({
-        target: coreAddress,
-        data
-      });
+      const txHash = await walletClient.writeContract(simulation.request);
+      await publicClient.waitForTransactionReceipt({ hash: txHash });
 
-      if (!skipAck && userOp.transactionHash) {
-        await relayer.markIntentOnchainExecuted(fundId, intentHash, userOp.transactionHash);
+      if (!skipAck) {
+        await relayer.markIntentOnchainExecuted(fundId, intentHash, txHash);
       }
 
       results.push({
         intentHash,
         ok: true,
-        userOpHash: userOp.userOpHash,
-        txHash: userOp.transactionHash
+        txHash
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -748,9 +737,9 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
     optionOrEnv(parsed, 'factory-address', 'CLAW_FUND_FACTORY_ADDRESS'),
     'factory-address'
   );
-  const aaAddress = parseAddress(
-    optionOrEnv(parsed, 'strategy-aa-account-address', 'STRATEGY_AA_ACCOUNT_ADDRESS'),
-    'strategy-aa-account-address'
+  const strategySignerAddress = parseAddress(
+    optionOrEnv(parsed, 'strategy-signer-address', 'BOT_ADDRESS'),
+    'strategy-signer-address'
   );
   const submit = parsed.flags.has('submit');
   const skipRelayerSync = parsed.flags.has('skip-relayer-sync');
@@ -780,30 +769,15 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
     deployConfig.intentThresholdWeight = intentThresholdWeight;
   }
 
-  const chainId = Number(process.env.CHAIN_ID ?? '10143');
-  if (!Number.isFinite(chainId) || chainId <= 0) {
-    throw new Error('CHAIN_ID must be a positive number');
+  const { chainId, account, publicClient, walletClient } = strategySignerClients();
+  if (account.address.toLowerCase() !== strategySignerAddress.toLowerCase()) {
+    throw new Error(
+      `strategy signer mismatch: signer=${account.address} expected=${strategySignerAddress}`
+    );
   }
-  const rpcUrl = process.env.STRATEGY_AA_RPC_URL ?? process.env.RPC_URL ?? '';
-  if (!rpcUrl) {
-    throw new Error('STRATEGY_AA_RPC_URL (or RPC_URL) is required');
-  }
-
-  const publicClient = createPublicClient({
-    chain: defineChain({
-      id: Math.trunc(chainId),
-      name: `strategy-aa-${Math.trunc(chainId)}`,
-      nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
-      rpcUrls: {
-        default: { http: [rpcUrl] },
-        public: { http: [rpcUrl] }
-      }
-    }),
-    transport: http(rpcUrl)
-  });
 
   const simulation = await publicClient.simulateContract({
-    account: aaAddress,
+    account,
     address: factoryAddress,
     abi: FUND_FACTORY_ABI,
     functionName: 'createFund',
@@ -812,14 +786,14 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
   const [simFundId, simIntentBookAddress, simClawCoreAddress, simClawVaultAddress] =
     simulation.result;
 
-  const aaBalance = await publicClient.getBalance({ address: aaAddress });
-  const minAaBalanceWei = optionBigIntOrEnv(
+  const signerBalance = await publicClient.getBalance({ address: account.address });
+  const minSignerBalanceWei = optionBigIntOrEnv(
     parsed,
-    'min-aa-balance-wei',
-    'STRATEGY_CREATE_MIN_AA_BALANCE_WEI',
-    DEFAULT_MIN_AA_BALANCE_WEI
+    'min-signer-balance-wei',
+    'STRATEGY_CREATE_MIN_SIGNER_BALANCE_WEI',
+    DEFAULT_MIN_SIGNER_BALANCE_WEI
   );
-  const aaBalanceSufficient = aaBalance >= minAaBalanceWei;
+  const signerBalanceSufficient = signerBalance >= minSignerBalanceWei;
 
   if (!submit) {
     console.log(
@@ -831,7 +805,7 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
         fundName,
         strategyBotId,
         strategyBotAddress,
-        chainId: Math.trunc(chainId),
+        chainId,
         factoryAddress,
         simulation: {
           fundId: simFundId,
@@ -839,45 +813,28 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
           clawCoreAddress: simClawCoreAddress,
           clawVaultAddress: simClawVaultAddress
         },
-        aaPreflight: {
-          aaAddress,
-          aaBalanceWei: aaBalance,
-          minAaBalanceWei,
-          sufficient: aaBalanceSufficient
+        signerPreflight: {
+          signerAddress: account.address,
+          signerBalanceWei: signerBalance,
+          minSignerBalanceWei,
+          sufficient: signerBalanceSufficient
         }
       })
     );
     return;
   }
 
-  if (!aaBalanceSufficient && !skipGasCheck) {
+  if (!signerBalanceSufficient && !skipGasCheck) {
     throw new Error(
-      `strategy AA balance too low: balanceWei=${aaBalance.toString()} < minAaBalanceWei=${minAaBalanceWei.toString()} (top up AA or use --skip-gas-check)`
+      `strategy signer balance too low: balanceWei=${signerBalance.toString()} < minSignerBalanceWei=${minSignerBalanceWei.toString()} (top up signer or use --skip-gas-check)`
     );
   }
-
-  const aa = StrategyAaClient.fromEnv({
-    smartAccount: aaAddress
-  });
-  const data = encodeFunctionData({
-    abi: FUND_FACTORY_ABI,
-    functionName: 'createFund',
-    args: [deployConfig]
-  });
-
-  const userOp = await aa.sendExecute({
-    target: factoryAddress,
-    data
-  });
-  if (!userOp.transactionHash) {
-    throw new Error('missing transactionHash in user operation receipt');
-  }
-
+  const txHash = await walletClient.writeContract(simulation.request);
   const receipt = await publicClient.waitForTransactionReceipt({
-    hash: userOp.transactionHash
+    hash: txHash
   });
   if (receipt.status !== 'success') {
-    throw new Error(`createFund transaction reverted: ${userOp.transactionHash}`);
+    throw new Error(`createFund transaction reverted: ${txHash}`);
   }
 
   const event = extractFundDeployedLog(
@@ -905,7 +862,7 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
       fundName,
       strategyBotId,
       strategyBotAddress,
-      txHash: userOp.transactionHash,
+      txHash,
       verifierThresholdWeight: optionBigInt(parsed, 'verifier-threshold-weight'),
       intentThresholdWeight: deployConfig.intentThresholdWeight,
       strategyPolicyUri,
@@ -923,8 +880,7 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
       fundName,
       strategyBotId,
       strategyBotAddress,
-      userOpHash: userOp.userOpHash,
-      txHash: userOp.transactionHash,
+      txHash,
       blockNumber: receipt.blockNumber,
       onchainDeployment: {
         fundId: event.fundId,
@@ -1009,14 +965,14 @@ const runStrategyDryRunIntent = async (parsed: ParsedCli): Promise<void> => {
   });
 
   const chainId = Number(process.env.CHAIN_ID ?? '10143');
-  const rpcUrl = process.env.STRATEGY_AA_RPC_URL ?? process.env.RPC_URL ?? '';
+  const rpcUrl = process.env.RPC_URL ?? '';
   if (!rpcUrl) {
-    throw new Error('STRATEGY_AA_RPC_URL (or RPC_URL) is required');
+    throw new Error('RPC_URL is required');
   }
   const publicClient = createPublicClient({
     chain: defineChain({
       id: chainId,
-      name: `strategy-aa-${chainId}`,
+      name: `strategy-signer-${chainId}`,
       nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
       rpcUrls: {
         default: { http: [rpcUrl] },
@@ -1045,43 +1001,16 @@ const runStrategyDryRunIntent = async (parsed: ParsedCli): Promise<void> => {
   );
 };
 
-const runStrategySetAa = async (parsed: ParsedCli): Promise<void> => {
-  const address = parseAddress(requiredOption(parsed, 'address'), 'address');
-  const envFile =
-    parsed.options.get('env-path') ??
-    parsed.options.get('env-file') ??
-    process.env.STRATEGY_AA_ENV_FILE ??
-    DEFAULT_AGENTS_ENV_PATH;
-  const alsoBotAddress = parsed.flags.has('also-bot-address');
-
-  await upsertEnvValue(envFile, 'STRATEGY_AA_ACCOUNT_ADDRESS', address);
-  if (alsoBotAddress) {
-    await upsertEnvValue(envFile, 'BOT_ADDRESS', address);
-  }
-
-  console.log(
-    jsonStringify({
-      status: 'OK',
-      command: 'strategy-set-aa',
-      envFile,
-      strategyAaAccountAddress: address,
-      updatedKeys: alsoBotAddress
-        ? ['STRATEGY_AA_ACCOUNT_ADDRESS', 'BOT_ADDRESS']
-        : ['STRATEGY_AA_ACCOUNT_ADDRESS']
-    })
-  );
-};
-
 const printUsage = (): void => {
   console.log(`
 [agents] strategy commands
 
 strategy-attest-onchain
   --fund-id <id> --intent-hash <0x...> [--intent-book-address <0x...>]
-  [--strategy-aa-account-address <0x...>] [--expiry-safety-seconds <n>] [--skip-relayer-ack]
+  [--strategy-signer-address <0x...>] [--expiry-safety-seconds <n>] [--skip-relayer-ack]
 
 strategy-execute-ready
-  --fund-id <id> [--core-address <0x...>] [--strategy-aa-account-address <0x...>]
+  --fund-id <id> [--core-address <0x...>] [--strategy-signer-address <0x...>]
   [--limit <n>] [--offset <n>]
   [--retry-delay-ms <n>] [--skip-relayer-ack]
 
@@ -1096,14 +1025,12 @@ strategy-dry-run-intent
 strategy-create-fund
   --fund-id <id> --fund-name <name>
   [--strategy-bot-id <id>] [--strategy-bot-address <0x...>]
-  [--factory-address <0x...>] [--strategy-aa-account-address <0x...>]
+  [--factory-address <0x...>] [--strategy-signer-address <0x...>]
   [--deploy-config-json '<json>'] [--deploy-config-file <path>]
+  template: packages/agents/config/deploy-config.template.json
   [--telegram-room-id <id>] [--strategy-policy-uri <uri>] [--telegram-handle <handle>]
   [--verifier-threshold-weight <n>] [--intent-threshold-weight <n>]
-  [--min-aa-balance-wei <wei>] [--submit] [--skip-gas-check] [--skip-relayer-sync]
-
-strategy-set-aa
-  --address <0x...> [--env-path <path>] [--also-bot-address]
+  [--min-signer-balance-wei <wei>] [--submit] [--skip-gas-check] [--skip-relayer-sync]
 `);
 };
 
@@ -1137,10 +1064,6 @@ export const runStrategyCli = async (argv: string[]): Promise<boolean> => {
   }
   if (command === 'strategy-create-fund') {
     await runStrategyCreateFund(parsed);
-    return true;
-  }
-  if (command === 'strategy-set-aa') {
-    await runStrategySetAa(parsed);
     return true;
   }
 

@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       status: "DISABLED",
       endpoint: "POST /api/v1/cron/execute-intents",
       message:
-        "Relayer executor is disabled in keyless mode. Strategy AA must submit onchain attest/execute."
+        "Relayer executor is disabled in keyless mode. Strategy signer bot must submit onchain attest/execute."
     },
     { status: 410 }
   );

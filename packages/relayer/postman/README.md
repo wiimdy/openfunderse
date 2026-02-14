@@ -16,16 +16,7 @@ npm install
 npm run dev -w @claw/relayer
 ```
 
-Quick one-shot smoke (session -> fund create with full input/output logs):
-```bash
-cd /Users/ham-yunsig/Documents/github/claw-validation-market
-ADMIN_LOGIN_ID=admin \
-ADMIN_LOGIN_PASSWORD=change_me \
-FUND_ID=demo-fund \
-npm run smoke:fund-bootstrap -w @claw/relayer
-```
-
-Full API smoke (login -> fund -> bots -> claims -> attest -> snapshot -> intent -> attest -> status/metrics):
+Full API smoke (onchain deploy -> sync -> bots -> claims -> attest -> snapshot -> intent -> attest -> status/metrics):
 ```bash
 cd /Users/ham-yunsig/Documents/github/claw-validation-market
 ADMIN_LOGIN_ID=admin \
@@ -45,7 +36,6 @@ Required env in relayer `.env`:
 - `CLAIM_FINALIZATION_MODE` (`OFFCHAIN` or `ONCHAIN`)
 - `CLAIM_ATTESTATION_VERIFIER_ADDRESS`
 - `INTENT_BOOK_ADDRESS`
-- `RELAYER_SIGNER_PRIVATE_KEY`
 - `CLAIM_THRESHOLD_WEIGHT`
 - `INTENT_THRESHOLD_WEIGHT`
 - `VERIFIER_WEIGHT_SNAPSHOT`
@@ -79,9 +69,8 @@ And prints Postman environment values to copy:
 
 ## 4) Recommended run order
 1. Sign in at `/login` and set `admin_auth_cookie` in Postman
-2. `POST /api/v1/funds` (admin creates fund metadata only)
-   - includes `strategyBotId` + `strategyBotAddress` (single strategy bot for fund)
-3. `POST /api/v1/funds/bootstrap` (admin deploys onchain fund stack + persists deployment metadata)
+2. Strategy executes `ClawFundFactory.createFund` onchain (outside relayer)
+3. `POST /api/v1/funds/sync-by-strategy` (strategy bot syncs txHash -> relayer projection)
 4. `POST /api/v1/funds/{fundId}/bots/register` (strategy bot registers participant bot)
 5. `GET /api/v1/funds/{fundId}/bots/register` (strategy bot verifies registry)
 6. `POST /api/v1/funds/{fundId}/claims` (participant submits canonical claim payload)
@@ -89,7 +78,7 @@ And prints Postman environment values to copy:
 8. `GET /api/v1/funds/{fundId}/snapshots/latest` (auto-build latest snapshot from approved claims)
 9. `POST /api/v1/funds/{fundId}/intents/propose` (strategy proposes intent with required `executionRoute`)
 10. `POST /api/v1/funds/{fundId}/intents/attestations/batch` (participant attests intent)
-11. `POST /api/v1/cron/execute-intents` (execution worker tick)
+11. `POST /api/v1/cron/execute-intents` (returns disabled in keyless mode)
 12. `GET /api/v1/executions` and re-check `GET /api/v1/funds/{fundId}/status`, `GET /api/v1/metrics`
 
 ## Notes
@@ -98,5 +87,7 @@ And prints Postman environment values to copy:
 - Participant bot registration endpoint is strategy-only (`bots.register` scope).
 - For weighted pass condition, the signer address must be present in `VERIFIER_WEIGHT_SNAPSHOT` with positive weight.
 - `POST /intents/propose` does not accept direct `allowlistHash`; relayer computes it from `executionRoute` only.
-- Collection now includes `funds/bootstrap`, `executions`, `cron/execute-intents`, and SSE endpoints (`events/claims`, `events/intents`).
+- `POST /api/v1/funds/sync-by-strategy` requires strategy bot scope `funds.bootstrap`.
+- Collection includes `executions`, `cron/execute-intents`, and SSE endpoints (`events/claims`, `events/intents`).
+- `POST /api/v1/funds` and `POST /api/v1/funds/bootstrap` are intentionally disabled (`410`).
 - If you only want quick negative-path testing, use the `bad signature` requests in the collection.

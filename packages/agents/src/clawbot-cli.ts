@@ -58,7 +58,6 @@ const mapCommand = (role: string, action: string): string => {
     if (action === 'dry_run_intent_execution') return 'strategy-dry-run-intent';
     if (action === 'attest_intent_onchain') return 'strategy-attest-onchain';
     if (action === 'execute_intent_onchain') return 'strategy-execute-ready';
-    if (action === 'set_aa') return 'strategy-set-aa';
   }
 
   if (role === 'participant') {
