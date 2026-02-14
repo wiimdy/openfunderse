@@ -37,6 +37,11 @@ Run:
 npm run dev -w @claw/agents
 ```
 
+Env loading defaults (no manual `source` required):
+- strategy commands (`strategy-*`, `clawbot-run --role strategy`): `.env` then `.env.strategy`
+- participant commands (`participant-*`, `clawbot-run --role participant`): `.env` then `.env.participant`
+- Existing shell env values always win over file values.
+
 ## Participant claim model (allocation only)
 
 Participant claim is `AllocationClaimV1`:
@@ -50,7 +55,7 @@ Relayer client:
 - `RELAYER_URL`
 - `BOT_ID`
 - `BOT_API_KEY`
-- `BOT_ADDRESS` (required for claim submit; must match registered participant bot address)
+- `PARTICIPANT_ADDRESS` (required for claim submit; must match registered participant bot address)
 
 Signer:
 - `PARTICIPANT_PRIVATE_KEY`
@@ -64,11 +69,12 @@ Participant submit safety:
 - local dev only: `PARTICIPANT_ALLOW_HTTP_RELAYER=true`
 
 Participant optional scoped env:
-- `PARTICIPANT_BOT_ID`, `PARTICIPANT_BOT_API_KEY`, `PARTICIPANT_BOT_ADDRESS`
-- if omitted, participant flow uses `BOT_ID`, `BOT_API_KEY`, `BOT_ADDRESS`
+- `PARTICIPANT_BOT_ID`, `PARTICIPANT_BOT_API_KEY`, `PARTICIPANT_ADDRESS`
+- if omitted, participant flow uses `BOT_ID`, `BOT_API_KEY` with `PARTICIPANT_ADDRESS`
 
 Strategy signer env:
 - `STRATEGY_PRIVATE_KEY`
+- `STRATEGY_ADDRESS`
 - `STRATEGY_AUTO_SUBMIT` (`false` by default)
 - `STRATEGY_REQUIRE_EXPLICIT_SUBMIT` (`true` by default)
 - optional host allowlist: `STRATEGY_TRUSTED_RELAYER_HOSTS=relayer.example.com`
@@ -168,7 +174,7 @@ cp packages/agents/config/deploy-config.template.json /tmp/deploy-config.json
 Field guide:
 
 - `fundOwner` (required): final owner of the fund.
-- `strategyAgent` (optional): strategy bot address. if omitted, CLI fallback is `--strategy-bot-address` or `BOT_ADDRESS`.
+- `strategyAgent` (optional): strategy bot address. if omitted, CLI fallback is `--strategy-bot-address` or `STRATEGY_ADDRESS`.
 - `snapshotBook` (required): deployed snapshot book address.
 - `asset` (required): vault asset token (for Monad testnet usually WMON).
 - `vaultName` / `vaultSymbol` (required): ERC4626 metadata.

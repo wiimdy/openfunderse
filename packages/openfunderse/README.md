@@ -15,9 +15,15 @@ npx @wiimdy/openfunderse@latest bot-init --skill-name strategy --yes
 # or
 npx @wiimdy/openfunderse@latest bot-init --skill-name participant --yes
 
-# 3) load env in current shell
-set -a; source .env; set +a
+# 3) (optional) load env in current shell
+# @wiimdy/openfunderse-agents auto-loads .env.strategy / .env.participant by command role.
+set -a; source .env.strategy; set +a
+# or
+set -a; source .env.participant; set +a
 ```
+
+By default, `install` and `bot-init` also sync env keys into OpenClaw config (`~/.openclaw/openclaw.json > env.vars`).
+Disable this with `--no-sync-openclaw-env`.
 
 ## Where Files Are Stored
 
@@ -30,5 +36,7 @@ set -a; source .env; set +a
 - Use only:
   - `openfunderse-strategy`
   - `openfunderse-participant`
-- Default env scaffold path is `.env`.
-- If you run both bots in the same directory, use `--env-path` to split files (for example `.env.strategy`, `.env.participant`).
+- Default env scaffold path is role-based:
+  - strategy: `.env.strategy`
+  - participant: `.env.participant`
+- Use `--env-path` only when you want a custom filename/location.

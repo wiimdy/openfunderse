@@ -210,8 +210,7 @@ export class RelayerClient {
     this.baseUrl = options.baseUrl ?? process.env.RELAYER_URL ?? '';
     this.botId = options.botId ?? process.env.BOT_ID ?? '';
     this.botApiKey = options.botApiKey ?? process.env.BOT_API_KEY ?? '';
-    this.botAddress =
-      options.botAddress ?? (process.env.BOT_ADDRESS as Address | undefined) ?? ZERO_ADDRESS;
+    this.botAddress = options.botAddress ?? ZERO_ADDRESS;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 10_000;
     this.maxRetries = options.maxRetries ?? 2;
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? 250;

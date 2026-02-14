@@ -32,8 +32,7 @@ const participantPrivateKey =
   process.env.VERIFIER_PRIVATE_KEY;
 const participantBotAddressFromEnv =
   process.env.PARTICIPANT_BOT_ADDRESS ??
-  process.env.PARTICIPANT_ADDRESS ??
-  process.env.BOT_ADDRESS;
+  process.env.PARTICIPANT_ADDRESS;
 
 const participant2BotId = process.env.PARTICIPANT2_BOT_ID ?? "bot-participant-2";
 const participant2BotApiKey = process.env.PARTICIPANT2_BOT_API_KEY;

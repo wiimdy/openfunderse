@@ -527,7 +527,7 @@ const runStrategyAttestOnchain = async (parsed: ParsedCli): Promise<void> => {
   const fundId = requiredOption(parsed, 'fund-id');
   const intentHash = parseHex(requiredOption(parsed, 'intent-hash'), 'intent-hash');
   const strategySignerAddress = parseAddress(
-    optionOrEnv(parsed, 'strategy-signer-address', 'BOT_ADDRESS'),
+    optionOrEnv(parsed, 'strategy-signer-address', 'STRATEGY_ADDRESS'),
     'strategy-signer-address'
   );
   const intentBookAddress = parseAddress(
@@ -635,7 +635,7 @@ const runStrategyAttestOnchain = async (parsed: ParsedCli): Promise<void> => {
 const runStrategyExecuteReady = async (parsed: ParsedCli): Promise<void> => {
   const fundId = requiredOption(parsed, 'fund-id');
   const strategySignerAddress = parseAddress(
-    optionOrEnv(parsed, 'strategy-signer-address', 'BOT_ADDRESS'),
+    optionOrEnv(parsed, 'strategy-signer-address', 'STRATEGY_ADDRESS'),
     'strategy-signer-address'
   );
   const coreAddress = parseAddress(
@@ -730,7 +730,7 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
   const fundName = requiredOption(parsed, 'fund-name');
   const strategyBotId = optionOrEnv(parsed, 'strategy-bot-id', 'BOT_ID');
   const strategyBotAddress = parseAddress(
-    optionOrEnv(parsed, 'strategy-bot-address', 'BOT_ADDRESS'),
+    optionOrEnv(parsed, 'strategy-bot-address', 'STRATEGY_ADDRESS'),
     'strategy-bot-address'
   );
   const factoryAddress = parseAddress(
@@ -738,7 +738,7 @@ const runStrategyCreateFund = async (parsed: ParsedCli): Promise<void> => {
     'factory-address'
   );
   const strategySignerAddress = parseAddress(
-    optionOrEnv(parsed, 'strategy-signer-address', 'BOT_ADDRESS'),
+    optionOrEnv(parsed, 'strategy-signer-address', 'STRATEGY_ADDRESS'),
     'strategy-signer-address'
   );
   const submit = parsed.flags.has('submit');

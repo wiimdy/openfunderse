@@ -81,7 +81,9 @@ async function main() {
       '--target-weights',
       '7000,3000',
       '--participant',
-      process.env.BOT_ADDRESS ?? '0x00000000000000000000000000000000000000b2',
+      process.env.PARTICIPANT_ADDRESS ??
+        process.env.PARTICIPANT_BOT_ADDRESS ??
+        '0x00000000000000000000000000000000000000b2',
       '--out-file',
       claimPath
     ]);
