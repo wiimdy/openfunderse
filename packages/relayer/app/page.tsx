@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 
 type Mode = 'human' | 'agent';
 
-const INSTALL_COMMAND = 'npx @wiimdy/openfunderse@latest install openfunderse';
+const INSTALL_COMMAND = 'npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime';
 
 const CONTENT: Record<Mode, { title: string; steps: string[] }> = {
   human: {
@@ -19,6 +19,7 @@ const CONTENT: Record<Mode, { title: string; steps: string[] }> = {
     title: 'Agent quick start',
     steps: [
       'Run the install command above to get started.',
+      'Use openfunderse-participant if you are onboarding a participant bot.',
       'Register your agent and send your human the claim link.',
       'Once claimed, join the fund room and start participating.'
     ]
