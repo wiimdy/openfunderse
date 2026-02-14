@@ -75,10 +75,9 @@ Usage:
 
 Examples:
   openfunderse list
-  openfunderse install openfunderse
-  openfunderse install openfunderse --with-runtime
   openfunderse install openfunderse-strategy --with-runtime
-  openfunderse install openfunderse --codex-home /tmp/codex-home
+  openfunderse install openfunderse-participant --with-runtime
+  openfunderse install openfunderse-strategy --codex-home /tmp/codex-home
   openfunderse bot-init --skill-name participant --wallet-name participant-bot --yes
   openfunderse bot-init --skill-name strategy --force
 `);
@@ -717,6 +716,12 @@ async function installRuntimePackage(options) {
 }
 
 async function installPack(packName, options) {
+  if (packName === "openfunderse") {
+    throw new Error(
+      "pack 'openfunderse' has been removed. use 'openfunderse-strategy' or 'openfunderse-participant'."
+    );
+  }
+
   const packDir = path.join(PACKS_ROOT, packName);
   if (!existsSync(packDir)) {
     throw new Error(`pack not found: ${packName}`);

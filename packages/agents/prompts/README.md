@@ -1,8 +1,9 @@
 # prompts scaffold
 
-Prompt template source of truth moved to:
+Prompt template source of truth moved to docs prompt books:
 
-`/Users/wiimdy/agent/packages/openfunderse/packs/openfunderse/prompts`
+- `/Users/wiimdy/agent/docs/prompts/kr`
+- `/Users/wiimdy/agent/docs/jupyter-notebook/openclaw-agent-prompt-book.ipynb`
 
 Status:
 - local pointer only

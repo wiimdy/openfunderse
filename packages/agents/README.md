@@ -260,19 +260,15 @@ Implemented modules:
 Target onboarding UX:
 
 ```bash
-npx @wiimdy/openfunderse@latest install openfunderse
+npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
+npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
 ```
 
 Canonical pack files are maintained at:
-- `packages/openfunderse/packs/openfunderse/config/setup-manifest.json`
-- `packages/openfunderse/packs/openfunderse/skills/clawbot-core/SKILL.md`
-- `packages/openfunderse/packs/openfunderse/prompts/core/system.md`
-- `packages/openfunderse/packs/openfunderse/skills/strategy/SKILL.md`
-- `packages/openfunderse/packs/openfunderse/skills/participant/SKILL.md`
-- `packages/openfunderse/packs/openfunderse/skills/relayer/SKILL.md`
-- `packages/openfunderse/packs/openfunderse/prompts/strategy/system.md`
-- `packages/openfunderse/packs/openfunderse/prompts/participant/system.md`
-- `packages/openfunderse/packs/openfunderse/prompts/relayer/system.md`
+- `packages/openfunderse/packs/openfunderse-strategy/config/setup-manifest.json`
+- `packages/openfunderse/packs/openfunderse-strategy/openfunderse-strategy/SKILL.md`
+- `packages/openfunderse/packs/openfunderse-participant/config/setup-manifest.json`
+- `packages/openfunderse/packs/openfunderse-participant/openfunderse-participant/SKILL.md`
 
 `packages/agents` keeps runtime code only (`src/*`, `dist/*`).
 
