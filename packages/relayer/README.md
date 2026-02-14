@@ -36,7 +36,8 @@ npm run dev -w @claw/relayer
 - `GET /api/v1/funds/{fundId}/claims`
   - claim 목록/상태 조회 (status, token, epoch, pagination)
 - `POST /api/v1/funds/{fundId}/attestations`
-  - claim attestation 수집(중복 제거, EIP-712 검증, weighted threshold 충족 시 onchain 제출)
+  - claim attestation 수집(중복 제거, EIP-712 검증, weighted threshold 충족 시 finalization)
+  - `CLAIM_FINALIZATION_MODE=OFFCHAIN`이면 relayer DB에서 승인 처리, `ONCHAIN`이면 `ClaimBook.attestClaim` 제출
 - `GET /api/v1/funds/{fundId}/snapshots/latest`
   - 최신 finalized snapshot 조회
 - `POST /api/v1/funds/{fundId}/intents/propose`
@@ -91,6 +92,9 @@ npm run dev -w @claw/relayer
 - `CLAIM_THRESHOLD_WEIGHT`, `INTENT_THRESHOLD_WEIGHT`
 - `VERIFIER_WEIGHT_SNAPSHOT` (`address:weight,address:weight,...`)
 - `CLAW_FUND_FACTORY_ADDRESS` (for `POST /api/v1/funds/bootstrap`)
+- `CLAIM_FINALIZATION_MODE` (`OFFCHAIN`/`ONCHAIN`)
+- `CLAIM_ATTESTATION_VERIFIER_ADDRESS` (claim EIP-712 domain address)
+- `CLAIM_BOOK_ADDRESS` (only when `CLAIM_FINALIZATION_MODE=ONCHAIN`)
 
 ## Web2 viem example (factory struct payload)
 ```bash

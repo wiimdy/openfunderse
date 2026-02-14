@@ -52,6 +52,11 @@ async function submitWithRetry<T extends "CLAIM" | "INTENT">(input: {
       let hash: Hex;
 
       if (input.kind === "CLAIM") {
+        if (!cfg.claimBookAddress) {
+          throw new Error(
+            "missing required env: CLAIM_BOOK_ADDRESS (when CLAIM_FINALIZATION_MODE=ONCHAIN)"
+          );
+        }
         hash = await walletClient.writeContract({
           address: cfg.claimBookAddress,
           abi: CLAIM_BOOK_ABI,

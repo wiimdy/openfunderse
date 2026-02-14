@@ -13,23 +13,27 @@ export async function GET(
   const { fundId } = await context.params;
 
   let snapshot = await getLatestSnapshot(fundId);
+  const approved = await getApprovedClaimHashesByFund(fundId);
+  if (approved.length > 0) {
+    const latestEpoch = approved.reduce(
+      (max, row) => (row.epochId > max ? row.epochId : max),
+      approved[0].epochId
+    );
+    const claimHashes = approved
+      .filter((row) => row.epochId === latestEpoch)
+      .map((row) => row.claimHash as `0x${string}`);
 
-  if (!snapshot) {
-    const approved = await getApprovedClaimHashesByFund(fundId);
-    if (approved.length > 0) {
-      const latestEpoch = approved.reduce(
-        (max, row) => (row.epochId > max ? row.epochId : max),
-        approved[0].epochId
-      );
-      const claimHashes = approved
-        .filter((row) => row.epochId === latestEpoch)
-        .map((row) => row.claimHash as `0x${string}`);
+    const built = buildCanonicalSnapshotRecord({
+      epochId: latestEpoch,
+      claimHashes
+    });
 
-      const built = buildCanonicalSnapshotRecord({
-        epochId: latestEpoch,
-        claimHashes
-      });
+    const needsRefresh =
+      !snapshot ||
+      BigInt(snapshot.epoch_id) !== latestEpoch ||
+      snapshot.snapshot_hash.toLowerCase() !== built.snapshotHash.toLowerCase();
 
+    if (needsRefresh) {
       await upsertSnapshot({
         fundId,
         epochId: built.epochId,

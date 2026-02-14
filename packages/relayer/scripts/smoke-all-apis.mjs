@@ -32,6 +32,8 @@ const verifierPrivateKey = process.env.VERIFIER_PRIVATE_KEY;
 const claimBookAddress = process.env.CLAIM_BOOK_ADDRESS;
 const intentBookAddress = process.env.INTENT_BOOK_ADDRESS;
 const chainId = process.env.CHAIN_ID ? BigInt(process.env.CHAIN_ID) : null;
+const claimFinalizationMode = (process.env.CLAIM_FINALIZATION_MODE ?? "OFFCHAIN").toUpperCase();
+const claimAttestationVerifierAddress = process.env.CLAIM_ATTESTATION_VERIFIER_ADDRESS;
 
 const epochId = process.env.EPOCH_ID ? BigInt(process.env.EPOCH_ID) : 1n;
 const nowSec = BigInt(Math.floor(Date.now() / 1000));
@@ -77,10 +79,24 @@ if (!verifierPrivateKey) {
   console.error("VERIFIER_PRIVATE_KEY is required");
   process.exit(1);
 }
-if (!claimBookAddress || !intentBookAddress || !chainId) {
+if (claimFinalizationMode !== "OFFCHAIN" && claimFinalizationMode !== "ONCHAIN") {
+  console.error("CLAIM_FINALIZATION_MODE must be OFFCHAIN or ONCHAIN");
+  process.exit(1);
+}
+if (!intentBookAddress || !chainId) {
   console.error(
-    "CLAIM_BOOK_ADDRESS, INTENT_BOOK_ADDRESS, CHAIN_ID are required"
+    "INTENT_BOOK_ADDRESS and CHAIN_ID are required"
   );
+  process.exit(1);
+}
+if (!claimAttestationVerifierAddress) {
+  console.error(
+    "CLAIM_ATTESTATION_VERIFIER_ADDRESS is required"
+  );
+  process.exit(1);
+}
+if (claimFinalizationMode === "ONCHAIN" && !claimBookAddress) {
+  console.error("CLAIM_BOOK_ADDRESS is required when CLAIM_FINALIZATION_MODE=ONCHAIN");
   process.exit(1);
 }
 
@@ -326,7 +342,7 @@ async function main() {
         name: "ClawClaimBook",
         version: "1",
         chainId,
-        verifyingContract: claimBookAddress
+        verifyingContract: claimAttestationVerifierAddress
       },
       claimMsg
     )
@@ -359,7 +375,7 @@ async function main() {
   if (!snapshotHash) {
     console.log("\n=== WARN ===");
     console.log(
-      "snapshotHash missing. Likely onchain submit skipped/failed (e.g. relayer signer has no testnet gas)."
+      "snapshotHash missing. Claim threshold may not be finalized yet, or finalization/onchain submit failed."
     );
     console.log(
       "Skipping intent propose/attest steps; completed all offchain API flows up to claim attestation."
@@ -455,7 +471,9 @@ async function main() {
     stringify({
       baseUrl,
       fundId,
+      claimFinalizationMode,
       verifierAddress,
+      claimAttestationVerifierAddress,
       claimHash,
       snapshotHash,
       intentHash
