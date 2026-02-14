@@ -2,7 +2,7 @@
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,12 +17,13 @@ function printUsage() {
 
 Usage:
   openfunderse list
-  openfunderse install <pack-name> [--dest <skills-dir>] [--codex-home <dir>] [--force] [--with-runtime]
+  openfunderse install <pack-name> [--dest <skills-dir>] [--codex-home <dir>] [--force] [--link] [--with-runtime]
                      [--runtime-package <name>] [--runtime-dir <dir>] [--runtime-manager <npm|pnpm|yarn|bun>]
 
 Examples:
   openfunderse list
   openfunderse install openfunderse
+  openfunderse install openfunderse --link
   openfunderse install openfunderse --with-runtime
   openfunderse install openfunderse --codex-home /tmp/codex-home
 `);
@@ -33,6 +34,7 @@ function parseArgs(argv) {
   const command = args.shift();
   const options = {
     force: false,
+    link: false,
     dest: "",
     codexHome: "",
     withRuntime: false,
@@ -50,6 +52,10 @@ function parseArgs(argv) {
     }
     if (token === "--force") {
       options.force = true;
+      continue;
+    }
+    if (token === "--link") {
+      options.link = true;
       continue;
     }
     if (token === "--dest") {
@@ -135,18 +141,68 @@ async function loadManifest(packDir) {
   throw new Error("manifest file not found (manifest.json or config/setup-manifest.json)");
 }
 
-async function copySkillDir(sourceDir, destinationDir, force) {
+function parseFrontMatter(markdown) {
+  const match = markdown.match(/^---\s*\n([\s\S]*?)\n---\s*\n?/);
+  if (!match) {
+    return {};
+  }
+
+  const fields = {};
+  const lines = match[1].split("\n");
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const pair = line.match(/^([A-Za-z0-9_-]+)\s*:\s*(.+)$/);
+    if (!pair) continue;
+    const key = pair[1];
+    const value = pair[2].replace(/^["']|["']$/g, "").trim();
+    fields[key] = value;
+  }
+  return fields;
+}
+
+async function readSkillInfo(skillMdPath, fallbackSkillName) {
+  const markdown = await readFile(skillMdPath, "utf8");
+  const frontMatter = parseFrontMatter(markdown);
+  return {
+    skillName: fallbackSkillName,
+    displayName:
+      typeof frontMatter.name === "string" && frontMatter.name.length > 0
+        ? frontMatter.name
+        : fallbackSkillName,
+    description:
+      typeof frontMatter.description === "string" && frontMatter.description.length > 0
+        ? frontMatter.description
+        : ""
+  };
+}
+
+async function installSkillDir(sourceDir, destinationDir, options) {
   const destinationExists = existsSync(destinationDir);
-  if (destinationExists && !force) {
+  if (destinationExists && !options.force) {
     throw new Error(`skill already exists: ${destinationDir} (use --force to overwrite)`);
   }
 
-  if (destinationExists && force) {
+  if (destinationExists && options.force) {
     await rm(destinationDir, { recursive: true, force: true });
   }
 
   await mkdir(path.dirname(destinationDir), { recursive: true });
-  await cp(sourceDir, destinationDir, { recursive: true });
+  if (!options.link) {
+    await cp(sourceDir, destinationDir, { recursive: true });
+    return;
+  }
+
+  const symlinkTarget = path.relative(path.dirname(destinationDir), sourceDir) || ".";
+  const symlinkType = process.platform === "win32" ? "junction" : "dir";
+  try {
+    await symlink(symlinkTarget, destinationDir, symlinkType);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `failed to create symlink for ${path.basename(destinationDir)}: ${message} (retry without --link)`
+    );
+  }
 }
 
 function detectRuntimeManager() {
@@ -223,18 +279,22 @@ async function installPack(packName, options) {
   const skillsRoot = options.dest
     ? path.resolve(options.dest)
     : path.join(codexHome, "skills");
+  const packMetaRoot = path.join(codexHome, "packs", packName);
 
+  await mkdir(path.dirname(path.join(packMetaRoot, "_")), { recursive: true });
+  await cp(packDir, packMetaRoot, { recursive: true, force: true });
   await mkdir(skillsRoot, { recursive: true });
 
   const installed = [];
+  const installOptions = { force: options.force, link: options.link };
 
   for (const bundle of manifest.bundles) {
     if (!bundle || typeof bundle.skill !== "string") {
       throw new Error("invalid bundle entry: missing skill path");
     }
 
-    const skillMd = path.resolve(packDir, bundle.skill);
-    ensureUnderRoot(packDir, skillMd);
+    const skillMd = path.resolve(packMetaRoot, bundle.skill);
+    ensureUnderRoot(packMetaRoot, skillMd);
 
     if (path.basename(skillMd) !== "SKILL.md") {
       throw new Error(`bundle skill must point to SKILL.md: ${bundle.skill}`);
@@ -247,22 +307,23 @@ async function installPack(packName, options) {
     const sourceSkillDir = path.dirname(skillMd);
     const skillName = path.basename(sourceSkillDir);
     const destinationSkillDir = path.join(skillsRoot, skillName);
+    const info = await readSkillInfo(skillMd, skillName);
 
-    await copySkillDir(sourceSkillDir, destinationSkillDir, options.force);
-    installed.push(skillName);
+    await installSkillDir(sourceSkillDir, destinationSkillDir, installOptions);
+    installed.push({
+      id: typeof bundle.id === "string" ? bundle.id : skillName,
+      ...info
+    });
   }
-
-  const packMetaRoot = path.join(codexHome, "packs", packName);
-  await mkdir(path.dirname(path.join(packMetaRoot, "_")), { recursive: true });
-
-  await cp(packDir, packMetaRoot, { recursive: true, force: true });
 
   const installedMeta = {
     installedAt: new Date().toISOString(),
     source: "openfunderse",
     packageRoot: PACKAGE_ROOT,
+    installMode: options.link ? "symlink" : "copy",
     manifestPath: path.relative(packDir, manifestPath),
-    installedSkills: installed
+    installedSkills: installed.map((item) => item.skillName),
+    installedSkillDetails: installed
   };
   await writeFile(path.join(packMetaRoot, "install.json"), `${JSON.stringify(installedMeta, null, 2)}\n`);
 
@@ -272,8 +333,13 @@ async function installPack(packName, options) {
   }
 
   console.log(`Installed pack: ${packName}`);
+  console.log(`Install mode: ${options.link ? "symlink" : "copy"}`);
   console.log(`Skills root: ${skillsRoot}`);
-  console.log(`Installed skills: ${installed.join(", ")}`);
+  console.log("Installed skills:");
+  for (const item of installed) {
+    const description = item.description ? ` - ${item.description}` : "";
+    console.log(`- ${item.displayName} (${item.skillName})${description}`);
+  }
   console.log(`Pack metadata: ${packMetaRoot}`);
   if (runtimeInstallMeta) {
     console.log(
