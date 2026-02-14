@@ -8,40 +8,8 @@ import {
   type TradeIntent
 } from '@claw/protocol-sdk';
 import { EventSource } from 'eventsource';
-import { keccak256, toHex } from 'viem';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
-
-export interface ClaimTemplateInput {
-  templateType: string;
-  sourceRef: string;
-  raw: unknown;
-  observedAt?: bigint | number | string;
-  meta?: Record<string, unknown>;
-  sourceType?: string;
-  selector?: string;
-  extractedType?: string;
-  evidenceType?: string;
-  evidenceURI?: string;
-  notes?: string;
-  crawler?: Address;
-}
-
-// Legacy local shape kept only for source-fetch template handling in agents.
-export interface ClaimPayload {
-  schemaId: string;
-  sourceType: string;
-  sourceRef: string;
-  selector: string;
-  extracted: string;
-  extractedType: string;
-  timestamp: bigint;
-  responseHash: Hex;
-  evidenceType: string;
-  evidenceURI: string;
-  crawler: Address;
-  notes?: string;
-}
 
 export interface ClaimQuery {
   status?: 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -137,25 +105,6 @@ interface SubmitClaimResponse {
   claimHash: Hex;
 }
 
-function toAllocationClaim(input: {
-  fundId: string;
-  epochId: bigint;
-  participant: Address;
-  sourcePayload: ClaimPayload;
-}): AllocationClaimV1 {
-  return {
-    claimVersion: 'v1',
-    fundId: input.fundId,
-    epochId: input.epochId,
-    participant: input.participant,
-    // v0 bridge: legacy payload is mapped into 1-asset target claim.
-    targetWeights: [10_000n],
-    horizonSec: 3600n,
-    nonce: input.sourcePayload.timestamp,
-    submittedAt: input.sourcePayload.timestamp
-  };
-}
-
 export interface IntentOnchainBundleItem {
   verifier: Address;
   expiresAt: string;
@@ -203,42 +152,6 @@ const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
-};
-
-const toBigIntOrThrow = (
-  value: bigint | number | string | undefined,
-  label: string
-): bigint => {
-  if (value === undefined) {
-    throw new Error(`${label} is required`);
-  }
-  try {
-    return BigInt(value);
-  } catch {
-    throw new Error(`${label} must be an integer-compatible value`);
-  }
-};
-
-const canonicalizeJsonValue = (value: unknown): unknown => {
-  if (typeof value === 'bigint') return value.toString();
-  if (Array.isArray(value)) return value.map((item) => canonicalizeJsonValue(item));
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, nested]) => nested !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([key, nested]) => [key, canonicalizeJsonValue(nested)]);
-    return Object.fromEntries(entries);
-  }
-  return value;
-};
-
-const stableJsonStringify = (value: unknown): string => {
-  const canonical = canonicalizeJsonValue(value);
-  const serialized = JSON.stringify(canonical);
-  if (serialized === undefined) {
-    return 'null';
-  }
-  return serialized;
 };
 
 const parseJsonSafe = (text: string): unknown => {
@@ -318,16 +231,11 @@ export class RelayerClient {
 
   async submitClaim(
     fundId: string,
-    claimPayload: ClaimPayload,
-    epochId: bigint | number | string
+    claim: AllocationClaimV1
   ): Promise<SubmitClaimResponse & Record<string, unknown>> {
-    const normalizedEpochId = toBigIntOrThrow(epochId, 'epochId');
-    const claim = toAllocationClaim({
-      fundId,
-      epochId: normalizedEpochId,
-      participant: this.botAddress,
-      sourcePayload: claimPayload
-    });
+    if (claim.fundId !== fundId) {
+      throw new Error('submitClaim fundId must match claim.fundId');
+    }
     const canonical = buildCanonicalAllocationClaimRecord({ claim });
     return this.request<SubmitClaimResponse & Record<string, unknown>>({
       method: 'POST',
@@ -337,50 +245,6 @@ export class RelayerClient {
       },
       withAuth: true
     });
-  }
-
-  async submitClaimTemplate(
-    fundId: string,
-    template: ClaimTemplateInput,
-    epochId: bigint | number | string
-  ): Promise<
-    SubmitClaimResponse &
-      Record<string, unknown> & {
-        localClaimHash: Hex;
-        canonicalPayload: ClaimPayload;
-      }
-  > {
-    const normalizedEpochId = toBigIntOrThrow(epochId, 'epochId');
-    const canonicalPayload = this.buildClaimPayloadFromTemplate(template);
-    const record = buildCanonicalAllocationClaimRecord({
-      claim: toAllocationClaim({
-        fundId,
-        epochId: normalizedEpochId,
-        participant: this.botAddress,
-        sourcePayload: canonicalPayload
-      })
-    });
-    const response = await this.submitClaim(fundId, canonicalPayload, normalizedEpochId);
-    if (response.claimHash.toLowerCase() !== record.claimHash.toLowerCase()) {
-      throw new RelayerHttpError({
-        endpoint: `POST /api/v1/funds/${fundId}/claims`,
-        status: 500,
-        code: 'CLAIM_HASH_MISMATCH',
-        message:
-          'Relayer claimHash mismatch between local canonical build and server response.',
-        retryable: false,
-        requestId: randomUUID(),
-        details: {
-          localClaimHash: record.claimHash,
-          remoteClaimHash: response.claimHash
-        }
-      });
-    }
-    return {
-      ...response,
-      localClaimHash: record.claimHash,
-      canonicalPayload
-    };
   }
 
   async getClaims(
@@ -584,39 +448,6 @@ export class RelayerClient {
       ['intent:attested'],
       handlers
     );
-  }
-
-  buildClaimPayloadFromTemplate(template: ClaimTemplateInput): ClaimPayload {
-    if (!template.templateType || !template.sourceRef) {
-      throw new Error('templateType and sourceRef are required for claim template');
-    }
-
-    const rawJson = stableJsonStringify(template.raw);
-    const metaJson = template.meta ? stableJsonStringify(template.meta) : '';
-    const observedAt =
-      template.observedAt === undefined
-        ? BigInt(Math.floor(Date.now() / 1000))
-        : toBigIntOrThrow(template.observedAt, 'observedAt');
-    const notes = template.notes
-      ? template.notes
-      : metaJson
-        ? `templateType=${template.templateType};meta=${metaJson}`
-        : `templateType=${template.templateType}`;
-
-    return {
-      schemaId: 'claim_template_v0',
-      sourceType: template.sourceType ?? 'WEB',
-      sourceRef: template.sourceRef,
-      selector: template.selector ?? '$.raw',
-      extracted: rawJson,
-      extractedType: template.extractedType ?? 'json',
-      timestamp: observedAt,
-      responseHash: keccak256(toHex(rawJson)),
-      evidenceType: template.evidenceType ?? 'url',
-      evidenceURI: template.evidenceURI ?? template.sourceRef,
-      crawler: template.crawler ?? this.botAddress,
-      notes
-    };
   }
 
   private subscribeToEvents<TType extends string>(
