@@ -17,7 +17,7 @@ function printUsage() {
 
 Usage:
   openfunderse list
-  openfunderse install <pack-name> [--dest <skills-dir>] [--codex-home <dir>] [--force] [--link] [--with-runtime]
+  openfunderse install <pack-name> [--dest <skills-dir>] [--openclaw-home <dir>] [--force] [--link] [--with-runtime]
                      [--runtime-package <name>] [--runtime-dir <dir>] [--runtime-manager <npm|pnpm|yarn|bun>]
 
 Examples:
@@ -25,7 +25,7 @@ Examples:
   openfunderse install openfunderse
   openfunderse install openfunderse --link
   openfunderse install openfunderse --with-runtime
-  openfunderse install openfunderse --codex-home /tmp/codex-home
+  openfunderse install openfunderse --openclaw-home /tmp/.openclaw
 `);
 }
 
@@ -36,7 +36,7 @@ function parseArgs(argv) {
     force: false,
     link: false,
     dest: "",
-    codexHome: "",
+    openclawHome: "",
     withRuntime: false,
     runtimePackage: "",
     runtimeDir: "",
@@ -63,8 +63,8 @@ function parseArgs(argv) {
       i += 1;
       continue;
     }
-    if (token === "--codex-home") {
-      options.codexHome = args[i + 1] ?? "";
+    if (token === "--openclaw-home" || token === "--codex-home") {
+      options.openclawHome = args[i + 1] ?? "";
       i += 1;
       continue;
     }
@@ -96,8 +96,8 @@ function parseArgs(argv) {
   return { command, options, positionals };
 }
 
-function defaultCodexHome() {
-  return process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
+function defaultOpenClawHome() {
+  return process.env.OPENCLAW_HOME || process.env.CODEX_HOME || path.join(os.homedir(), ".openclaw");
 }
 
 function ensureUnderRoot(root, target) {
@@ -275,11 +275,13 @@ async function installPack(packName, options) {
     throw new Error("manifest has no bundles");
   }
 
-  const codexHome = options.codexHome ? path.resolve(options.codexHome) : defaultCodexHome();
+  const openclawHome = options.openclawHome
+    ? path.resolve(options.openclawHome)
+    : defaultOpenClawHome();
   const skillsRoot = options.dest
     ? path.resolve(options.dest)
-    : path.join(codexHome, "skills");
-  const packMetaRoot = path.join(codexHome, "packs", packName);
+    : path.join(openclawHome, "skills");
+  const packMetaRoot = path.join(openclawHome, "packs", packName);
 
   await mkdir(path.dirname(path.join(packMetaRoot, "_")), { recursive: true });
   await cp(packDir, packMetaRoot, { recursive: true, force: true });
