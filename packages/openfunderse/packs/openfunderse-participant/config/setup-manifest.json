@@ -1,0 +1,12 @@
+{
+  "name": "openfunderse-participant-pack",
+  "version": "0.1.0",
+  "installCommand": "npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime",
+  "description": "Standalone OpenFunderse participant skill pack.",
+  "bundles": [
+    {
+      "id": "participant",
+      "skill": "openfunderse-participant/SKILL.md"
+    }
+  ]
+}

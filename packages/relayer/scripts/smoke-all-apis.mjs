@@ -56,7 +56,7 @@ const tokenIn =
 const tokenOut =
   process.env.TOKEN_OUT ?? "0x00000000000000000000000000000000000000e2";
 const vaultAddress =
-  process.env.VAULT_ADDRESS ?? "0x00000000000000000000000000000000000000d1";
+  process.env.CLAW_VAULT_ADDRESS ?? "0x00000000000000000000000000000000000000d1";
 const adapterAddress =
   process.env.ADAPTER_ADDRESS ?? "0x00000000000000000000000000000000000000f1";
 const adapterData = process.env.ADAPTER_DATA ?? "0x";

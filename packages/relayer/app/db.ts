@@ -7,7 +7,7 @@ import { genSaltSync, hashSync } from 'bcrypt-ts';
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
 // https://authjs.dev/reference/adapter/drizzle
-const postgresUrl = process.env.POSTGRES_URL;
+const postgresUrl = process.env.DATABASE_URL;
 const hasDb = Boolean(postgresUrl);
 const connectionString = hasDb
   ? `${postgresUrl}${postgresUrl!.includes('?') ? '&' : '?'}sslmode=require`
@@ -26,7 +26,7 @@ export async function getUser(email: string) {
 
 export async function createUser(email: string, password: string) {
   if (!db) {
-    throw new Error('POSTGRES_URL is required to create users.');
+    throw new Error('DATABASE_URL is required to create users.');
   }
 
   const users = await ensureTableExists();
@@ -38,7 +38,7 @@ export async function createUser(email: string, password: string) {
 
 async function ensureTableExists() {
   if (!client) {
-    throw new Error('POSTGRES_URL is required for database operations.');
+    throw new Error('DATABASE_URL is required for database operations.');
   }
 
   const result = await client`

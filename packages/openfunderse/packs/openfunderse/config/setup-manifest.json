@@ -2,27 +2,17 @@
   "name": "openfunderse-agent-pack",
   "version": "0.1.0",
   "installCommand": "npx @wiimdy/openfunderse@latest install openfunderse --with-runtime",
-  "description": "Scaffold manifest for future MoltBot skills/prompts packaging.",
+  "description": "Unified OpenFunderse pack with strategy + participant skills.",
   "bundles": [
     {
-      "id": "clawbot-core",
-      "skill": "skills/clawbot-core/SKILL.md",
-      "prompt": "prompts/core/system.md"
-    },
-    {
       "id": "strategy",
-      "skill": "skills/strategy/SKILL.md",
+      "skill": "skills/openfunderse-strategy/SKILL.md",
       "prompt": "prompts/strategy/system.md"
     },
     {
       "id": "participant",
-      "skill": "skills/participant/SKILL.md",
+      "skill": "skills/openfunderse-participant/SKILL.md",
       "prompt": "prompts/participant/system.md"
-    },
-    {
-      "id": "relayer",
-      "skill": "skills/relayer/SKILL.md",
-      "prompt": "prompts/relayer/system.md"
     }
   ],
   "todo": [

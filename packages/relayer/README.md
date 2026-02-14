@@ -104,7 +104,7 @@ npm run dev -w @claw/relayer
 - reward score/mint budget/settlement API는 MVP에서 미구현(TODO)입니다.
 
 ## Database
-- Required: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`
+- Required: `SUPABASE_URL`, `SUPABASE_ANON_KEY`
 - Apply `/Users/ham-yunsig/Documents/github/claw-validation-market/packages/relayer/supabase/schema.sql` in Supabase SQL Editor before running relayer.
 
 ## Required Env (weighted mode)

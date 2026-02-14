@@ -1,8 +1,9 @@
 ---
-name: participant-skill
+name: openfunderse-participant
 description: Participant MoltBot for data mining (claims) and cross-verification (attestations)
 metadata:
   openclaw:
+    installCommand: npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
     requires:
       env:
         - RELAYER_URL
@@ -21,6 +22,38 @@ metadata:
 # Participant MoltBot Skill
 
 The Participant MoltBot is responsible for mining data claims from specified sources and verifying claims or intents proposed by other agents. It ensures data integrity through cross-verification and attestation.
+
+## Quick Start (ClawHub Users)
+
+1) Install the skill:
+
+```bash
+npx clawhub@latest install openfunderse-participant
+```
+
+2) Install runtime + generate env scaffold:
+
+```bash
+npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
+```
+
+3) Rotate the temporary bootstrap key and write a fresh participant wallet to env:
+
+```bash
+npx @wiimdy/openfunderse@latest bot-init \
+  --skill-name participant \
+  --yes
+```
+
+4) Load env for the current shell:
+
+```bash
+set -a; source .env; set +a
+```
+
+Note:
+- The scaffold includes a temporary public key placeholder by default.
+- Always run `bot-init` before funding or running production actions.
 
 ## Credential Scope
 
