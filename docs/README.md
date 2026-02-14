@@ -4,6 +4,7 @@ Use this page as the primary docs entrypoint.
 
 ## Core (start here)
 - Product context: [`PRD.md`](PRD.md)
+- Claim redesign baseline (KR): [`CLAIM_REDESIGN_V1_kr.md`](CLAIM_REDESIGN_V1_kr.md)
 - Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - Current implementation status (KR): [`CURRENT_STATUS_kr.md`](CURRENT_STATUS_kr.md)
 - System actions + threat model (KR): [`SYSTEM_ACTIONS_THREAT_MODEL_kr.md`](SYSTEM_ACTIONS_THREAT_MODEL_kr.md)

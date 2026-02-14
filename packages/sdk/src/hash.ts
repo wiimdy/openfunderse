@@ -1,30 +1,42 @@
 import { encodeAbiParameters, keccak256, parseAbiParameters, toHex } from "viem";
-import { canonicalClaim, canonicalIntent } from "./canonical.js";
+import { canonicalAllocationClaim, canonicalIntent } from "./canonical.js";
 import { assertStrictlySortedHex, uniqueSortedBytes32Hex } from "./ordering.js";
-import type { Address, ClaimPayload, Hex, TradeIntent } from "./types.js";
+import type { Address, AllocationClaimV1, Hex, TradeIntent } from "./types.js";
 import { assertUint16, assertUint64 } from "./validate.js";
 
-export function claimHash(payload: ClaimPayload): Hex {
-  const v = canonicalClaim(payload);
-  assertUint64(v.timestamp, "timestamp");
+function assertUint256NonNegative(value: bigint, label: string): void {
+  if (value < 0n) {
+    throw new Error(`${label} must be uint256`);
+  }
+}
+
+export function allocationClaimHash(claim: AllocationClaimV1): Hex {
+  const v = canonicalAllocationClaim(claim);
+  assertUint64(v.epochId, "epochId");
+  assertUint64(v.horizonSec, "horizonSec");
+  assertUint64(v.submittedAt, "submittedAt");
+  assertUint256NonNegative(v.nonce, "nonce");
+  if (v.targetWeights.length === 0) {
+    throw new Error("targetWeights must not be empty");
+  }
+  v.targetWeights.forEach((weight, idx) => {
+    assertUint256NonNegative(weight, `targetWeights[${idx}]`);
+  });
+
   return keccak256(
     encodeAbiParameters(
       parseAbiParameters(
-        "string schemaId,string sourceType,string sourceRef,string selector,string extracted,string extractedType,uint64 timestamp,bytes32 responseHash,string evidenceType,string evidenceURI,address crawler,string notes"
+        "string claimVersion,string fundId,uint64 epochId,address participant,uint256[] targetWeights,uint64 horizonSec,uint256 nonce,uint64 submittedAt"
       ),
       [
-        v.schemaId,
-        v.sourceType,
-        v.sourceRef,
-        v.selector,
-        v.extracted,
-        v.extractedType,
-        v.timestamp,
-        v.responseHash,
-        v.evidenceType,
-        v.evidenceURI,
-        v.crawler,
-        v.notes ?? ""
+        v.claimVersion,
+        v.fundId,
+        v.epochId,
+        v.participant,
+        v.targetWeights,
+        v.horizonSec,
+        v.nonce,
+        v.submittedAt
       ]
     )
   );
@@ -74,6 +86,9 @@ export function snapshotHashFromUnordered(epochId: bigint, claimHashes: Hex[]): 
   const orderedClaimHashes = canonicalOrderedClaimHashes(claimHashes);
   return snapshotHash(epochId, orderedClaimHashes);
 }
+
+export const epochStateHash = snapshotHash;
+export const epochStateHashFromUnordered = snapshotHashFromUnordered;
 
 export function reasonHash(reason: string): Hex {
   return keccak256(toHex(reason.normalize("NFC").trim()));

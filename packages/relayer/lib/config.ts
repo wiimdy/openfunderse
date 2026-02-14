@@ -46,6 +46,16 @@ function envBigInt(name: string, fallback?: bigint): bigint {
   }
 }
 
+function envBigIntOptional(name: string): bigint | undefined {
+  const value = process.env[name];
+  if (!value) return undefined;
+  try {
+    return BigInt(value);
+  } catch {
+    throw new Error(`invalid bigint env: ${name}`);
+  }
+}
+
 export function parseCsv(value: string | undefined): string[] {
   if (!value) return [];
   return value
@@ -83,30 +93,19 @@ export function loadRuntimeConfig() {
   const chainId = BigInt(env("CHAIN_ID"));
   const rpcUrl = env("RPC_URL");
   const signerKey = envOptional("RELAYER_SIGNER_PRIVATE_KEY") as Hex | undefined;
-  const claimBookAddress = envOptional("CLAIM_BOOK_ADDRESS") as Address | undefined;
   const intentBookAddress = env("INTENT_BOOK_ADDRESS") as Address;
   const clawVaultAddress = env("CLAW_VAULT_ADDRESS") as Address;
-  const claimAttestationVerifierAddress = env(
-    "CLAIM_ATTESTATION_VERIFIER_ADDRESS"
-  ) as Address;
-  const claimFinalizationMode = parseClaimFinalizationMode(
-    envOptional("CLAIM_FINALIZATION_MODE")
-  );
-
-  if (claimFinalizationMode === "ONCHAIN" && !claimBookAddress) {
-    throw new Error("missing required env: CLAIM_BOOK_ADDRESS (when CLAIM_FINALIZATION_MODE=ONCHAIN)");
-  }
 
   return {
     chainId,
     rpcUrl,
     signerKey,
-    claimBookAddress,
-    claimFinalizationMode,
-    claimAttestationVerifierAddress,
     intentBookAddress,
     clawVaultAddress,
-    claimThresholdWeight: envBigInt("CLAIM_THRESHOLD_WEIGHT", BigInt(3)),
+    claimThresholdWeight:
+      envBigIntOptional("CLAIM_THRESHOLD_WEIGHT") ??
+      envBigIntOptional("VERIFIER_THRESHOLD_WEIGHT") ??
+      BigInt(3),
     intentThresholdWeight: envBigInt("INTENT_THRESHOLD_WEIGHT", BigInt(5)),
     maxSubmitRetries: envNumber("MAX_SUBMIT_RETRIES", 3),
     allowlist: new Set(parseCsv(process.env.VERIFIER_ALLOWLIST).map((v) => v.toLowerCase())),
@@ -116,8 +115,10 @@ export function loadRuntimeConfig() {
 
 export function loadReadOnlyRuntimeConfig() {
   return {
-    claimFinalizationMode: parseClaimFinalizationMode(envOptional("CLAIM_FINALIZATION_MODE")),
-    claimThresholdWeight: envBigInt("CLAIM_THRESHOLD_WEIGHT", BigInt(3)),
+    claimThresholdWeight:
+      envBigIntOptional("CLAIM_THRESHOLD_WEIGHT") ??
+      envBigIntOptional("VERIFIER_THRESHOLD_WEIGHT") ??
+      BigInt(3),
     intentThresholdWeight: envBigInt("INTENT_THRESHOLD_WEIGHT", BigInt(5)),
     validatorWeights: parseWeightCsv(process.env.VERIFIER_WEIGHT_SNAPSHOT)
   };

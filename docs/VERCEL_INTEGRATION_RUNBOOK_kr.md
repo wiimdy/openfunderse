@@ -56,7 +56,7 @@ AUTH_SECRET=long-random-secret
 POSTGRES_URL=postgres://user:pass@host:5432/db
 ADMIN_EMAILS=ops1@yourdomain.com,ops2@yourdomain.com
 BOT_API_KEYS=bot-strategy-1:key1,bot-participant-1:key2
-BOT_SCOPES=bot-strategy-1:intents.propose,bot-participant-1:claims.submit|claims.attest|intents.attest
+BOT_SCOPES=bot-strategy-1:intents.propose,bot-participant-1:claims.submit|intents.attest
 ```
 
 ## 3) 운영자/유저 동선
@@ -119,7 +119,7 @@ MoltBot 런타임에서 Relayer 호출 시 아래 헤더를 항상 포함:
 - `x-bot-api-key`
 
 역할별 scope 예시:
-- participant: `claims.submit`, `claims.attest`, `intents.attest`
+- participant: `claims.submit`, `intents.attest`
 - strategy: `intents.propose`
 
 ## 5.2 설치 UX 목표

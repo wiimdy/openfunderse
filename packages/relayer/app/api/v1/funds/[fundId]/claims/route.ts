@@ -2,14 +2,13 @@ import { NextResponse } from "next/server";
 import { requireBotAuth } from "@/lib/bot-auth";
 import { isSameAddress, requireFundBotRole } from "@/lib/fund-bot-authz";
 import {
-  buildCanonicalClaimRecord,
-  type ClaimPayload
+  buildCanonicalAllocationClaimRecord,
+  type AllocationClaimV1
 } from "@claw/protocol-sdk";
 import {
   getFund,
-  insertClaim,
-  listClaimsByFund,
-  upsertSubjectState
+  insertAllocationClaim,
+  listAllocationClaimsByFund
 } from "@/lib/supabase";
 
 export async function POST(
@@ -46,32 +45,52 @@ export async function POST(
     return NextResponse.json({ error: "BAD_REQUEST", message: "invalid json body" }, { status: 400 });
   }
 
-  const claimPayload = (body.claimPayload ?? body.payload) as ClaimPayload | undefined;
-  const epochIdRaw = body.epochId ?? body.epoch_id;
-  let epochId: bigint;
-  try {
-    epochId = BigInt(String(epochIdRaw ?? "0"));
-  } catch {
+  const raw = (body.claim ?? body.allocationClaim) as Record<string, unknown> | undefined;
+  if (!raw) {
     return NextResponse.json(
-      { error: "BAD_REQUEST", message: "epochId must be an integer" },
+      { error: "BAD_REQUEST", message: "claim is required" },
       { status: 400 }
     );
   }
 
-  if (!claimPayload) {
+  let claim: AllocationClaimV1;
+  try {
+    claim = {
+      claimVersion: String(raw.claimVersion ?? "v1") as "v1",
+      fundId: String(raw.fundId ?? fundId),
+      epochId: BigInt(String(raw.epochId ?? "0")),
+      participant: String(raw.participant ?? "") as `0x${string}`,
+      targetWeights: Array.isArray(raw.targetWeights)
+        ? raw.targetWeights.map((value) => BigInt(String(value)))
+        : [],
+      horizonSec: BigInt(String(raw.horizonSec ?? "0")),
+      nonce: BigInt(String(raw.nonce ?? "0")),
+      submittedAt: BigInt(String(raw.submittedAt ?? Math.floor(Date.now() / 1000)))
+    };
+  } catch (error) {
     return NextResponse.json(
-      { error: "BAD_REQUEST", message: "claimPayload is required" },
+      {
+        error: "BAD_REQUEST",
+        message: error instanceof Error ? `invalid claim payload: ${error.message}` : "invalid claim payload"
+      },
       { status: 400 }
     );
   }
-  const claimedCrawler = String(claimPayload.crawler ?? "");
-  if (!isSameAddress(claimedCrawler, membership.membership.botAddress)) {
+
+  if (claim.fundId !== fundId) {
+    return NextResponse.json(
+      { error: "BAD_REQUEST", message: "claim.fundId must match request fundId" },
+      { status: 400 }
+    );
+  }
+
+  if (!isSameAddress(claim.participant, membership.membership.botAddress)) {
     return NextResponse.json(
       {
         error: "FORBIDDEN",
-        message: "claimPayload.crawler must match registered participant bot address",
-        expectedCrawler: membership.membership.botAddress,
-        receivedCrawler: claimedCrawler
+        message: "claim.participant must match registered participant bot address",
+        expectedParticipant: membership.membership.botAddress,
+        receivedParticipant: claim.participant
       },
       { status: 403 }
     );
@@ -79,10 +98,7 @@ export async function POST(
 
   let record;
   try {
-    record = buildCanonicalClaimRecord({
-      payload: claimPayload,
-      epochId
-    });
+    record = buildCanonicalAllocationClaimRecord({ claim });
   } catch (error) {
     return NextResponse.json(
       {
@@ -93,11 +109,12 @@ export async function POST(
     );
   }
 
-  const inserted = await insertClaim({
+  const inserted = await insertAllocationClaim({
     fundId,
     claimHash: record.claimHash,
-    epochId: record.epochId,
-    payloadJson: JSON.stringify(record.payload),
+    epochId: record.claim.epochId,
+    participant: record.claim.participant,
+    claimJson: JSON.stringify(record.claim, (_, v) => (typeof v === "bigint" ? v.toString() : v)),
     createdBy: botAuth.botId
   });
 
@@ -112,22 +129,15 @@ export async function POST(
     );
   }
 
-  await upsertSubjectState({
-    fundId,
-    subjectType: "CLAIM",
-    subjectHash: record.claimHash,
-    epochId: record.epochId,
-    thresholdWeight: BigInt(fund.verifier_threshold_weight)
-  });
-
   return NextResponse.json(
     {
       status: "OK",
       endpoint: "POST /api/v1/funds/{fundId}/claims",
       fundId,
       botId: botAuth.botId,
-      epochId: record.epochId.toString(),
-      claimHash: record.claimHash
+      claimHash: record.claimHash,
+      epochId: record.claim.epochId.toString(),
+      participant: record.claim.participant
     },
     { status: 200 }
   );
@@ -139,15 +149,9 @@ export async function GET(
 ) {
   const { fundId } = await context.params;
   const url = new URL(request.url);
-  const statusRaw = (url.searchParams.get("status") ?? "").toUpperCase();
   const epochIdRaw = url.searchParams.get("epochId");
   const limit = Math.min(Number(url.searchParams.get("limit") ?? "20"), 100);
   const offset = Math.max(Number(url.searchParams.get("offset") ?? "0"), 0);
-
-  const status =
-    statusRaw === "PENDING" || statusRaw === "APPROVED" || statusRaw === "REJECTED"
-      ? statusRaw
-      : undefined;
 
   let epochId: bigint | undefined;
   if (epochIdRaw) {
@@ -161,9 +165,8 @@ export async function GET(
     }
   }
 
-  const result = await listClaimsByFund({
+  const result = await listAllocationClaimsByFund({
     fundId,
-    status: status as "PENDING" | "APPROVED" | "REJECTED" | undefined,
     epochId,
     limit: Number.isFinite(limit) && limit > 0 ? limit : 20,
     offset: Number.isFinite(offset) ? offset : 0
@@ -178,11 +181,8 @@ export async function GET(
         id: row.id,
         claimHash: row.claim_hash,
         epochId: row.epoch_id,
-        status: row.status,
-        attestedWeight: row.attested_weight,
-        thresholdWeight: row.threshold_weight,
-        attestationCount: row.attestation_count,
-        payload: JSON.parse(row.payload_json),
+        participant: row.participant,
+        claim: JSON.parse(row.claim_json),
         createdBy: row.created_by,
         createdAt: row.created_at,
         updatedAt: row.updated_at

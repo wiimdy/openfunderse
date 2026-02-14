@@ -76,13 +76,11 @@ Relayer client:
 - `RELAYER_URL`
 - `BOT_ID`
 - `BOT_API_KEY`
-- `BOT_ADDRESS` (required for claim submit/attest; must match registered participant bot address)
+- `BOT_ADDRESS` (required for claim submit; must match registered participant bot address)
 
 Signer:
 - `BOT_PRIVATE_KEY` or `VERIFIER_PRIVATE_KEY`
 - `CHAIN_ID`
-- `CLAIM_ATTESTATION_VERIFIER_ADDRESS` (preferred)
-- `CLAIM_BOOK_ADDRESS` (fallback for claim attest domain)
 - `INTENT_BOOK_ADDRESS` (required only for intent attestation signing)
 
 Participant source safety:
@@ -140,14 +138,7 @@ npm run participant:submit -w @claw/agents -- \
   --claim-file /tmp/participant-mine.json \
   --submit
 
-# 4) Attest submitted claim
-npm run participant:attest -w @claw/agents -- \
-  --fund-id demo-fund \
-  --epoch-id 1 \
-  --claim-hash 0x... \
-  --submit
-
-# 5) One-shot e2e (mine -> verify -> submit -> attest)
+# 4) One-shot e2e (mine -> verify -> submit)
 npm run participant:e2e -w @claw/agents -- \
   --fund-id demo-fund \
   --epoch-id 1 \

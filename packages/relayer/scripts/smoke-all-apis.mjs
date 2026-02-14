@@ -2,7 +2,6 @@
 
 import { privateKeyToAccount } from "viem/accounts";
 import {
-  claimAttestationTypedData,
   intentAttestationTypedData
 } from "@claw/protocol-sdk";
 
@@ -36,16 +35,12 @@ const participantBotAddressFromEnv =
   process.env.PARTICIPANT_ADDRESS ??
   process.env.BOT_ADDRESS;
 
-const claimBookAddress = process.env.CLAIM_BOOK_ADDRESS;
 const intentBookAddress = process.env.INTENT_BOOK_ADDRESS;
 const chainId = process.env.CHAIN_ID ? BigInt(process.env.CHAIN_ID) : null;
-const claimFinalizationMode = (process.env.CLAIM_FINALIZATION_MODE ?? "OFFCHAIN").toUpperCase();
-const claimAttestationVerifierAddress = process.env.CLAIM_ATTESTATION_VERIFIER_ADDRESS;
 
 const epochId = process.env.EPOCH_ID ? BigInt(process.env.EPOCH_ID) : 1n;
 const nowSec = BigInt(Math.floor(Date.now() / 1000));
 const expiresAt = nowSec + 3600n;
-const claimNonce = process.env.CLAIM_NONCE ? BigInt(process.env.CLAIM_NONCE) : 1n;
 const intentNonce = process.env.INTENT_NONCE
   ? BigInt(process.env.INTENT_NONCE)
   : 1n;
@@ -86,24 +81,10 @@ if (!participantPrivateKey) {
   console.error("BOT_PRIVATE_KEY (or PARTICIPANT_PRIVATE_KEY / VERIFIER_PRIVATE_KEY) is required");
   process.exit(1);
 }
-if (claimFinalizationMode !== "OFFCHAIN" && claimFinalizationMode !== "ONCHAIN") {
-  console.error("CLAIM_FINALIZATION_MODE must be OFFCHAIN or ONCHAIN");
-  process.exit(1);
-}
 if (!intentBookAddress || !chainId) {
   console.error(
     "INTENT_BOOK_ADDRESS and CHAIN_ID are required"
   );
-  process.exit(1);
-}
-if (!claimAttestationVerifierAddress) {
-  console.error(
-    "CLAIM_ATTESTATION_VERIFIER_ADDRESS is required"
-  );
-  process.exit(1);
-}
-if (claimFinalizationMode === "ONCHAIN" && !claimBookAddress) {
-  console.error("CLAIM_BOOK_ADDRESS is required when CLAIM_FINALIZATION_MODE=ONCHAIN");
   process.exit(1);
 }
 
@@ -328,56 +309,30 @@ async function main() {
   });
   assertStatus(listClaims.response, [200], "list claims");
 
-  const claimMsg = {
-    claimHash,
-    epochId,
-    verifier: participantAddress,
-    expiresAt,
-    nonce: claimNonce
-  };
-  const claimSig = await participantAccount.signTypedData(
-    claimAttestationTypedData(
-      {
-        name: "ClawClaimBook",
-        version: "1",
-        chainId,
-        verifyingContract: claimAttestationVerifierAddress
-      },
-      claimMsg
-    )
-  );
-  const attestClaim = await call("POST /attestations", {
+  const aggregateEpoch = await call("POST /epochs/{epochId}/aggregate", {
     method: "POST",
-    path: `/api/v1/funds/${fundId}/attestations`,
+    path: `/api/v1/funds/${fundId}/epochs/${epochId.toString()}/aggregate`,
     headers: {
       "Content-Type": "application/json",
-      "x-bot-id": participantBotId,
-      "x-bot-api-key": participantBotApiKey
-    },
-    body: JSON.stringify({
-      claimHash,
-      epochId: epochId.toString(),
-      verifier: participantAddress,
-      expiresAt: expiresAt.toString(),
-      nonce: claimNonce.toString(),
-      signature: claimSig
-    })
+      "x-bot-id": strategyBotId,
+      "x-bot-api-key": strategyBotApiKey
+    }
   });
-  assertStatus(attestClaim.response, [200, 202], "attest claim");
+  assertStatus(aggregateEpoch.response, [200], "aggregate epoch");
 
-  const snapshot = await call("GET /snapshots/latest", {
+  const epochStateRes = await call("GET /epochs/latest", {
     method: "GET",
-    path: `/api/v1/funds/${fundId}/snapshots/latest`
+    path: `/api/v1/funds/${fundId}/epochs/latest`
   });
-  assertStatus(snapshot.response, [200], "snapshot latest");
-  const snapshotHash = snapshot.body?.snapshot?.snapshotHash;
+  assertStatus(epochStateRes.response, [200], "epochs latest");
+  const snapshotHash = epochStateRes.body?.epochState?.epochStateHash;
   if (!snapshotHash) {
     console.log("\n=== WARN ===");
     console.log(
-      "snapshotHash missing. Claim threshold may not be finalized yet, or finalization/onchain submit failed."
+      "epochStateHash missing. Run epoch aggregation after claim submission."
     );
     console.log(
-      "Skipping intent propose/attest steps; completed all offchain API flows up to claim attestation."
+      "Skipping intent propose/attest steps; completed all offchain API flows up to epoch aggregation."
     );
     return;
   }
@@ -470,9 +425,7 @@ async function main() {
     stringify({
       baseUrl,
       fundId,
-      claimFinalizationMode,
       participantAddress,
-      claimAttestationVerifierAddress,
       claimHash,
       snapshotHash,
       intentHash

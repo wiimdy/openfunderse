@@ -279,7 +279,7 @@
           }
         },
         {
-          "name": "POST claim attestation (valid signature)",
+          "name": "POST epochs/{epochId}/aggregate",
           "request": {
             "method": "POST",
             "header": [
@@ -289,19 +289,15 @@
               },
               {
                 "key": "x-bot-id",
-                "value": "{{participant_bot_id}}"
+                "value": "{{strategy_bot_id}}"
               },
               {
                 "key": "x-bot-api-key",
-                "value": "{{participant_bot_api_key}}"
+                "value": "{{strategy_bot_api_key}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\",\n  \"verifier\": \"{{participant_address}}\",\n  \"expiresAt\": \"{{claim_expires_at}}\",\n  \"nonce\": \"{{claim_nonce}}\",\n  \"signature\": \"{{claim_signature}}\"\n}"
-            },
             "url": {
-              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/attestations",
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/epochs/{{epoch_id}}/aggregate",
               "host": [
                 "{{base_url}}"
               ],
@@ -310,14 +306,16 @@
                 "v1",
                 "funds",
                 "{{fund_id}}",
-                "attestations"
+                "epochs",
+                "{{epoch_id}}",
+                "aggregate"
               ]
             },
-            "description": "Expected 202 (pending) or 200 (submitted) when signature and weighted config are valid."
+            "description": "Strategy bot only. Aggregates latest participant claims for epoch and persists epochStateHash."
           }
         },
         {
-          "name": "POST claim attestation (negative: bad signature)",
+          "name": "POST attestations (legacy removed)",
           "request": {
             "method": "POST",
             "header": [
@@ -336,7 +334,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\",\n  \"verifier\": \"{{participant_address}}\",\n  \"expiresAt\": \"{{claim_expires_at}}\",\n  \"nonce\": \"{{claim_nonce}}\",\n  \"signature\": \"0xdeadbeef\"\n}"
+              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/attestations",
@@ -351,7 +349,7 @@
                 "attestations"
               ]
             },
-            "description": "Expected 400 verification failure."
+            "description": "Legacy endpoint removed. Expected 404."
           }
         }
       ]
@@ -479,12 +477,12 @@
           }
         },
         {
-          "name": "GET snapshots/latest",
+          "name": "GET epochs/latest",
           "request": {
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/snapshots/latest",
+              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/epochs/latest",
               "host": [
                 "{{base_url}}"
               ],
@@ -493,11 +491,11 @@
                 "v1",
                 "funds",
                 "{{fund_id}}",
-                "snapshots",
+                "epochs",
                 "latest"
               ]
             },
-            "description": "Returns latest snapshot. If absent, relayer auto-builds from latest approved claims."
+            "description": "Returns latest epoch state hash and aggregate weights."
           }
         }
       ]
@@ -551,7 +549,7 @@
           }
         },
         {
-          "name": "GET claim events (SSE)",
+          "name": "GET claim events (SSE, legacy removed)",
           "request": {
             "method": "GET",
             "header": [
@@ -579,7 +577,7 @@
                 "claims"
               ]
             },
-            "description": "Server-sent events stream for claim attestation/snapshot events."
+            "description": "Legacy endpoint removed. Expected 404."
           }
         },
         {

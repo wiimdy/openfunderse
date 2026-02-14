@@ -9,7 +9,7 @@ import {
 } from "@claw/protocol-sdk";
 import {
   getFund,
-  getLatestSnapshot,
+  getLatestEpochState,
   insertIntent,
   upsertSubjectState
 } from "@/lib/supabase";
@@ -121,20 +121,23 @@ export async function POST(
     );
   }
 
-  const latestSnapshot = await getLatestSnapshot(fundId);
-  if (!latestSnapshot) {
+  const latestEpochState = await getLatestEpochState(fundId);
+  if (!latestEpochState) {
     return NextResponse.json(
-      { error: "BAD_REQUEST", message: "no finalized snapshot available for fund" },
+      { error: "BAD_REQUEST", message: "no finalized epoch state available for fund" },
       { status: 400 }
     );
   }
 
-  if (String(intent.snapshotHash).toLowerCase() !== latestSnapshot.snapshot_hash.toLowerCase()) {
+  if (
+    String(intent.snapshotHash).toLowerCase() !==
+    latestEpochState.epoch_state_hash.toLowerCase()
+  ) {
     return NextResponse.json(
       {
         error: "BAD_REQUEST",
-        message: "snapshotHash mismatch with latest finalized snapshot",
-        expectedSnapshotHash: latestSnapshot.snapshot_hash,
+        message: "snapshotHash mismatch with latest finalized epoch state hash",
+        expectedSnapshotHash: latestEpochState.epoch_state_hash,
         receivedSnapshotHash: intent.snapshotHash
       },
       { status: 400 }
@@ -243,7 +246,7 @@ export async function POST(
     fundId,
     subjectType: "INTENT",
     subjectHash: built.intentHash,
-    epochId: BigInt(latestSnapshot.epoch_id),
+    epochId: BigInt(latestEpochState.epoch_id),
     thresholdWeight: BigInt(fund.intent_threshold_weight)
   });
 

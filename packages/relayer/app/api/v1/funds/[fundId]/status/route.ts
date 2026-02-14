@@ -23,8 +23,6 @@ export async function GET(
       fundId,
       summary: await getStatusSummary(fundId),
       weightedConfig: {
-        claimFinalizationMode: cfg.claimFinalizationMode,
-        claimThresholdWeight: cfg.claimThresholdWeight.toString(),
         intentThresholdWeight: cfg.intentThresholdWeight.toString(),
         validatorSnapshotTotalWeight: snapshotTotalWeight.toString()
       },
