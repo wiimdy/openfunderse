@@ -1,4 +1,11 @@
-import { createPublicClient, createWalletClient, defineChain, http, parseAbi } from "viem";
+import {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  hexToString,
+  http,
+  parseAbi
+} from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   buildCoreExecutionRequestFromIntent,
@@ -18,13 +25,34 @@ import { loadExecutionConfig } from "@/lib/config";
 
 const CORE_ABI = parseAbi([
   "function validateIntentExecution(bytes32 intentHash, (address tokenIn,address tokenOut,uint256 amountIn,uint256 quoteAmountOut,uint256 minAmountOut,address adapter,bytes adapterData) req) view returns ((bool exists,bool approved,bool notExpired,bool notExecuted,bool withinNotional,bool slippageOk,bool allowlistOk,bytes32 snapshotHash,uint64 deadline,uint16 maxSlippageBps,uint256 maxNotional,bytes32 expectedAllowlistHash,bytes32 computedAllowlistHash))",
+  "function dryRunIntentExecution(bytes32 intentHash, (address tokenIn,address tokenOut,uint256 amountIn,uint256 quoteAmountOut,uint256 minAmountOut,address adapter,bytes adapterData) req) view returns ((bool exists,bool approved,bool notExpired,bool notExecuted,bool withinNotional,bool slippageOk,bool allowlistOk,bool coreNotPaused,bool vaultNotPaused,bool tokenInAllowed,bool tokenOutAllowed,bool adapterAllowed,bool lensConfigured,bool quoteOk,bytes32 snapshotHash,uint64 deadline,uint16 maxSlippageBps,uint256 maxNotional,uint256 expectedAmountOut,bytes32 expectedAllowlistHash,bytes32 computedAllowlistHash,bytes32 quoteReasonCode,bytes32 failureCode))",
   "function executeIntent(bytes32 intentHash, (address tokenIn,address tokenOut,uint256 amountIn,uint256 quoteAmountOut,uint256 minAmountOut,address adapter,bytes adapterData) req) returns (uint256 amountOut)"
 ]);
+
+const ZERO_BYTES32 =
+  "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+interface CoreDryRunResult {
+  quoteOk: boolean;
+  expectedAmountOut: bigint;
+  quoteReasonCode: Hex;
+  failureCode: Hex;
+}
 
 const RETRY_DELAYS_MS = [10_000, 30_000, 60_000, 180_000, 300_000];
 
 function delayForAttempt(attempt: number): number {
   return RETRY_DELAYS_MS[Math.min(attempt - 1, RETRY_DELAYS_MS.length - 1)];
+}
+
+function decodeBytes32(value: Hex): string {
+  if (value === ZERO_BYTES32) return "";
+
+  try {
+    return hexToString(value, { size: 32 }).replace(/\u0000+$/g, "");
+  } catch {
+    return value;
+  }
 }
 
 function clients() {
@@ -122,6 +150,33 @@ export async function runExecutionCron() {
           error
         });
         incCounter("execution_preflight_fail");
+        results.push({ id: job.id, ok: false, error });
+        continue;
+      }
+
+      const dryRun = (await publicClient.readContract({
+        address: cfg.coreAddress,
+        abi: CORE_ABI,
+        functionName: "dryRunIntentExecution",
+        args: [row.intent_hash as Hex, req]
+      })) as CoreDryRunResult;
+
+      const dryRunFailureCode = decodeBytes32(dryRun.failureCode);
+      if (dryRunFailureCode !== "OK") {
+        const quoteReasonCode = decodeBytes32(dryRun.quoteReasonCode);
+        const error =
+          `dry-run failed: failureCode=${dryRunFailureCode || "UNKNOWN"}` +
+          ` quoteReason=${quoteReasonCode || "NONE"}` +
+          ` quoteOk=${dryRun.quoteOk}` +
+          ` expectedAmountOut=${dryRun.expectedAmountOut.toString()}`;
+        await markExecutionJobFailed({
+          id: job.id,
+          attemptCount: job.attempt_count + 1,
+          retryDelayMs: delayForAttempt(job.attempt_count + 1),
+          maxAttempts: cfg.maxAttempts,
+          error
+        });
+        incCounter("execution_dryrun_fail");
         results.push({ id: job.id, ok: false, error });
         continue;
       }

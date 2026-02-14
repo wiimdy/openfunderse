@@ -16,7 +16,9 @@
     "participant:verify": "tsx src/index.ts participant-verify",
     "participant:submit": "tsx src/index.ts participant-submit",
     "participant:attest": "tsx src/index.ts participant-attest",
-    "participant:e2e": "tsx src/index.ts participant-e2e"
+    "participant:e2e": "tsx src/index.ts participant-e2e",
+    "strategy:attest:onchain": "tsx src/index.ts strategy-attest-onchain",
+    "strategy:execute:ready": "tsx src/index.ts strategy-execute-ready"
   },
   "dependencies": {
     "@claw/protocol-sdk": "file:../sdk",

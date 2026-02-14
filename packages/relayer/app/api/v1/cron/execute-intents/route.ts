@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { runExecutionCron } from "@/lib/executor";
 
 function isAuthorized(request: Request): boolean {
   const cronSecret = process.env.CRON_SECRET;
@@ -17,13 +16,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const out = await runExecutionCron();
   return NextResponse.json(
     {
-      status: "OK",
+      status: "DISABLED",
       endpoint: "POST /api/v1/cron/execute-intents",
-      ...out
+      message:
+        "Relayer executor is disabled in keyless mode. Strategy AA must submit onchain attest/execute."
     },
-    { status: 200 }
+    { status: 410 }
   );
 }

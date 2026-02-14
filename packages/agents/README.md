@@ -75,6 +75,14 @@ Role-split env for participant e2e:
 - `VERIFIER_BOT_ID`, `VERIFIER_BOT_API_KEY`, `VERIFIER_BOT_ADDRESS`
 - `VERIFIER_PRIVATE_KEY`
 
+Strategy AA env:
+- `STRATEGY_AA_BUNDLER_URL`
+- `STRATEGY_AA_ENTRYPOINT_ADDRESS`
+- `STRATEGY_AA_ACCOUNT_ADDRESS`
+- `STRATEGY_AA_OWNER_PRIVATE_KEY` (or `STRATEGY_PRIVATE_KEY`)
+- `INTENT_BOOK_ADDRESS`, `CLAW_CORE_ADDRESS`
+- optional tuning: `STRATEGY_AA_CALL_GAS_LIMIT`, `STRATEGY_AA_VERIFICATION_GAS_LIMIT`, `STRATEGY_AA_PRE_VERIFICATION_GAS`, `STRATEGY_AA_MAX_PRIORITY_FEE_PER_GAS`, `STRATEGY_AA_MAX_FEE_PER_GAS`
+
 ## Participant commands
 
 ```bash
@@ -108,6 +116,20 @@ npm run participant:e2e -w @claw/agents -- \
   --source-ref https://www.reddit.com/r/CryptoCurrency/new.json?limit=10&raw_json=1 \
   --token-address 0x0000000000000000000000000000000000000001 \
   --report-file /tmp/participant-e2e-report.json
+```
+
+## Strategy commands (AA)
+
+```bash
+# 1) READY_FOR_ONCHAIN intent attestation submit (IntentBook.attestIntent via UserOp)
+npm run strategy:attest:onchain -w @claw/agents -- \
+  --fund-id demo-fund \
+  --intent-hash 0x...
+
+# 2) READY execution jobs submit (ClawCore.executeIntent via UserOp)
+npm run strategy:execute:ready -w @claw/agents -- \
+  --fund-id demo-fund \
+  --limit 10
 ```
 
 Implemented modules:

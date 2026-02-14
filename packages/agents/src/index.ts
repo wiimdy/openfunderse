@@ -1,5 +1,6 @@
 import { runRedditMvpCli } from './reddit-mvp.js';
 import { runParticipantCli } from './participant-cli.js';
+import { runStrategyCli } from './strategy-cli.js';
 
 export { createRelayerClient, RelayerClient } from './lib/relayer-client.js';
 export type {
@@ -7,6 +8,9 @@ export type {
   ClaimQuery,
   ClaimTemplateInput,
   IntentAttestationInput,
+  IntentOnchainBundleItem,
+  IntentOnchainBundleResponse,
+  ReadyExecutionPayloadItem,
   RelayerProposeIntentInput,
   RelayerClientOptions,
   RelayerHttpErrorShape,
@@ -21,6 +25,13 @@ export type {
   SignedClaimAttestation,
   SignedIntentAttestation
 } from './lib/signer.js';
+
+export { StrategyAaClient } from './lib/aa-client.js';
+export type {
+  ExecuteViaAaInput,
+  StrategyAaClientConfig,
+  UserOperationResult
+} from './lib/aa-client.js';
 
 export {
   attestClaim,
@@ -56,6 +67,10 @@ console.log(`[agents] crawler key set=${Boolean(process.env.CRAWLER_PRIVATE_KEY)
 
 const main = async (): Promise<void> => {
   const argv = process.argv.slice(2);
+  const handledByStrategy = await runStrategyCli(argv);
+  if (handledByStrategy) {
+    return;
+  }
   const handledByParticipant = await runParticipantCli(argv);
   if (!handledByParticipant) {
     await runRedditMvpCli(argv);

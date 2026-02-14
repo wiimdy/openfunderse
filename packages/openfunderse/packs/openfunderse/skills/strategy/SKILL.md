@@ -33,7 +33,15 @@ The skill accepts a `propose_intent` task with the following schema:
     "network": "number",
     "nadfunCurveState": "object",
     "liquidity": "object",
-    "volatility": "object"
+    "volatility": "object",
+    "positions": [
+      {
+        "token": "string",
+        "quantity": "string | number",
+        "costBasisAsset": "string | number (optional)",
+        "openedAt": "unix seconds or milliseconds (optional)"
+      }
+    ]
   },
   "riskPolicy": {
     "maxNotional": "string",
@@ -60,7 +68,15 @@ The skill accepts a `propose_intent` task with the following schema:
     "network": 10143,
     "nadfunCurveState": {},
     "liquidity": {},
-    "volatility": {}
+    "volatility": {},
+    "positions": [
+      {
+        "token": "0xtoken1...",
+        "quantity": "1200000000000000000",
+        "costBasisAsset": "1000000000000000000",
+        "openedAt": 1730000000
+      }
+    ]
   },
   "riskPolicy": {
     "maxNotional": "1000",
@@ -140,3 +156,5 @@ Returned when no trade is proposed due to risk constraints or market conditions.
 7. **Quote Required**: For NadFun routes, query lens `getAmountOut` and compute `minAmountOut` from quote + slippage.
 8. **No Zero MinOut**: Never propose with `minAmountOut=0`.
 9. **Fail Closed**: If quote fails or returned router is not allowlisted, return `HOLD`.
+10. **Sell First**: If a token position exists, evaluate `SELL` triggers first (`take-profit`, `stop-loss`, `time-exit`) before considering `BUY`.
+11. **Timestamp Normalization**: `openedAt` may be in seconds or milliseconds; normalize before age-based exits.

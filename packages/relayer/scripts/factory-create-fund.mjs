@@ -104,7 +104,7 @@ async function main() {
     throw new Error("CHAIN_ID must be a positive number");
   }
   const rpcUrl = env("RPC_URL");
-  const signer = env("RELAYER_SIGNER_PRIVATE_KEY");
+  const signer = envOr("FACTORY_SIGNER_PRIVATE_KEY", env("RELAYER_SIGNER_PRIVATE_KEY"));
   const factoryAddress = parseAddress(
     "CLAW_FUND_FACTORY_ADDRESS",
     env("CLAW_FUND_FACTORY_ADDRESS")

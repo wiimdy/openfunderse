@@ -13,6 +13,9 @@ const INTENT_BOOK_ABI = parseAbi([
 
 function clients() {
   const cfg = loadRuntimeConfig();
+  if (!cfg.signerKey) {
+    throw new Error("missing required env: RELAYER_SIGNER_PRIVATE_KEY");
+  }
 
   const chain = defineChain({
     id: Number(cfg.chainId),
