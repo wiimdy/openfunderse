@@ -48,6 +48,12 @@ Participant claim is `AllocationClaimV1`:
 - input: `targetWeights[]`, `horizonSec`, `nonce`
 - canonical hash: SDK `buildCanonicalAllocationClaimRecord`
 - no crawl/source/evidence payload in v0 claim model
+- mapping rule: `targetWeights[i]` aligns to strategy `riskPolicy.allowlistTokens[i]`
+
+Claim to intent flow (v0):
+- relayer aggregates participant claims into epoch `aggregateWeights`
+- strategy reads snapshot (`snapshotHash`, `claimCount`, optional `aggregateWeights`)
+- strategy proposes BUY/SELL intent that reduces delta between current position mix and aggregate target mix
 
 ## Wave A runtime env (relayer client + signer)
 

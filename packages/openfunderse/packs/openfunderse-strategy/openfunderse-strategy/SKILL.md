@@ -117,7 +117,8 @@ The skill accepts a `propose_intent` task with the following schema:
   "snapshot": {
     "snapshotHash": "string",
     "finalized": "boolean",
-    "claimCount": "number"
+    "claimCount": "number",
+    "aggregateWeights": ["string | number (optional)"]
   },
   "marketState": {
     "network": "number",
@@ -152,7 +153,8 @@ The skill accepts a `propose_intent` task with the following schema:
   "snapshot": {
     "snapshotHash": "0xabc123...",
     "finalized": true,
-    "claimCount": 19
+    "claimCount": 19,
+    "aggregateWeights": ["7000", "3000"]
   },
   "marketState": {
     "network": 10143,
@@ -262,3 +264,5 @@ Returned when no trade is proposed due to risk constraints or market conditions.
 11. **Timestamp Normalization**: `openedAt` may be in seconds or milliseconds; normalize before age-based exits.
 12. **No Implicit Submit**: Do not submit to relayer/onchain unless explicit submit gating is passed.
 13. **Trusted Relayer**: In production, set `STRATEGY_TRUSTED_RELAYER_HOSTS` and avoid arbitrary relayer URLs.
+14. **Aggregate Mapping**: If `snapshot.aggregateWeights` is present, `aggregateWeights[i]` MUST map to `riskPolicy.allowlistTokens[i]`.
+15. **Rebalance Direction**: With aggregate weights, prefer intents that reduce delta between current position mix and target mix.

@@ -33,6 +33,7 @@ export interface ProposeIntentInput {
     snapshotHash: string;
     finalized: boolean;
     claimCount: number;
+    aggregateWeights?: Array<string | number | bigint>;
   };
   marketState: {
     network: number;
@@ -176,7 +177,7 @@ interface PositionState {
   openedAt: number | null;
 }
 
-type SellTrigger = 'TAKE_PROFIT' | 'STOP_LOSS' | 'TIME_EXIT';
+type SellTrigger = 'TAKE_PROFIT' | 'STOP_LOSS' | 'TIME_EXIT' | 'REBALANCE';
 
 interface SellCandidate {
   token: `0x${string}`;
@@ -389,6 +390,68 @@ const normalizedAddressList = (values: string[]): `0x${string}`[] => {
   }
 
   return result;
+};
+
+const normalizeAggregateWeights = (
+  input: Array<string | number | bigint>,
+  expectedLength: number
+): bigint[] | null => {
+  if (!Array.isArray(input) || input.length !== expectedLength) {
+    return null;
+  }
+  const out: bigint[] = [];
+  for (const value of input) {
+    const parsed = parseBigIntValue(value);
+    if (parsed === null || parsed < 0n) return null;
+    out.push(parsed);
+  }
+  const sum = out.reduce((acc, cur) => acc + cur, 0n);
+  if (sum <= 0n) return null;
+  return out;
+};
+
+const computeTargetWeightMap = (
+  tokens: `0x${string}`[],
+  aggregateWeights: bigint[]
+): Map<string, number> => {
+  const total = aggregateWeights.reduce((acc, cur) => acc + cur, 0n);
+  const result = new Map<string, number>();
+  for (let i = 0; i < tokens.length; i += 1) {
+    const weight = total > 0n ? Number(aggregateWeights[i]) / Number(total) : 0;
+    result.set(tokens[i].toLowerCase(), weight);
+  }
+  return result;
+};
+
+const computeCurrentWeightMap = (
+  marketState: ProposeIntentInput['marketState'],
+  tokens: `0x${string}`[]
+): Map<string, number> => {
+  const quantities = new Map<string, bigint>();
+  let total = 0n;
+  for (const token of tokens) {
+    const position = extractTokenPosition(marketState, token);
+    const quantity = position?.quantity ?? 0n;
+    quantities.set(token.toLowerCase(), quantity);
+    total += quantity;
+  }
+
+  const out = new Map<string, number>();
+  for (const token of tokens) {
+    const quantity = quantities.get(token.toLowerCase()) ?? 0n;
+    const weight = total > 0n ? Number(quantity) / Number(total) : 0;
+    out.set(token.toLowerCase(), weight);
+  }
+  return out;
+};
+
+const rebalanceDelta = (
+  token: `0x${string}`,
+  targetWeights: Map<string, number>,
+  currentWeights: Map<string, number>
+): number => {
+  const key = token.toLowerCase();
+  return (targetWeights.get(key) ?? 0) - (currentWeights.get(key) ?? 0);
 };
 
 const parsePositiveBigInt = (value: string): bigint | null => {
@@ -896,6 +959,52 @@ const evaluateSellCandidate = async (input: {
   };
 };
 
+const evaluateRebalanceSellCandidate = async (input: {
+  client: ReturnType<typeof createPublicClient>;
+  lensAddress: `0x${string}`;
+  token: `0x${string}`;
+  position: PositionState;
+  maxAmountIn: bigint;
+  maxSlippageBps: number;
+  allowedRouters: Set<string>;
+  sellFraction: number;
+}): Promise<SellCandidate | null> => {
+  if (input.sellFraction <= 0) return null;
+  const scaled = BigInt(
+    Math.max(1, Math.min(10_000, Math.floor(input.sellFraction * 10_000)))
+  );
+  let amountIn = (input.position.quantity * scaled) / 10_000n;
+  if (amountIn <= 0n) amountIn = 1n;
+  if (amountIn > input.maxAmountIn) amountIn = input.maxAmountIn;
+  if (amountIn > input.position.quantity) amountIn = input.position.quantity;
+  if (amountIn <= 0n) return null;
+
+  const quote = await quoteFromLens({
+    client: input.client,
+    lensAddress: input.lensAddress,
+    token: input.token,
+    amountIn,
+    isBuy: false
+  });
+  if (!quote || quote.amountOut <= 0n) return null;
+  if (!input.allowedRouters.has(quote.router.toLowerCase())) return null;
+
+  const minAmountOut = applySlippage(quote.amountOut, input.maxSlippageBps);
+  if (minAmountOut <= 0n) return null;
+
+  return {
+    token: input.token,
+    router: quote.router,
+    amountIn,
+    quoteAmountOut: quote.amountOut,
+    minAmountOut,
+    pnlBps: null,
+    ageSeconds: null,
+    trigger: 'REBALANCE',
+    urgency: Math.floor(input.sellFraction * 10_000)
+  };
+};
+
 export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeIntentOutput> {
   const { fundId, roomId, epochId, snapshot, riskPolicy } = input;
 
@@ -909,6 +1018,18 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
   const maxAmountIn = parsePositiveBigInt(riskPolicy.maxNotional);
   const candidateTokens = normalizedAddressList(riskPolicy.allowlistTokens);
   const deadlineTtlSeconds = computeDeadlineTtlSeconds(snapshot.claimCount);
+  const aggregateWeightsInput = snapshot.aggregateWeights;
+  const aggregateWeights =
+    aggregateWeightsInput && aggregateWeightsInput.length > 0
+      ? normalizeAggregateWeights(aggregateWeightsInput, candidateTokens.length)
+      : null;
+  if (aggregateWeightsInput && !aggregateWeights) {
+    return holdDecision(input, 'invalid aggregateWeights for allowlist token mapping', [
+      'snapshot.aggregateWeights must be non-negative integers',
+      'snapshot.aggregateWeights length must match riskPolicy.allowlistTokens length',
+      'targetWeights[i] maps to allowlistTokens[i]'
+    ]);
+  }
 
   const riskChecks: RiskChecks = {
     allowlistPass: candidateTokens.length > 0 && usesNadfunVenue(riskPolicy.allowlistVenues),
@@ -981,6 +1102,12 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
     'STRATEGY_SELL_MAX_HOLD_SECONDS',
     DEFAULT_SELL_MAX_HOLD_SECONDS
   );
+  const targetWeightMap = aggregateWeights
+    ? computeTargetWeightMap(candidateTokens, aggregateWeights)
+    : null;
+  const currentWeightMap = targetWeightMap
+    ? computeCurrentWeightMap(input.marketState, candidateTokens)
+    : null;
 
   const sellCandidates = (
     await Promise.all(
@@ -1018,7 +1145,31 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
     return b.quoteAmountOut > a.quoteAmountOut ? 1 : -1;
   });
 
-  const sellPick = sellCandidates[0];
+  const rebalanceSellCandidates = targetWeightMap && currentWeightMap
+    ? (
+      await Promise.all(
+        candidateTokens.map(async (token) => {
+          const delta = rebalanceDelta(token, targetWeightMap, currentWeightMap);
+          if (delta >= -0.01) return null;
+          const position = extractTokenPosition(input.marketState, token);
+          if (!position || position.quantity <= 0n) return null;
+          return evaluateRebalanceSellCandidate({
+            client,
+            lensAddress: lensAddress as `0x${string}`,
+            token,
+            position,
+            maxAmountIn: maxAmountIn as bigint,
+            maxSlippageBps: riskPolicy.maxSlippageBps,
+            allowedRouters,
+            sellFraction: Math.min(1, Math.abs(delta))
+          });
+        })
+      )
+    ).filter(isNonNull)
+    : [];
+  rebalanceSellCandidates.sort((a, b) => b.urgency - a.urgency);
+
+  const sellPick = rebalanceSellCandidates[0] ?? sellCandidates[0];
   if (sellPick) {
     const venue = resolveNadfunVenue(sellPick.router, bondingRouter, dexRouter);
     if (!venue) {
@@ -1055,7 +1206,7 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
       riskChecks,
       confidence: 0.9,
       assumptions: [
-        'sell path prioritizes capital protection and position recycling',
+        targetWeightMap ? 'sell path prioritizes claim-aggregate rebalancing first' : 'sell path prioritizes capital protection and position recycling',
         `pnlBps=${sellPick.pnlBps ?? 'n/a'} ageSeconds=${sellPick.ageSeconds ?? 'n/a'}`,
         'execution route must use the same router returned by NadFun lens'
       ]
@@ -1078,21 +1229,36 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
     )
   ).filter(isNonNull);
 
-  if (buyCandidates.length === 0) {
+  const directionalBuyCandidates =
+    targetWeightMap && currentWeightMap
+      ? buyCandidates.filter(
+          (candidate) =>
+            rebalanceDelta(candidate.token, targetWeightMap, currentWeightMap) > 0.005
+        )
+      : buyCandidates;
+
+  if (directionalBuyCandidates.length === 0) {
     return holdDecision(input, 'no executable NadFun BUY route from allowlist', [
       'all candidate tokens failed quote/router/impact checks',
-      'ensure allowlist tokens are active NadFun markets'
+      targetWeightMap
+        ? 'no positive delta token from aggregate targetWeights'
+        : 'ensure allowlist tokens are active NadFun markets'
     ]);
   }
 
-  buyCandidates.sort((a, b) => {
+  directionalBuyCandidates.sort((a, b) => {
+    if (targetWeightMap && currentWeightMap) {
+      const aDelta = rebalanceDelta(a.token, targetWeightMap, currentWeightMap);
+      const bDelta = rebalanceDelta(b.token, targetWeightMap, currentWeightMap);
+      if (bDelta !== aDelta) return bDelta - aDelta;
+    }
     if (b.score !== a.score) return b.score - a.score;
     if (a.impactBps !== b.impactBps) return a.impactBps - b.impactBps;
     if (b.quoteAmountOut === a.quoteAmountOut) return 0;
     return b.quoteAmountOut > a.quoteAmountOut ? 1 : -1;
   });
 
-  const buyPick = buyCandidates[0];
+  const buyPick = directionalBuyCandidates[0];
   const buyVenue = resolveNadfunVenue(buyPick.router, bondingRouter, dexRouter);
   if (!buyVenue) {
     return holdDecision(input, `unsupported NadFun router for BUY: ${buyPick.router}`);
@@ -1128,7 +1294,9 @@ export async function proposeIntent(input: ProposeIntentInput): Promise<ProposeI
     riskChecks,
     confidence: 0.9,
     assumptions: [
-      'token selection uses per-token NadFun lens quotes, not allowlist[0] shortcut',
+      targetWeightMap
+        ? 'token selection follows aggregate targetWeights[i] -> allowlistTokens[i] priority'
+        : 'token selection uses per-token NadFun lens quotes, not allowlist[0] shortcut',
       'BUY size is downscaled when quote impact exceeds STRATEGY_MAX_IMPACT_BPS',
       'execution route must use the same router returned by NadFun lens',
       `deadlineTtlSeconds=${deadlineTtlSeconds}`
