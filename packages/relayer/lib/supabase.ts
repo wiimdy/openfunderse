@@ -169,23 +169,17 @@ export interface SubjectStateRow {
 
 let supabaseSingleton: SupabaseClient | null = null;
 
-function envFirst(...keys: string[]): string {
-  for (const key of keys) {
-    const value = process.env[key];
-    if (value && value.length > 0) return value;
-  }
-  throw new Error(`missing required env: one of [${keys.join(", ")}]`);
+function envRequired(key: string): string {
+  const value = process.env[key];
+  if (value && value.length > 0) return value;
+  throw new Error(`missing required env: ${key}`);
 }
 
 function supabase(): SupabaseClient {
   if (supabaseSingleton) return supabaseSingleton;
 
-  const url = envFirst("NEXT_PUBLIC_SUPABASE_URL", "SUPABASE_URL");
-  const key = envFirst(
-    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY",
-    "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    "SUPABASE_ANON_KEY"
-  );
+  const url = envRequired("SUPABASE_URL");
+  const key = envRequired("SUPABASE_ANON_KEY");
 
   supabaseSingleton = createClient(url, key, {
     auth: {
