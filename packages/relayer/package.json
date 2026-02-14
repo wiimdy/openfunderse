@@ -8,7 +8,7 @@
   "scripts": {
     "prebuild": "npm --prefix ../sdk run build",
     "dev": "next dev",
-    "build": "next build",
+    "build": "NODE_ENV=production next build",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
     "factory:create-fund": "node scripts/factory-create-fund.mjs",
