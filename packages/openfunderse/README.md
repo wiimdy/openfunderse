@@ -35,12 +35,14 @@ npx @wiimdy/openfunderse@latest install openfunderse \
 # initialize bot env + fresh Monad wallet (strategy)
 npx @wiimdy/openfunderse@latest bot-init \
   --skill-name strategy \
-  --env-path .env.strategy
+  --env-path .env.strategy \
+  --yes
 
 # initialize participant bot env + wallet
 npx @wiimdy/openfunderse@latest bot-init \
   --skill-name participant \
-  --env-path .env.participant
+  --env-path .env.participant \
+  --yes
 ```
 
 ## Notes
@@ -62,5 +64,7 @@ npx @wiimdy/openfunderse@latest bot-init \
   - `strategy`: `STRATEGY_PRIVATE_KEY`, `BOT_ADDRESS`
   - `participant`: `PARTICIPANT_PRIVATE_KEY`, `PARTICIPANT_BOT_ADDRESS`, `BOT_ADDRESS`
 - `bot-init` stores a wallet backup JSON under `$CODEX_HOME/openfunderse/wallets`.
+- Generated scaffolds include a temporary bootstrap key value. It is public/unsafe and must be rotated via `bot-init` before funding.
+- `bot-init` shows a warning and requires confirmation (`Type YES`) unless `--yes` is passed.
 - If private key already exists in the target env file, `bot-init` requires `--force` to rotate.
 - CLI cannot mutate your parent shell env directly; run the printed `set -a; source ...; set +a` command.

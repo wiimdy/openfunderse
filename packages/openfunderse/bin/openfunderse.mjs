@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 
 const THIS_FILE = fileURLToPath(import.meta.url);
@@ -14,6 +15,7 @@ const DEFAULT_RUNTIME_PACKAGE = "@wiimdy/openfunderse-agents";
 const SUPPORTED_ENV_PROFILES = new Set(["strategy", "participant", "all"]);
 const SUPPORTED_BOT_INIT_ROLES = new Set(["strategy", "participant"]);
 const DEFAULT_MONAD_CHAIN_ID = "10143";
+const TEMP_PRIVATE_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
 const STRATEGY_ENV_TEMPLATE = `# OpenFunderse strategy env scaffold
 # Copy values from your relayer + deployed contracts.
@@ -35,7 +37,8 @@ NADFUN_DEX_ROUTER=0x0000000000000000000000000000000000000000
 NADFUN_WMON_ADDRESS=0x0000000000000000000000000000000000000000
 
 # Strategy signer (EOA)
-STRATEGY_PRIVATE_KEY=0xYOUR_STRATEGY_PRIVATE_KEY
+# Temporary bootstrap key (public and unsafe). Replace via bot-init before real usage.
+STRATEGY_PRIVATE_KEY=${TEMP_PRIVATE_KEY}
 # STRATEGY_CREATE_MIN_SIGNER_BALANCE_WEI=10000000000000000
 
 # Safety defaults
@@ -51,7 +54,8 @@ BOT_ID=bot-participant-1
 BOT_API_KEY=replace_me
 BOT_ADDRESS=0x0000000000000000000000000000000000000000
 CHAIN_ID=10143
-BOT_PRIVATE_KEY=0xYOUR_PARTICIPANT_PRIVATE_KEY
+# Temporary bootstrap key (public and unsafe). Replace via bot-init before real usage.
+PARTICIPANT_PRIVATE_KEY=${TEMP_PRIVATE_KEY}
 CLAIM_ATTESTATION_VERIFIER_ADDRESS=0x0000000000000000000000000000000000000000
 PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true
 PARTICIPANT_AUTO_SUBMIT=false
@@ -64,7 +68,7 @@ function printUsage() {
 
 Usage:
   openfunderse list
-  openfunderse bot-init [--role <strategy|participant>] [--skill-name <name>] [--env-path <path>] [--wallet-dir <dir>] [--wallet-name <name>] [--force]
+  openfunderse bot-init [--role <strategy|participant>] [--skill-name <name>] [--env-path <path>] [--wallet-dir <dir>] [--wallet-name <name>] [--force] [--yes]
   openfunderse install <pack-name> [--dest <skills-dir>] [--codex-home <dir>] [--force] [--with-runtime]
                      [--init-env] [--env-path <path>] [--env-profile <strategy|participant|all>]
                      [--runtime-package <name>] [--runtime-dir <dir>] [--runtime-manager <npm|pnpm|yarn|bun>]
@@ -75,7 +79,7 @@ Examples:
   openfunderse install openfunderse --with-runtime
   openfunderse install openfunderse --with-runtime --init-env --env-profile strategy
   openfunderse install openfunderse --codex-home /tmp/codex-home
-  openfunderse bot-init --env-path .env.participant --wallet-name participant-bot
+  openfunderse bot-init --env-path .env.participant --wallet-name participant-bot --yes
   openfunderse bot-init --skill-name strategy --env-path .env.strategy --force
 `);
 }
@@ -97,7 +101,8 @@ function parseArgs(argv) {
     role: "",
     skillName: "",
     walletDir: "",
-    walletName: ""
+    walletName: "",
+    yes: false
   };
   const positionals = [];
 
@@ -109,6 +114,10 @@ function parseArgs(argv) {
     }
     if (token === "--force") {
       options.force = true;
+      continue;
+    }
+    if (token === "--yes") {
+      options.yes = true;
       continue;
     }
     if (token === "--dest") {
@@ -354,6 +363,7 @@ function isPlaceholderEnvValue(value) {
   const normalized = (value || "").trim();
   if (!normalized) return true;
   if (normalized === "replace_me") return true;
+  if (normalized.toLowerCase() === TEMP_PRIVATE_KEY.toLowerCase()) return true;
   if (/^0xYOUR_/i.test(normalized)) return true;
   if (/^YOUR_/i.test(normalized)) return true;
   if (/^0x0+$/i.test(normalized)) return true;
@@ -421,6 +431,37 @@ async function runCommandCapture(cmd, args, cwd = process.cwd()) {
       );
     });
   });
+}
+
+async function confirmBotInit({ role, envFile, privateKeyKey, isRotation, assumeYes }) {
+  const mode = isRotation ? "wallet rotation" : "new wallet bootstrap";
+  console.log("WARNING: bot-init will generate a new wallet and update your env private key.");
+  console.log(`- Mode: ${mode}`);
+  console.log(`- Role: ${role}`);
+  console.log(`- Env file: ${envFile}`);
+  console.log(`- Key field: ${privateKeyKey}`);
+  console.log("- Existing funds tied to old key are not moved automatically.");
+
+  if (assumeYes) {
+    return;
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error("bot-init requires confirmation in TTY. Re-run with --yes to confirm non-interactively.");
+  }
+
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+  try {
+    const answer = await rl.question("Type YES to continue: ");
+    if (answer.trim().toUpperCase() !== "YES") {
+      throw new Error("bot-init cancelled by user.");
+    }
+  } finally {
+    rl.close();
+  }
 }
 
 async function generateMonadWalletWithCast() {
@@ -533,7 +574,18 @@ async function runBotInit(options) {
     envContent = await buildEnvScaffold(role, runtimeDir, runtimePackage);
   }
 
+  const privateKeyKey = role === "strategy" ? "STRATEGY_PRIVATE_KEY" : "PARTICIPANT_PRIVATE_KEY";
+  const existingPrivateKey = readAssignedEnvValue(envContent, privateKeyKey);
+  const isRotation = Boolean(existingPrivateKey) && !isPlaceholderEnvValue(existingPrivateKey);
+
   assertPrivateKeyRotationAllowed(envContent, role, options.force);
+  await confirmBotInit({
+    role,
+    envFile,
+    privateKeyKey,
+    isRotation,
+    assumeYes: options.yes
+  });
 
   const wallet = await generateMonadWalletWithCast();
   const walletPath = await persistWallet(role, wallet, options);
