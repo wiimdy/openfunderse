@@ -53,8 +53,10 @@ export type {
   VerifyClaimOutput
 } from './skills/participant/index.js';
 
-export { proposeIntent } from './skills/strategy/index.js';
+export { proposeIntent, proposeIntentAndSubmit } from './skills/strategy/index.js';
 export type {
+  ProposeIntentAndSubmitInput,
+  ProposeIntentAndSubmitOutput,
   ProposeIntentInput,
   ProposeIntentOutput,
   ProposeDecision,

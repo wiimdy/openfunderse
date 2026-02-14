@@ -13,6 +13,7 @@ metadata:
 
 The Strategy MoltBot is responsible for proposing structured trade intents based on finalized data snapshots. It evaluates market conditions, liquidity, and risk policies to decide whether to propose a trade or hold.
 For NadFun venues, it must use lens quotes to derive `minAmountOut` and reject router mismatch.
+In runtime, use `proposeIntentAndSubmit` to automatically continue with relayer + onchain intent registration.
 
 ## Input
 
@@ -116,6 +117,11 @@ Returned when market conditions meet the risk policy and a profitable trade is i
     "maxSlippageBps": "number",
     "snapshotHash": "string"
   },
+  "executionPlan": {
+    "venue": "NADFUN_BONDING_CURVE | NADFUN_DEX",
+    "router": "string",
+    "quoteAmountOut": "string"
+  },
   "reason": "string",
   "riskChecks": {
     "allowlistPass": "boolean",
@@ -127,6 +133,13 @@ Returned when market conditions meet the risk policy and a profitable trade is i
   "assumptions": ["string"]
 }
 ```
+
+### Auto Submit Flow
+When using `proposeIntentAndSubmit`, a `PROPOSE` decision is immediately followed by:
+1. Relayer `POST /api/v1/funds/{fundId}/intents/propose`
+2. Strategy AA `IntentBook.proposeIntent(...)`
+
+This keeps offchain canonical intent and onchain intent registration aligned in the same skill timing.
 
 ### HOLD Decision
 Returned when no trade is proposed due to risk constraints or market conditions.

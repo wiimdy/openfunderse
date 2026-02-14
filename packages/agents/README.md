@@ -82,6 +82,7 @@ Strategy AA env:
 - `STRATEGY_AA_OWNER_PRIVATE_KEY` (or `STRATEGY_PRIVATE_KEY`)
 - `CLAW_FUND_FACTORY_ADDRESS`
 - `INTENT_BOOK_ADDRESS`, `CLAW_CORE_ADDRESS`
+- `NADFUN_EXECUTION_ADAPTER_ADDRESS` (fallback: `ADAPTER_ADDRESS`)
 - optional preflight: `STRATEGY_CREATE_MIN_AA_BALANCE_WEI`
 - optional tuning: `STRATEGY_AA_CALL_GAS_LIMIT`, `STRATEGY_AA_VERIFICATION_GAS_LIMIT`, `STRATEGY_AA_PRE_VERIFICATION_GAS`, `STRATEGY_AA_MAX_PRIORITY_FEE_PER_GAS`, `STRATEGY_AA_MAX_FEE_PER_GAS`
 
@@ -155,6 +156,42 @@ npm run strategy:attest:onchain -w @claw/agents -- \
 npm run strategy:execute:ready -w @claw/agents -- \
   --fund-id demo-fund \
   --limit 10
+```
+
+## Strategy skill auto submit (recommended)
+
+Programmatic skill path can now run proposal + submission in one call:
+
+1. build strategy decision (`proposeIntent`)
+2. submit canonical intent to relayer (`POST /intents/propose`)
+3. send onchain `IntentBook.proposeIntent` via strategy AA
+
+```ts
+import { proposeIntentAndSubmit } from '@claw/agents';
+
+const out = await proposeIntentAndSubmit({
+  taskType: 'propose_intent',
+  fundId: 'demo-fund',
+  roomId: '-1001234567890',
+  epochId: 12,
+  snapshot: {
+    snapshotHash: '0x...',
+    finalized: true,
+    claimCount: 6
+  },
+  marketState: {
+    network: 10143,
+    nadfunCurveState: {},
+    liquidity: {},
+    volatility: {}
+  },
+  riskPolicy: {
+    maxNotional: '1000000000000000000',
+    maxSlippageBps: 500,
+    allowlistTokens: ['0x...'],
+    allowlistVenues: ['nadfun']
+  }
+});
 ```
 
 Implemented modules:
