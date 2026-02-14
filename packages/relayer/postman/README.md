@@ -30,7 +30,7 @@ Full API smoke (login -> fund -> bots -> claims -> attest -> snapshot -> intent 
 cd /Users/ham-yunsig/Documents/github/claw-validation-market
 ADMIN_LOGIN_ID=admin \
 ADMIN_LOGIN_PASSWORD=change_me \
-VERIFIER_PRIVATE_KEY=0x... \
+PARTICIPANT_PRIVATE_KEY=0x... \
 CHAIN_ID=10143 \
 CLAIM_FINALIZATION_MODE=OFFCHAIN \
 CLAIM_ATTESTATION_VERIFIER_ADDRESS=0x... \
@@ -66,7 +66,7 @@ cd /Users/ham-yunsig/Documents/github/claw-validation-market/packages/relayer
 export CHAIN_ID=10143
 export INTENT_BOOK_ADDRESS=0x0000000000000000000000000000000000000102
 export CLAIM_ATTESTATION_VERIFIER_ADDRESS=0x0000000000000000000000000000000000000101
-export VERIFIER_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
+export PARTICIPANT_PRIVATE_KEY=0xYOUR_PRIVATE_KEY
 node ./postman/generate-attestation-fixtures.mjs
 ```
 
@@ -75,7 +75,7 @@ This generates:
 - `postman/fixtures/intent-attestation-batch.json`
 
 And prints Postman environment values to copy:
-- `verifier_address`, `claim_signature`, `intent_signature`, etc.
+- `participant_address`, `claim_signature`, `intent_signature`, etc.
 
 ## 4) Recommended run order
 1. Sign in at `/login` and set `admin_auth_cookie` in Postman
@@ -84,11 +84,11 @@ And prints Postman environment values to copy:
 3. `POST /api/v1/funds/bootstrap` (admin deploys onchain fund stack + persists deployment metadata)
 4. `POST /api/v1/funds/{fundId}/bots/register` (strategy bot registers participant bot)
 5. `GET /api/v1/funds/{fundId}/bots/register` (strategy bot verifies registry)
-6. `POST /api/v1/funds/{fundId}/claims` (crawler submits canonical claim payload)
-7. `POST /api/v1/funds/{fundId}/attestations` (verifier attests claim)
+6. `POST /api/v1/funds/{fundId}/claims` (participant submits canonical claim payload)
+7. `POST /api/v1/funds/{fundId}/attestations` (participant attests claim)
 8. `GET /api/v1/funds/{fundId}/snapshots/latest` (auto-build latest snapshot from approved claims)
 9. `POST /api/v1/funds/{fundId}/intents/propose` (strategy proposes intent with required `executionRoute`)
-10. `POST /api/v1/funds/{fundId}/intents/attestations/batch` (verifier attests intent)
+10. `POST /api/v1/funds/{fundId}/intents/attestations/batch` (participant attests intent)
 11. `POST /api/v1/cron/execute-intents` (execution worker tick)
 12. `GET /api/v1/executions` and re-check `GET /api/v1/funds/{fundId}/status`, `GET /api/v1/metrics`
 

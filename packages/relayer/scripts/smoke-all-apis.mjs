@@ -19,15 +19,22 @@ const strategyBotAddress =
   process.env.STRATEGY_BOT_ADDRESS ??
   "0x00000000000000000000000000000000000000a1";
 
-const crawlerBotId = process.env.CRAWLER_BOT_ID ?? "bot-crawler-1";
-const crawlerBotApiKey = process.env.CRAWLER_BOT_API_KEY ?? "replace_me";
-const crawlerAddress =
-  process.env.CRAWLER_ADDRESS ??
-  "0x00000000000000000000000000000000000000c1";
-
-const verifierBotId = process.env.VERIFIER_BOT_ID ?? "bot-verifier-1";
-const verifierBotApiKey = process.env.VERIFIER_BOT_API_KEY ?? "replace_me";
-const verifierPrivateKey = process.env.VERIFIER_PRIVATE_KEY;
+const participantBotId =
+  process.env.PARTICIPANT_BOT_ID ??
+  process.env.BOT_ID ??
+  "bot-participant-1";
+const participantBotApiKey =
+  process.env.PARTICIPANT_BOT_API_KEY ??
+  process.env.BOT_API_KEY ??
+  "replace_me";
+const participantPrivateKey =
+  process.env.PARTICIPANT_PRIVATE_KEY ??
+  process.env.BOT_PRIVATE_KEY ??
+  process.env.VERIFIER_PRIVATE_KEY;
+const participantBotAddressFromEnv =
+  process.env.PARTICIPANT_BOT_ADDRESS ??
+  process.env.PARTICIPANT_ADDRESS ??
+  process.env.BOT_ADDRESS;
 
 const claimBookAddress = process.env.CLAIM_BOOK_ADDRESS;
 const intentBookAddress = process.env.INTENT_BOOK_ADDRESS;
@@ -75,8 +82,8 @@ if (!adminPassword) {
   console.error("ADMIN_LOGIN_PASSWORD is required");
   process.exit(1);
 }
-if (!verifierPrivateKey) {
-  console.error("VERIFIER_PRIVATE_KEY is required");
+if (!participantPrivateKey) {
+  console.error("BOT_PRIVATE_KEY (or PARTICIPANT_PRIVATE_KEY / VERIFIER_PRIVATE_KEY) is required");
   process.exit(1);
 }
 if (claimFinalizationMode !== "OFFCHAIN" && claimFinalizationMode !== "ONCHAIN") {
@@ -100,8 +107,14 @@ if (claimFinalizationMode === "ONCHAIN" && !claimBookAddress) {
   process.exit(1);
 }
 
-const verifierAccount = privateKeyToAccount(verifierPrivateKey);
-const verifierAddress = verifierAccount.address;
+const participantAccount = privateKeyToAccount(participantPrivateKey);
+const participantAddress = participantBotAddressFromEnv ?? participantAccount.address;
+if (participantAddress.toLowerCase() !== participantAccount.address.toLowerCase()) {
+  console.error(
+    "PARTICIPANT_BOT_ADDRESS/PARTICIPANT_ADDRESS must match the signer address from BOT_PRIVATE_KEY"
+  );
+  process.exit(1);
+}
 
 const cookieJar = new Map();
 
@@ -253,33 +266,19 @@ async function main() {
     "x-bot-api-key": strategyBotApiKey
   };
 
-  const registerCrawler = await call("POST /bots/register crawler", {
+  const registerParticipant = await call("POST /bots/register participant", {
     method: "POST",
     path: `/api/v1/funds/${fundId}/bots/register`,
     headers: strategyHeaders,
     body: JSON.stringify({
-      role: "crawler",
-      botId: crawlerBotId,
-      botAddress: crawlerAddress,
-      policyUri: "ipfs://crawler-policy",
-      telegramHandle: "@crawler_bot"
+      role: "participant",
+      botId: participantBotId,
+      botAddress: participantAddress,
+      policyUri: "ipfs://participant-policy",
+      telegramHandle: "@participant_bot"
     })
   });
-  assertStatus(registerCrawler.response, [200], "register crawler");
-
-  const registerVerifier = await call("POST /bots/register verifier", {
-    method: "POST",
-    path: `/api/v1/funds/${fundId}/bots/register`,
-    headers: strategyHeaders,
-    body: JSON.stringify({
-      role: "verifier",
-      botId: verifierBotId,
-      botAddress: verifierAddress,
-      policyUri: "ipfs://verifier-policy",
-      telegramHandle: "@verifier_bot"
-    })
-  });
-  assertStatus(registerVerifier.response, [200], "register verifier");
+  assertStatus(registerParticipant.response, [200], "register participant");
 
   const listBots = await call("GET /bots/register", {
     method: "GET",
@@ -303,7 +302,7 @@ async function main() {
       "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     evidenceType: "url",
     evidenceURI: "https://example.com/evidence/1",
-    crawler: crawlerAddress,
+    crawler: participantAddress,
     notes: "smoke-all-apis"
   };
   const createClaim = await call("POST /claims", {
@@ -311,8 +310,8 @@ async function main() {
     path: `/api/v1/funds/${fundId}/claims`,
     headers: {
       "Content-Type": "application/json",
-      "x-bot-id": crawlerBotId,
-      "x-bot-api-key": crawlerBotApiKey
+      "x-bot-id": participantBotId,
+      "x-bot-api-key": participantBotApiKey
     },
     body: JSON.stringify({
       epochId: epochId.toString(),
@@ -332,11 +331,11 @@ async function main() {
   const claimMsg = {
     claimHash,
     epochId,
-    verifier: verifierAddress,
+    verifier: participantAddress,
     expiresAt,
     nonce: claimNonce
   };
-  const claimSig = await verifierAccount.signTypedData(
+  const claimSig = await participantAccount.signTypedData(
     claimAttestationTypedData(
       {
         name: "ClawClaimBook",
@@ -352,13 +351,13 @@ async function main() {
     path: `/api/v1/funds/${fundId}/attestations`,
     headers: {
       "Content-Type": "application/json",
-      "x-bot-id": verifierBotId,
-      "x-bot-api-key": verifierBotApiKey
+      "x-bot-id": participantBotId,
+      "x-bot-api-key": participantBotApiKey
     },
     body: JSON.stringify({
       claimHash,
       epochId: epochId.toString(),
-      verifier: verifierAddress,
+      verifier: participantAddress,
       expiresAt: expiresAt.toString(),
       nonce: claimNonce.toString(),
       signature: claimSig
@@ -417,11 +416,11 @@ async function main() {
 
   const intentMsg = {
     intentHash,
-    verifier: verifierAddress,
+    verifier: participantAddress,
     expiresAt,
     nonce: intentNonce
   };
-  const intentSig = await verifierAccount.signTypedData(
+  const intentSig = await participantAccount.signTypedData(
     intentAttestationTypedData(
       {
         name: "ClawIntentBook",
@@ -437,14 +436,14 @@ async function main() {
     path: `/api/v1/funds/${fundId}/intents/attestations/batch`,
     headers: {
       "Content-Type": "application/json",
-      "x-bot-id": verifierBotId,
-      "x-bot-api-key": verifierBotApiKey
+      "x-bot-id": participantBotId,
+      "x-bot-api-key": participantBotApiKey
     },
     body: JSON.stringify({
       attestations: [
         {
           intentHash,
-          verifier: verifierAddress,
+          verifier: participantAddress,
           expiresAt: expiresAt.toString(),
           nonce: intentNonce.toString(),
           signature: intentSig
@@ -472,7 +471,7 @@ async function main() {
       baseUrl,
       fundId,
       claimFinalizationMode,
-      verifierAddress,
+      participantAddress,
       claimAttestationVerifierAddress,
       claimHash,
       snapshotHash,

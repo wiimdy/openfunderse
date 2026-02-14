@@ -17,7 +17,7 @@ export async function POST(
   const membership = await requireFundBotRole({
     fundId,
     botId: botAuth.botId,
-    allowedRoles: ["verifier"]
+    allowedRoles: ["participant"]
   });
   if (!membership.ok) {
     return membership.response;

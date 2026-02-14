@@ -25,10 +25,17 @@ npm run dev -w @claw/relayer
 
 - `POST /api/v1/funds` (admin only)
   - 펀드 생성/업데이트 (threshold weight, policy, metadata, single strategy bot binding)
+- `GET /api/v1/funds`
+  - 공개 노출용 verified fund 목록 조회 (`is_verified=true`, `visibility=PUBLIC`)
+- `POST /api/v1/funds/sync-by-strategy` (strategy bot only)
+  - strategy AA가 이미 실행한 `ClawFundFactory.createFund` txHash를 검증하고 relayer DB projection 동기화
+  - relayer는 tx를 보내지 않고 receipt/event 검증 + metadata 저장만 수행
+- `POST /api/v1/funds/{fundId}/verify` (admin only)
+  - fund 노출 상태(`is_verified`, `visibility`) 갱신
 - `POST /api/v1/funds/bootstrap` (admin only)
-  - `deployConfig` struct payload로 `ClawFundFactory.createFund` 실행 + relayer metadata + onchain deployment metadata 동시 저장
+  - `DEPRECATED`: 기존 admin-triggered onchain deploy 경로
 - `POST /api/v1/funds/{fundId}/bots/register` (strategy bot only)
-  - 유저 봇(crawler/verifier) 등록
+  - participant 봇 등록
 - `GET /api/v1/funds/{fundId}/bots/register` (strategy bot only)
   - 등록된 봇 목록 조회
 - `POST /api/v1/funds/{fundId}/claims`
@@ -73,7 +80,7 @@ npm run dev -w @claw/relayer
   - 튜토리얼 페이지 접근 (`/join`)
 - `bot`:
   - write API 호출 시 `x-bot-id`, `x-bot-api-key` 필수
-  - `BOT_SCOPES`로 API scope 검증 (`claims.submit`, `claims.attest`, `intents.propose`, `intents.attest`, `bots.register`)
+  - `BOT_SCOPES`로 API scope 검증 (`claims.submit`, `claims.attest`, `intents.propose`, `intents.attest`, `bots.register`, `funds.bootstrap`)
 
 ## UI routes (scaffold)
 - `/`: 일반 유저용 참여/초기 셋업 안내 메인 페이지
@@ -101,8 +108,8 @@ npm run dev -w @claw/relayer
 ## Required Env (weighted mode)
 - `CLAIM_THRESHOLD_WEIGHT`, `INTENT_THRESHOLD_WEIGHT`
 - `VERIFIER_WEIGHT_SNAPSHOT` (`address:weight,address:weight,...`)
-- `CLAW_FUND_FACTORY_ADDRESS` (for `POST /api/v1/funds/bootstrap`)
-- `FACTORY_SIGNER_PRIVATE_KEY` (for `POST /api/v1/funds/bootstrap` or `factory:create-fund`)
+- `CLAW_FUND_FACTORY_ADDRESS` (for `POST /api/v1/funds/sync-by-strategy`)
+- `FACTORY_SIGNER_PRIVATE_KEY` (needed only for legacy `POST /api/v1/funds/bootstrap` or `factory:create-fund`)
 - `CLAIM_FINALIZATION_MODE` (`OFFCHAIN`/`ONCHAIN`)
 - `CLAIM_ATTESTATION_VERIFIER_ADDRESS` (claim EIP-712 domain address)
 - `CLAIM_BOOK_ADDRESS` (only when `CLAIM_FINALIZATION_MODE=ONCHAIN`)

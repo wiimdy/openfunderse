@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireBotAuth } from "@/lib/bot-auth";
 import { getFund, listFundBots, upsertFundBot } from "@/lib/supabase";
 
-const ALLOWED_ROLES = new Set(["crawler", "verifier"]);
+const ALLOWED_ROLES = new Set(["participant"]);
 
 export async function POST(
   request: Request,
@@ -29,7 +29,7 @@ export async function POST(
     return NextResponse.json(
       {
         error: "BAD_REQUEST",
-        message: "role must be one of: crawler, verifier"
+        message: "role must be participant"
       },
       { status: 400 }
     );

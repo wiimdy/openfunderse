@@ -1,6 +1,6 @@
 # agents
 
-Runtime entry for crawler/verifier/strategy MoltBots.
+Runtime entry for participant/strategy MoltBots.
 
 ## Role
 - Monorepo bot runtime package (execution code), not installer/distribution.
@@ -18,8 +18,8 @@ npm run dev -w @claw/agents
 ## Reddit MVP: Data Mining + Verification
 
 MVP baseline source is Reddit (no API key required):
-- crawler mines keyword stats from `r/<subreddit>/new.json`
-- verifier re-crawls the mined post ids via `by_id` and checks deterministic match
+- participant mines keyword stats from `r/<subreddit>/new.json`
+- participant re-crawls the mined post ids via `by_id` and checks deterministic match
 
 Commands:
 
@@ -56,7 +56,7 @@ Relayer client:
 - `RELAYER_URL`
 - `BOT_ID`
 - `BOT_API_KEY`
-- `BOT_ADDRESS` (required for claim submit; must match registered crawler/verifier bot address)
+- `BOT_ADDRESS` (required for claim submit/attest; must match registered participant bot address)
 
 Signer:
 - `BOT_PRIVATE_KEY` or `VERIFIER_PRIVATE_KEY`
@@ -70,10 +70,9 @@ Participant source safety:
 - `PARTICIPANT_MAX_RESPONSE_BYTES=524288`
 - `PARTICIPANT_ALLOW_HTTP_SOURCE=true` (local dev only)
 
-Role-split env for participant e2e:
-- `CRAWLER_BOT_ID`, `CRAWLER_BOT_API_KEY`, `CRAWLER_BOT_ADDRESS`
-- `VERIFIER_BOT_ID`, `VERIFIER_BOT_API_KEY`, `VERIFIER_BOT_ADDRESS`
-- `VERIFIER_PRIVATE_KEY`
+Participant optional scoped env:
+- `PARTICIPANT_BOT_ID`, `PARTICIPANT_BOT_API_KEY`, `PARTICIPANT_BOT_ADDRESS`
+- if omitted, participant flow uses `BOT_ID`, `BOT_API_KEY`, `BOT_ADDRESS`
 
 Strategy AA env:
 - `STRATEGY_AA_BUNDLER_URL`
@@ -81,7 +80,9 @@ Strategy AA env:
 - `STRATEGY_AA_ENTRYPOINT_ADDRESS`
 - `STRATEGY_AA_ACCOUNT_ADDRESS`
 - `STRATEGY_AA_OWNER_PRIVATE_KEY` (or `STRATEGY_PRIVATE_KEY`)
+- `CLAW_FUND_FACTORY_ADDRESS`
 - `INTENT_BOOK_ADDRESS`, `CLAW_CORE_ADDRESS`
+- optional preflight: `STRATEGY_CREATE_MIN_AA_BALANCE_WEI`
 - optional tuning: `STRATEGY_AA_CALL_GAS_LIMIT`, `STRATEGY_AA_VERIFICATION_GAS_LIMIT`, `STRATEGY_AA_PRE_VERIFICATION_GAS`, `STRATEGY_AA_MAX_PRIORITY_FEE_PER_GAS`, `STRATEGY_AA_MAX_FEE_PER_GAS`
 
 Monad testnet reference values:
@@ -127,6 +128,24 @@ npm run participant:e2e -w @claw/agents -- \
 ## Strategy commands (AA)
 
 ```bash
+# 0) Create fund directly onchain via Factory (dry-run only)
+npm run strategy:create:fund -w @claw/agents -- \
+  --fund-id demo-fund-001 \
+  --fund-name "Demo Fund 001" \
+  --deploy-config-file /absolute/path/to/deploy-config.json
+
+# 0-a) Set default strategy AA address in agents .env
+npm run strategy:set:aa -w @claw/agents -- \
+  --address 0xYourStrategySmartAccount
+
+# 0-1) Submit createFund onchain + sync deployment metadata to relayer
+npm run strategy:create:fund -w @claw/agents -- \
+  --fund-id demo-fund-001 \
+  --fund-name "Demo Fund 001" \
+  --deploy-config-file /absolute/path/to/deploy-config.json \
+  --telegram-room-id -1001234567890 \
+  --submit
+
 # 1) READY_FOR_ONCHAIN intent attestation submit (IntentBook.attestIntent via UserOp)
 npm run strategy:attest:onchain -w @claw/agents -- \
   --fund-id demo-fund \

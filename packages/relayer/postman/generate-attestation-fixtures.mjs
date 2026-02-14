@@ -25,9 +25,9 @@ function asBigInt(name, fallback) {
   }
 }
 
-const signerKey = env("VERIFIER_PRIVATE_KEY", env("RELAYER_SIGNER_PRIVATE_KEY", "0x"));
+const signerKey = env("PARTICIPANT_PRIVATE_KEY", env("VERIFIER_PRIVATE_KEY", env("RELAYER_SIGNER_PRIVATE_KEY", "0x")));
 if (signerKey === "0x") {
-  throw new Error("set VERIFIER_PRIVATE_KEY (or RELAYER_SIGNER_PRIVATE_KEY) to generate signatures");
+  throw new Error("set PARTICIPANT_PRIVATE_KEY (or RELAYER_SIGNER_PRIVATE_KEY) to generate signatures");
 }
 
 const account = privateKeyToAccount(signerKey);
@@ -116,7 +116,7 @@ console.log("Generated fixtures:");
 console.log(`- ${path.join(fixturesDir, "claim-attestation.json")}`);
 console.log(`- ${path.join(fixturesDir, "intent-attestation-batch.json")}`);
 console.log("\nSet these Postman environment values:");
-console.log(`verifier_address=${verifier}`);
+console.log(`participant_address=${verifier}`);
 console.log(`claim_attestation_verifier_address=${claimAttestationVerifierAddress}`);
 console.log(`claim_hash=${claimHash}`);
 console.log(`intent_hash=${intentHash}`);

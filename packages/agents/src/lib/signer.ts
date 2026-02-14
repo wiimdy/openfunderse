@@ -72,7 +72,8 @@ export class BotSigner {
 
   constructor(options: BotSignerOptions = {}) {
     const privateKey =
-      (options.privateKey ?? readFirstEnv(['BOT_PRIVATE_KEY', 'VERIFIER_PRIVATE_KEY'])) as Hex;
+      (options.privateKey ??
+        readFirstEnv(['PARTICIPANT_PRIVATE_KEY', 'BOT_PRIVATE_KEY', 'VERIFIER_PRIVATE_KEY'])) as Hex;
     this.chainId = options.chainId ?? parseBigIntOrThrow(readEnv('CHAIN_ID'), 'CHAIN_ID');
     this.claimAttestationVerifierAddress =
       options.claimAttestationVerifierAddress ??

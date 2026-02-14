@@ -14,6 +14,7 @@ export type {
   RelayerProposeIntentInput,
   RelayerClientOptions,
   RelayerHttpErrorShape,
+  SyncFundDeploymentInput,
   SseEvent,
   SseHandlers,
   SseSubscription
@@ -29,6 +30,7 @@ export type {
 export { StrategyAaClient } from './lib/aa-client.js';
 export type {
   ExecuteViaAaInput,
+  StrategyAaClientEnvOverrides,
   StrategyAaClientConfig,
   UserOperationResult
 } from './lib/aa-client.js';
@@ -62,8 +64,13 @@ export type {
 
 console.log('[agents] boot');
 console.log(`[agents] strategy key set=${Boolean(process.env.STRATEGY_PRIVATE_KEY)}`);
-console.log(`[agents] verifier key set=${Boolean(process.env.VERIFIER_PRIVATE_KEY)}`);
-console.log(`[agents] crawler key set=${Boolean(process.env.CRAWLER_PRIVATE_KEY)}`);
+console.log(
+  `[agents] participant key set=${Boolean(
+    process.env.PARTICIPANT_PRIVATE_KEY ||
+      process.env.BOT_PRIVATE_KEY ||
+      process.env.VERIFIER_PRIVATE_KEY
+  )}`
+);
 
 const main = async (): Promise<void> => {
   const argv = process.argv.slice(2);
