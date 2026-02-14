@@ -1,205 +1,123 @@
-# Claw Architecture (Monad)
+# Claw Architecture (Current Implementation)
 
-## 1. High-Level View
-Claw is a hybrid system:
-- Offchain agents crawl/verify/decide (LLM/tooling).
-- Onchain contracts enforce validation thresholds, risk limits, and execution.
+Last updated: 2026-02-14
 
-Key principle:
-> Agents can propose anything offchain, but only validated, constrained intents are executable onchain.
+## 1. Scope
+This document describes the architecture currently implemented in this repository.
+It is intentionally implementation-first, not future-ideal.
 
-## 2. Components
-### 2.1 Onchain (Solidity)
-Minimal contract set for MVP:
-1) `AgentRegistry` (optional in MVP; can be allowlist-only)
-2) `ClaimBook` (claims + claim attestations + snapshot finalization)
-3) `IntentBook` (intent proposals + intent attestations)
-4) `ClawVault` (funds + execution + risk controls)
-5) `Points` (optional; points/reward accounting for demo)
+## 2. System Components
+### 2.1 Onchain Contracts
+- `ClawFundFactory`: deploys one fund stack per fund.
+- `IntentBook`: strategy proposes intents, verifiers attest, threshold -> approved.
+- `ClawCore`: validates approved intent constraints and executes via vault.
+- `ClawVault4626`: asset custody, allowed tokens/adapters, trade execution.
+- `NadfunExecutionAdapter`: NadFun buy/sell adapter.
 
-### 2.2 Offchain
-- Crawler agent(s)
-  - Fetch sources, extract fields, compute ClaimPayload, publish claimURI, submit claimHash.
-- Verifier agent(s)
-  - Re-crawl or verify proof, sign claimHash and/or intentHash.
-- Strategy agent
-  - Reads finalized snapshots, computes signal, outputs TradeIntent + explanation.
-- Relayer/Aggregator (stateless)
-  - Collects ECDSA signatures from verifiers, submits batch tx onchain.
-  - Can be run by anyone; multiple relayers are fine.
-- Storage
-  - ClaimPayload/Intent JSON stored offchain (IPFS/S3/HTTPS).
-- Proof service (optional)
-  - zkTLS receipts or other evidence generation.
+Code:
+- `packages/contracts/src/ClawFundFactory.sol`
+- `packages/contracts/src/IntentBook.sol`
+- `packages/contracts/src/ClawCore.sol`
+- `packages/contracts/src/ClawVault4626.sol`
+- `packages/contracts/src/adapters/NadfunExecutionAdapter.sol`
 
-## 3. Data Model
-### 3.1 ClaimPayload (offchain JSON)
-Example schema (ASCII-only; simplify as needed):
-```json
-{
-  "schemaId": "SOCIAL_SCORE_V1",
-  "sourceType": "WEB",
-  "sourceRef": "https://example.com/token/XYZ",
-  "selector": ".score",
-  "extracted": "12345",
-  "extractedType": "uint",
-  "timestamp": 1739000000,
-  "responseHash": "0x...",
-  "evidenceType": "RECrawlConsensus",
-  "evidenceURI": "ipfs://...",
-  "crawler": "0xCrawlerAgentAddress",
-  "notes": "optional"
-}
-```
+### 2.2 Offchain Relayer (Next.js)
+Responsibilities:
+- bot auth + role authz
+- fund metadata + bot registry
+- claim ingestion and claim attestation aggregation
+- snapshot materialization from approved claims
+- intent propose ingestion + executionRoute normalization
+- intent attestation aggregation and onchain submit
+- execution job queue + cron worker for `ClawCore.executeIntent`
 
-Onchain we store only:
-- `claimHash` (keccak256 of a canonical encoding of ClaimPayload fields)
-- `claimURI` (pointer to JSON)
-- minimal metadata (schemaId, timestamp, sourceType)
+Code:
+- `packages/relayer/app/api/v1/**`
+- `packages/relayer/lib/**`
 
-### 3.2 Claim Attestation
-- Verifier signs EIP-712 typed data:
-  - `ClaimAttestation(claimHash, epochId, verifier, expiresAt, nonce)`
-- Relayer submits a batch:
-  - `attestClaim(claimHash, verifierAddrs[], sigs[])`
+### 2.3 Agents Runtime
+- participant CLI: mine -> verify -> submit claim -> attest claim
+- strategy helper: NadFun quote-based intent proposal decision
 
-### 3.3 Snapshot
-- For each epoch:
-  - `snapshotHash = keccak256(abi.encode(epochId, orderedClaimHashes))`
-- Snapshot stored onchain with list pointer:
-  - either store only `snapshotHash` + `snapshotURI`
-  - or store claimHashes array if small (MVP ok)
+Code:
+- `packages/agents/src/skills/participant/index.ts`
+- `packages/agents/src/skills/strategy/index.ts`
 
-### 3.4 TradeIntent (offchain JSON + onchain struct)
-Intent JSON:
-```json
-{
-  "intentVersion": "V1",
-  "vault": "0xVault",
-  "action": "BUY",
-  "tokenIn": "0xUSDC",
-  "tokenOut": "0xMEME",
-  "amountIn": "1000000",
-  "minAmountOut": "123",
-  "deadline": 1739003600,
-  "maxSlippageBps": 50,
-  "snapshotHash": "0x...",
-  "reason": "hash-only onchain; full text here"
-}
-```
-Onchain intentHash commits to the critical fields:
-- `intentHash = keccak256(abi.encode(V1, vault, action, tokenIn, tokenOut, amountIn, minAmountOut, deadline, maxSlippageBps, snapshotHash))`
+### 2.4 Protocol SDK
+Single source for canonical rules used by contracts tests, relayer, and agents.
+- canonical hashing (`claimHash`, `intentHash`, `snapshotHash`)
+- EIP-712 typed data and verification
+- weighted threshold helpers
+- execution-route allowlist hash
 
-### 3.5 Intent Attestation
-- Verifier signs EIP-712 typed data:
-  - `IntentAttestation(intentHash, verifier, expiresAt, nonce)`
-- Batch submit:
-  - `attestIntent(intentHash, verifierAddrs[], sigs[])`
+Code:
+- `packages/sdk/src/**`
 
-## 4. Smart Contract Interfaces (MVP Sketch)
-### 4.1 AgentRegistry (optional)
-Purpose: restrict who can attest; can start as allowlist.
-- `registerAgent(address agent, string agentURI)`
-- `setVerifier(address agent, bool isVerifier)`
-- `setCrawler(address agent, bool isCrawler)`
+## 3. Data / Consensus Model
+## 3.1 Claims (Current)
+- Claims are stored in relayer DB (Supabase Postgres), not in the current onchain stack.
+- Verifier attestation for claims is validated with EIP-712 in relayer.
+- Threshold can finalize claim in relayer DB (`CLAIM_FINALIZATION_MODE=OFFCHAIN`, default).
+- Optional compatibility mode exists for claim onchain attestation (`ONCHAIN`), but this is not the primary path for current contract stack.
 
-### 4.2 ClaimBook
-- `submitClaim(bytes32 claimHash, string claimURI, uint64 timestamp, bytes32 schemaId) returns (uint256 claimId)`
-- `attestClaim(bytes32 claimHash, address[] verifiers, bytes[] sigs)`
-- `finalizeClaim(bytes32 claimHash)` (optional if threshold auto-finalizes)
-- `finalizeSnapshot(uint64 epochId, bytes32[] claimHashes, string snapshotURI) returns (bytes32 snapshotHash)`
+## 3.2 Snapshots (Current)
+- `GET /api/v1/funds/{fundId}/snapshots/latest` computes snapshot from approved claims.
+- Snapshot is currently materialized in relayer DB.
+- Validator snapshot for weighted checks is config-backed (`VERIFIER_WEIGHT_SNAPSHOT`) with TODO to replace by onchain registry/snapshot source.
 
-Events:
-- `ClaimSubmitted(claimHash, claimURI, schemaId, timestamp, crawler)`
-- `ClaimAttested(claimHash, verifier)`
-- `ClaimFinalized(claimHash)`
-- `SnapshotFinalized(epochId, snapshotHash, snapshotURI)`
+## 3.3 Intents (Current)
+- Strategy bot submits intent via `POST /intents/propose`.
+- `executionRoute` is required; relayer computes `allowlistHash` server-side.
+- Verifiers submit EIP-712 intent attestations.
+- On threshold, relayer submits `IntentBook.attestIntent(...)` onchain.
+- Approved intent creates execution job.
 
-### 4.3 IntentBook
-- `proposeIntent(bytes32 intentHash, string intentURI, bytes32 snapshotHash)`
-- `attestIntent(bytes32 intentHash, address[] verifiers, bytes[] sigs)`
-- `isIntentApproved(bytes32 intentHash) view returns (bool)`
+## 3.4 Execution (Current)
+- Cron endpoint triggers worker: `POST /api/v1/cron/execute-intents`.
+- Worker preflights with `ClawCore.validateIntentExecution`.
+- If valid, worker calls `ClawCore.executeIntent` using relayer/executor signer.
+- Execution status is tracked in `execution_jobs`.
 
-Events:
-- `IntentProposed(intentHash, intentURI, snapshotHash, proposer)`
-- `IntentAttested(intentHash, verifier)`
-- `IntentApproved(intentHash)`
+## 4. API Surface (v1)
+Admin:
+- `POST /api/v1/funds`
+- `POST /api/v1/funds/bootstrap`
 
-### 4.4 ClawVault
-- `deposit(uint256 amount)` / `withdraw(uint256 shares)`
-- `executeIntent(TradeIntent intent, address[] verifiers, bytes[] sigs)`
+Bots:
+- `POST/GET /api/v1/funds/{fundId}/bots/register`
+- `POST /api/v1/funds/{fundId}/claims`
+- `GET /api/v1/funds/{fundId}/claims`
+- `POST /api/v1/funds/{fundId}/attestations`
+- `GET /api/v1/funds/{fundId}/snapshots/latest`
+- `POST /api/v1/funds/{fundId}/intents/propose`
+- `POST /api/v1/funds/{fundId}/intents/attestations/batch`
 
-Risk controls (onchain enforced):
-- token/router allowlist
-- `maxTradeAmount`, `maxSlippageBps`, `cooldownSeconds`
-- daily loss limit (optional)
-- emergency pause
+Ops:
+- `GET /api/v1/funds/{fundId}/status`
+- `GET /api/v1/metrics`
+- `GET /api/v1/executions`
+- `POST /api/v1/cron/execute-intents`
+- SSE: `/events/claims`, `/events/intents`
 
-Events:
-- `Deposited(user, amount, shares)`
-- `Withdrew(user, shares, amount)`
-- `ExecutedIntent(intentHash, tokenIn, tokenOut, amountIn, amountOut)`
+## 5. Key Contract/Relayer Coupling Points
+Any signature/ABI change here requires relayer update in lockstep:
+- `IntentBook.getIntentExecutionData(...)`
+- `IntentBook.attestIntent(...)`
+- `ClawCore.validateIntentExecution(...)`
+- `ClawCore.executeIntent(...)`
 
-## 5. Sequence Diagrams
-### 5.1 Claim validation
-```mermaid
-sequenceDiagram
-  participant C as Crawler Agent
-  participant S as Storage (IPFS/HTTPS)
-  participant CB as ClaimBook (onchain)
-  participant V as Verifier Agents
-  participant R as Relayer
-  C->>S: Put ClaimPayload JSON => claimURI
-  C->>CB: submitClaim(claimHash, claimURI, ...)
-  V->>S: Fetch claimURI + re-crawl/verify proof
-  V->>R: Send signature over claimHash
-  R->>CB: attestClaim(claimHash, [verifiers], [sigs])
-  CB-->>R: ClaimFinalized (when threshold met)
-```
+Relayer call sites:
+- `packages/relayer/lib/onchain.ts`
+- `packages/relayer/lib/executor.ts`
 
-### 5.2 Intent execution
-```mermaid
-sequenceDiagram
-  participant SA as Strategy Agent
-  participant IB as IntentBook (onchain)
-  participant V as Verifier Agents
-  participant R as Relayer
-  participant VA as ClawVault (onchain)
-  SA->>IB: proposeIntent(intentHash, intentURI, snapshotHash)
-  V->>R: Sign intentHash after checks
-  R->>IB: attestIntent(intentHash, [verifiers], [sigs])
-  R->>VA: executeIntent(intent, [verifiers], [sigs])
-  VA-->>R: ExecutedIntent
-```
+## 6. Current Gaps / TODO
+- Replace config-backed validator snapshot with onchain source of truth.
+- Dry-run and simulation UX across relayer + agent path needs productized endpoint/workflow.
+- Claim onchain path should be either fully integrated into current stack or explicitly deprecated.
+- Strategy automation is BUY-heavy today; SELL is supported by protocol but not fully automated in strategy proposal path.
+- Production hardening for retries/backoff/monitoring/alerting needs completion.
 
-## 6. Trust & Threat Model (MVP)
-### 6.1 Assumptions
-- Offchain computation is not trusted; only signatures and onchain rules matter.
-- A relayer can be malicious, but cannot execute without enough verifier sigs.
-- Verifiers may be dishonest; threshold + allowlist mitigates in MVP.
-
-### 6.2 Threats and mitigations
-- Sybil verifiers: MVP allowlist; later stake + identity + reputation weighting.
-- Data lies: require evidenceURI + multiple independent verifiers.
-- Intent manipulation: vault enforces allowlist + minOut + deadline + caps.
-- Replay attacks: EIP-712 typed data with nonce/expiry.
-- MEV: small sizes + tight slippage; private tx later.
-
-## 7. ERC-8004 Mapping (Optional / Future)
-If you want to align with ERC-8004 "Trustless Agents":
-- `AgentRegistry` approximates Identity Registry (agentId/agentURI).
-- `Points/Reputation` approximates Reputation Registry (feedback signals).
-- `ClaimBook/IntentBook` is conceptually similar to Validation Registry (requestHash -> response).
-
-MVP can ship with simplified registries and later swap to ERC-8004-compliant ones.
-
-## 8. MVP Implementation Notes
-- Keep onchain storage minimal: hashes + URIs + counters.
-- Use events heavily; index with a simple script for the demo.
-- Start with allowlisted verifiers to avoid sybil complexity.
-- Prefer a demo AMM you deploy for deterministic behavior (less integration risk).
-
-## 9. Canonical Spec Reference
-- Canonical hashing + EIP-712 v1: `docs/protocol/hashing-eip712-v1.md`
-- Conformance plan: `docs/protocol/conformance-plan-v1.md`
-- Test vectors: `packages/sdk/test/vectors.json`
+## 7. Operational Defaults
+- Recommended: `CLAIM_FINALIZATION_MODE=OFFCHAIN`
+- Intent approval/finality is onchain through `IntentBook`.
+- Final execution is relayer-executor initiated (`ClawCore.executeIntent`).

@@ -1,6 +1,6 @@
 # Relayer Postman Kit
 
-This folder contains ready-to-import Postman assets for local Relayer/Aggregator v0 testing (SQLite mode).
+This folder contains ready-to-import Postman assets for local Relayer/Aggregator v0 testing (Supabase/Postgres mode).
 
 ## Files
 - `Claw-Relayer-v0.postman_collection.json`
@@ -79,16 +79,18 @@ And prints Postman environment values to copy:
 
 ## 4) Recommended run order
 1. Sign in at `/login` and set `admin_auth_cookie` in Postman
-2. `POST /api/v1/funds` (admin creates fund)
+2. `POST /api/v1/funds` (admin creates fund metadata only)
    - includes `strategyBotId` + `strategyBotAddress` (single strategy bot for fund)
-3. `POST /api/v1/funds/{fundId}/bots/register` (strategy bot registers participant bot)
-4. `GET /api/v1/funds/{fundId}/bots/register` (strategy bot verifies registry)
-5. `POST /api/v1/funds/{fundId}/claims` (crawler submits canonical claim payload)
-6. `POST /api/v1/funds/{fundId}/attestations` (verifier attests claim)
-7. `GET /api/v1/funds/{fundId}/snapshots/latest` (auto-build latest snapshot from approved claims)
-8. `POST /api/v1/funds/{fundId}/intents/propose` (strategy proposes intent with required `executionRoute`)
-9. `POST /api/v1/funds/{fundId}/intents/attestations/batch` (verifier attests intent)
-10. Re-check `GET /api/v1/funds/{fundId}/status` and `GET /api/v1/metrics`
+3. `POST /api/v1/funds/bootstrap` (admin deploys onchain fund stack + persists deployment metadata)
+4. `POST /api/v1/funds/{fundId}/bots/register` (strategy bot registers participant bot)
+5. `GET /api/v1/funds/{fundId}/bots/register` (strategy bot verifies registry)
+6. `POST /api/v1/funds/{fundId}/claims` (crawler submits canonical claim payload)
+7. `POST /api/v1/funds/{fundId}/attestations` (verifier attests claim)
+8. `GET /api/v1/funds/{fundId}/snapshots/latest` (auto-build latest snapshot from approved claims)
+9. `POST /api/v1/funds/{fundId}/intents/propose` (strategy proposes intent with required `executionRoute`)
+10. `POST /api/v1/funds/{fundId}/intents/attestations/batch` (verifier attests intent)
+11. `POST /api/v1/cron/execute-intents` (execution worker tick)
+12. `GET /api/v1/executions` and re-check `GET /api/v1/funds/{fundId}/status`, `GET /api/v1/metrics`
 
 ## Notes
 - Admin endpoints require NextAuth admin-id session; collection includes `admin_auth_cookie` placeholder.
@@ -96,4 +98,5 @@ And prints Postman environment values to copy:
 - Participant bot registration endpoint is strategy-only (`bots.register` scope).
 - For weighted pass condition, the signer address must be present in `VERIFIER_WEIGHT_SNAPSHOT` with positive weight.
 - `POST /intents/propose` does not accept direct `allowlistHash`; relayer computes it from `executionRoute` only.
+- Collection now includes `funds/bootstrap`, `executions`, `cron/execute-intents`, and SSE endpoints (`events/claims`, `events/intents`).
 - If you only want quick negative-path testing, use the `bad signature` requests in the collection.

@@ -1,175 +1,67 @@
-# Claw: Verified Data Swarm Vault (Monad) - PRD
+# Claw PRD (Current Delivery Baseline)
 
-## 1. Summary
-Claw is an onchain vault that executes trades only when a swarm of independent agents (verifiers) attest to:
-1) the validity of data claims mined from specific sources (evidence-backed), and
-2) the safety/consistency of a proposed trade intent derived from those validated claims.
+Last updated: 2026-02-14
 
-The product demonstrates "agents that can transact at scale" by turning agent-to-agent coordination into enforced onchain execution and automated rewards.
+## 1. Product Goal
+Build a multi-agent fund operation loop where:
+1. participant bots submit and verify claims,
+2. strategy bot proposes constrained intents,
+3. relayer aggregates weighted attestations,
+4. only approved intents are executed onchain under risk constraints.
 
-## 2. Problem
-Agentic trading prototypes usually fail on trust:
-- Data inputs are unverifiable (prompt injection / cherry-picked evidence).
-- One operator controls execution (centralized relayer risk).
-- No transparent accountability (who said what, and who gets paid/slashed).
+## 2. Implemented Scope (Now)
+### 2.1 Contracts
+- Fund stack deployment via `ClawFundFactory`.
+- Intent consensus via `IntentBook` (`proposeIntent`, `attestIntent`, approval state).
+- Risk-gated execution via `ClawCore` + `ClawVault4626`.
+- NadFun adapter path present (`NadfunExecutionAdapter`).
 
-We need a structure where:
-- Data provenance is auditable.
-- Decisions are gated by multi-party validation.
-- Execution is onchain and constrained by risk rules.
-- Contributors are rewarded for correct work (and optionally penalized for bad work).
+### 2.2 Relayer
+- Supabase/Postgres persistence.
+- Admin fund APIs (`/funds`, `/funds/bootstrap`).
+- Strategy-only participant bot registration.
+- Claim ingestion and claim attestation aggregation.
+- Snapshot materialization from approved claims.
+- Intent propose + intent attestation batch.
+- Execution queue + cron endpoint + execution status APIs.
+- Metrics and SSE event streams.
 
-## 3. Goals (Hackathon MVP)
-- Evidence-backed data claims: store a commitment onchain, keep heavy evidence offchain.
-- Multi-agent validation: aggregate attestations by onchain snapshot-based weighted threshold.
-- Prompt-to-intent pipeline: validated dataset snapshot -> strategy output -> structured trade intent.
-- Onchain execution: vault executes the intent only after intent-attestation threshold is met.
-- Transparent incentives: points/rewards for miners and verifiers; a clear leaderboard.
-- A demo that is "weird + works": show the full loop end-to-end in <2 minutes.
+### 2.3 Agents / SDK / Openfunderse
+- Participant CLI flow (mine/verify/submit/attest/e2e).
+- Strategy quote-based propose helper (currently BUY-first behavior).
+- SDK is the canonical source for hashing, EIP-712, weighted threshold, execution route hash.
+- Openfunderse distributes Codex skills/prompts; runtime remains in `packages/agents`.
 
-## 4. Non-Goals (MVP)
-- Real-money fund operations (treat as demo / test funds; no financial advice).
-- Full trustless web proofs for all sources (zkTLS optional in MVP).
-- Complex portfolio mgmt, leverage, cross-chain, or high-frequency strategies.
-- Fully generalized ERC-8004 compliance (we can be "ERC-8004-inspired" and map to it later).
+## 3. Current E2E Operational Flow
+1. Admin creates fund (`/api/v1/funds`) or deploys + persists (`/api/v1/funds/bootstrap`).
+2. Strategy bot registers participant bots (`/bots/register`).
+3. Crawler submits claim (`/claims`).
+4. Verifier submits claim attestation (`/attestations`).
+5. Relayer finalizes claim by weighted threshold (default OFFCHAIN mode).
+6. Snapshot is built (`/snapshots/latest`).
+7. Strategy proposes intent (`/intents/propose`) with required `executionRoute`.
+8. Verifier submits intent attestation batch.
+9. Relayer submits to `IntentBook.attestIntent` onchain when threshold is met.
+10. Execution worker runs (`/cron/execute-intents`) and calls `ClawCore.executeIntent` if preflight passes.
+11. Operators observe `/executions`, `/status`, `/metrics`, SSE.
 
-## 5. Users / Personas
-- LP (Depositor): deposits into the vault, wants transparency and safety.
-- Data Miner (Crawler Agent Operator): runs a crawler, submits claims, earns rewards.
-- Verifier (Attestor Agent Operator): validates claims/intents, stakes, earns rewards.
-- Strategist (Strategy Agent): proposes trade intents based on validated snapshots.
-- Operator (Relayer): posts aggregated attestations and intents onchain (can be multiple).
+## 4. Constraints and Policy
+- `intents/propose` does not allow direct `allowlistHash` input.
+- Relayer computes and commits allowlist hash from `executionRoute`.
+- Executor is relayer-managed (not permissionless yet).
+- Claim finalization defaults to OFFCHAIN for current operational mode.
 
-## 6. Core Concept: Claim -> Attest -> Snapshot -> Intent -> Attest -> Execute
-Definitions:
-- Claim: "From source S, at time T, selector X yields value V" + evidence pointer.
-- Claim validation: verifiers attest to a claimHash after re-crawling or checking proof.
-- Snapshot: a deterministic set of finalized claimHashes for an epoch, summarized by snapshotHash.
-- Trade intent: a structured order (tokenIn/tokenOut/amount/minOut/deadline/constraints) referencing snapshotHash.
-- Intent validation: verifiers sign intentHash; vault executes if threshold met.
+## 5. Known Gaps / Not Yet Implemented
+- Validator snapshot source is still env-backed, not onchain registry/snapshot source.
+- Dry-run UX is contract-level available but not fully productized end-to-end in relayer API UX.
+- Claim ONCHAIN path is compatibility mode and not fully aligned as primary stack path.
+- Strategy automation has BUY bias; SELL is protocol-supported but not equally automated in propose logic.
+- Production monitoring and automated incident handling are incomplete.
 
-## 7. Product Flow (MVP)
-### 7.1 Epoch loop
-1) Crawler agent publishes ClaimPayload to offchain storage, then calls onchain `submitClaim(claimHash, claimURI, meta)`.
-2) Verifier agents evaluate the claim:
-   - Option A (MVP): re-crawl and compare extracted value; sign if consistent.
-   - Option B (optional): verify zkTLS proof; sign if valid.
-3) Relayer aggregates verifier signatures and calls `attestClaim(claimHash, sigs)`.
-4) When claim attestation threshold is met, the claim becomes "FINAL".
-5) At epoch end, a snapshot is created: `finalizeSnapshot(epochId, claimHashes[])` -> snapshotHash.
-6) Strategy agent reads snapshot, generates a TradeIntent (structured JSON), and posts to chain `proposeIntent(intentHash, intentURI, snapshotHash, constraints)`.
-7) Verifiers evaluate the intent (risk checks + consistency) and sign intentHash.
-8) Relayer calls `attestIntent(intentHash, sigs)`.
-9) Vault calls `executeIntent(intent)` only if intent is approved and within onchain risk limits.
-
-### 7.2 UI / demo
-- Show:
-  - claim list (source, value, time), attestation progress
-  - snapshot creation
-  - proposed intent (human-readable) and approval progress
-  - executed trade tx hash + vault balances
-  - leaderboard for miners/verifiers
-
-## 8. Functional Requirements
-### 8.1 Claims
-- Allow submission of claim commitments:
-  - inputs: `claimHash`, `claimURI`, `sourceType`, `sourceRef`, `timestamp`, `schemaId`
-  - store: minimal metadata + status + attestation count
-- Support multiple claim schemas (MVP ships with 1-2 schemas).
-
-### 8.2 Attestations (Claims + Intents)
-- Only registered agents may attest (MVP: allowlist or simple registry).
-- Enforce uniqueness: one attestation per agent per claim/intent.
-- Threshold policies:
-  - claimThreshold: e.g., 3 verifiers
-  - intentThreshold: e.g., 5 verifiers
-  - (optional) weighted by stake/reputation later
-
-### 8.3 Snapshots
-- Deterministically compute snapshotHash from ordered claimHashes and epochId.
-- Freeze snapshot once finalized.
-
-### 8.4 Intents
-- TradeIntent includes:
-  - `action` (BUY/SELL)
-  - `tokenIn`, `tokenOut`
-  - `amountIn` or `pctOfVault`
-  - `minAmountOut`
-  - `deadline`
-  - `snapshotHash`
-  - `maxSlippageBps`
-  - `reasonHash` (hash of strategy explanation; full text in intentURI)
-
-### 8.5 Vault execution
-- Deposit/withdraw by LPs (MVP: single asset deposit like USDC mock).
-- Execute only if:
-  - intent is approved
-  - deadline not expired
-  - token/router allowlist passes
-  - trade size within caps
-  - minOut enforced
-  - cooldown and daily limits ok
-- Emit events for indexing and demo clarity.
-
-### 8.6 Rewards / Points (MVP)
-- Points ledger:
-  - miners get points when their claims become FINAL
-  - verifiers get points per correct attestation (MVP correctness = "attested to a FINAL claim/intent")
-- (Optional) small token emission or vault fee split can be added, but points + leaderboard is enough for MVP.
-
-## 9. Non-Functional Requirements
-- Security:
-  - no single relayer can force a trade (threshold signatures required)
-  - pausable contracts (guardian)
-  - reentrancy protection, safe ERC20 transfers
-  - strict allowlists for tokens/routers in MVP
-- Transparency:
-  - every claim/intent has a hash and URI; all approvals are onchain
-- Performance:
-  - avoid storing large blobs onchain; store hashes + URIs
-- Reliability:
-  - if verification liveness fails, vault does nothing (safe failure mode)
-
-## 10. MVP Scope (Recommended)
-- One chain: Monad testnet/devnet.
-- One quote asset: mock USDC (or chain native stable).
-- One target memecoin: a demo token or a known testnet asset.
-- One venue:
-  - Option A: a minimal AMM we deploy for deterministic demos.
-  - Option B: integrate a DEX router if available and stable.
-- One claim schema:
-  - "Social momentum score" computed from 2-3 sources (e.g., website counters).
-  - Keep sources simple and stable to avoid demo flakiness.
-- Verification:
-  - MVP uses re-crawl consensus by verifiers.
-  - zkTLS is "optional enhancement".
-
-## 11. Risks & Mitigations
-- Sybil verifiers:
-  - MVP: allowlist verifiers; later: stake + reputation weighting + identity proofs.
-- Data poisoning / selective reporting:
-  - require multiple independent verifiers + public evidence URI
-  - multiple sources per score
-- MEV / sandwich:
-  - use minOut + tight slippage + small sizes; consider private tx later
-- Relayer censorship:
-  - allow any relayer to submit aggregated sigs (permissionless)
-- Strategy mistakes:
-  - keep strategy trivial; onchain risk caps; require higher intentThreshold
-
-## 12. Milestones (2 weeks)
-- Day 1-2: finalize schemas and thresholds; scaffold contracts; local e2e happy path.
-- Day 3-5: relayer aggregator + signature collection; indexer script.
-- Day 6-8: crawler/verifier agents; claim generation and attestation flow.
-- Day 9-11: UI dashboard + leaderboard; demo script.
-- Day 12-14: polish, tests, deployment, video, submission docs.
-
-## 13. Open Questions
-- Do we ship as "Agent" or "Agent+Token" track?
-- Which exact sources are stable enough for crawling?
-- Do we include stake/slashing in MVP, or points-only?
-
-## 14. Protocol Spec Artifacts
-- Canonical hashing + EIP-712 spec (v1): `docs/protocol/hashing-eip712-v1.md`
-- Cross-component conformance plan: `docs/protocol/conformance-plan-v1.md`
-- Shared test vectors: `packages/sdk/test/vectors.json`
+## 6. Definition of Done for Current Phase
+A release is considered acceptable when:
+- fund bootstrap/create works,
+- participant claim e2e works,
+- intent propose + attest pipeline works,
+- execution worker can settle approved intent onchain when signer has funds,
+- status/metrics/executions APIs provide operator observability.

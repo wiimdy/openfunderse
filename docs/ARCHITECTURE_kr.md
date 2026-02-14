@@ -1,202 +1,123 @@
-# Claw Architecture (Monad) (KR)
+# Claw 아키텍처 (현 구현 기준)
 
-## 1. 전체 구조
-Claw는 하이브리드 시스템입니다.
-- 오프체인 에이전트가 수집/검증/의사결정을 수행(LLM/tooling).
-- 온체인 컨트랙트가 검증 임계치, 리스크 제한, 실행을 강제합니다.
+마지막 업데이트: 2026-02-14
 
-핵심 원칙:
-> 오프체인에서 무엇이든 제안할 수는 있지만, 검증되고 제약된 Intent만 온체인에서 실행 가능하다.
+## 1. 문서 범위
+이 문서는 현재 레포에 실제 구현된 구조를 기준으로 작성합니다.
+이상적인 미래 구조가 아니라, 지금 동작하는 기준입니다.
 
-## 2. 구성 요소
-### 2.1 온체인 (Solidity)
-MVP 기준 최소 컨트랙트 셋:
-1) `AgentRegistry` (MVP에서는 optional; allowlist-only로 시작 가능)
-2) `ClaimBook` (Claim + Claim attestation + snapshot finalize)
-3) `IntentBook` (Intent proposal + intent attestation)
-4) `ClawVault` (자산 보관 + 실행 + 리스크 컨트롤)
-5) `Points` (optional; 데모용 포인트/리워드 회계)
+## 2. 구성요소
+### 2.1 온체인 컨트랙트
+- `ClawFundFactory`: 펀드별 스택 배포
+- `IntentBook`: 전략 인텐트 제안 + 검증자 attestation + 임계치 승인
+- `ClawCore`: 승인된 인텐트 제약 검증 + 실행
+- `ClawVault4626`: 자금 보관/허용 토큰/허용 어댑터/실행
+- `NadfunExecutionAdapter`: NadFun buy/sell 어댑터
 
-### 2.2 오프체인
-- Crawler agent(s)
-  - 소스 fetch, 필드 추출, ClaimPayload 계산, claimURI 게시, claimHash 제출.
-- Verifier agent(s)
-  - 재크롤 또는 proof 검증, claimHash 및/또는 intentHash 서명.
-- Strategy agent
-  - finalized snapshot을 읽고 신호 계산, TradeIntent + 설명 생성.
-- Relayer/Aggregator (stateless)
-  - verifier들의 ECDSA 서명 수집 후, 배치 tx를 온체인 제출.
-  - 누구나 운영 가능; relayer는 복수여도 OK.
-- Storage
-  - ClaimPayload/Intent JSON을 오프체인에 저장(IPFS/S3/HTTPS).
-- Proof service (optional)
-  - zkTLS 영수증 등 evidence 생성.
+코드:
+- `packages/contracts/src/ClawFundFactory.sol`
+- `packages/contracts/src/IntentBook.sol`
+- `packages/contracts/src/ClawCore.sol`
+- `packages/contracts/src/ClawVault4626.sol`
+- `packages/contracts/src/adapters/NadfunExecutionAdapter.sol`
 
-## 3. 데이터 모델
-### 3.1 ClaimPayload (오프체인 JSON)
-예시 스키마(ASCII-only; 필요 시 단순화):
-```json
-{
-  "schemaId": "SOCIAL_SCORE_V1",
-  "sourceType": "WEB",
-  "sourceRef": "https://example.com/token/XYZ",
-  "selector": ".score",
-  "extracted": "12345",
-  "extractedType": "uint",
-  "timestamp": 1739000000,
-  "responseHash": "0x...",
-  "evidenceType": "RECrawlConsensus",
-  "evidenceURI": "ipfs://...",
-  "crawler": "0xCrawlerAgentAddress",
-  "notes": "optional"
-}
-```
+### 2.2 오프체인 Relayer (Next.js)
+역할:
+- bot 인증/권한
+- 펀드/봇 메타데이터 관리
+- claim 수집/검증/집계
+- approved claims 기반 snapshot 생성
+- intent propose 수신 + executionRoute 정규화
+- intent attestation 집계 + 온체인 제출
+- execution job 큐 + cron 워커
 
-온체인에는 아래만 저장합니다.
-- `claimHash` (ClaimPayload 필드의 canonical encoding에 대한 keccak256)
-- `claimURI` (JSON 포인터)
-- 최소 메타데이터(schemaId, timestamp, sourceType)
+코드:
+- `packages/relayer/app/api/v1/**`
+- `packages/relayer/lib/**`
 
-### 3.2 Claim Attestation
-- Verifier는 EIP-712 typed data에 서명:
-  - `ClaimAttestation(claimHash, epochId, verifier, expiresAt, nonce)`
-- Relayer는 배치 제출:
-  - `attestClaim(claimHash, verifierAddrs[], sigs[])`
+### 2.3 Agents 런타임
+- participant CLI: mine -> verify -> submit claim -> attest claim
+- strategy 보조 로직: NadFun quote 기반 인텐트 제안 판단
 
-### 3.3 Snapshot
-- epoch마다:
-  - `snapshotHash = keccak256(abi.encode(epochId, orderedClaimHashes))`
-- Snapshot 저장 방식:
-  - `snapshotHash` + `snapshotURI`만 저장하거나
-  - claimHashes 배열이 작으면 온체인에 배열 저장(MVP OK)
+코드:
+- `packages/agents/src/skills/participant/index.ts`
+- `packages/agents/src/skills/strategy/index.ts`
 
-### 3.4 TradeIntent (오프체인 JSON + 온체인 struct)
-Intent JSON:
-```json
-{
-  "intentVersion": "V1",
-  "vault": "0xVault",
-  "action": "BUY",
-  "tokenIn": "0xUSDC",
-  "tokenOut": "0xMEME",
-  "amountIn": "1000000",
-  "minAmountOut": "123",
-  "deadline": 1739003600,
-  "maxSlippageBps": 50,
-  "snapshotHash": "0x...",
-  "reason": "hash-only onchain; full text here"
-}
-```
+### 2.4 Protocol SDK
+컨트랙트 테스트/relayer/agents가 공통으로 쓰는 단일 규격 레이어.
+- canonical hash (`claimHash`, `intentHash`, `snapshotHash`)
+- EIP-712 typed data/verify
+- weighted threshold 유틸
+- execution-route allowlist hash
 
-온체인 `intentHash`는 중요한 필드를 커밋합니다.
-- `intentHash = keccak256(abi.encode(V1, vault, action, tokenIn, tokenOut, amountIn, minAmountOut, deadline, maxSlippageBps, snapshotHash))`
+코드:
+- `packages/sdk/src/**`
 
-### 3.5 Intent Attestation
-- Verifier는 EIP-712 typed data에 서명:
-  - `IntentAttestation(intentHash, verifier, expiresAt, nonce)`
-- 배치 제출:
-  - `attestIntent(intentHash, verifierAddrs[], sigs[])`
+## 3. 데이터/합의 모델
+### 3.1 Claims (현재)
+- 현재 컨트랙트 스택의 핵심 경로는 claim onchain book이 아님.
+- claim은 relayer DB(Supabase Postgres)에 저장/집계됨.
+- claim attestation은 relayer에서 EIP-712 검증.
+- 기본 운영은 `CLAIM_FINALIZATION_MODE=OFFCHAIN`.
+- `ONCHAIN` 모드는 호환 경로로 존재하지만 주 경로는 아님.
 
-## 4. 스마트 컨트랙트 인터페이스 (MVP 스케치)
-### 4.1 AgentRegistry (optional)
-목적: 누가 attest할 수 있는지 제한; allowlist로 시작 가능.
-- `registerAgent(address agent, string agentURI)`
-- `setVerifier(address agent, bool isVerifier)`
-- `setCrawler(address agent, bool isCrawler)`
+### 3.2 Snapshot (현재)
+- `GET /api/v1/funds/{fundId}/snapshots/latest`가 approved claims로 snapshot 생성/갱신.
+- snapshot은 relayer DB에 materialize.
+- weighted 검증자 스냅샷은 현재 `VERIFIER_WEIGHT_SNAPSHOT`(env) 기반.
+- 온체인 스냅샷 소스 연동은 TODO.
 
-### 4.2 ClaimBook
-- `submitClaim(bytes32 claimHash, string claimURI, uint64 timestamp, bytes32 schemaId) returns (uint256 claimId)`
-- `attestClaim(bytes32 claimHash, address[] verifiers, bytes[] sigs)`
-- `finalizeClaim(bytes32 claimHash)` (임계치 도달 시 자동 finalize면 optional)
-- `finalizeSnapshot(uint64 epochId, bytes32[] claimHashes, string snapshotURI) returns (bytes32 snapshotHash)`
+### 3.3 Intent (현재)
+- strategy bot이 `POST /intents/propose` 호출.
+- `executionRoute`는 필수이며 `allowlistHash`는 서버에서 계산.
+- verifier attestation 집계 후 threshold 충족 시 `IntentBook.attestIntent(...)` 온체인 제출.
+- 승인되면 execution job 생성.
 
-Events:
-- `ClaimSubmitted(claimHash, claimURI, schemaId, timestamp, crawler)`
-- `ClaimAttested(claimHash, verifier)`
-- `ClaimFinalized(claimHash)`
-- `SnapshotFinalized(epochId, snapshotHash, snapshotURI)`
+### 3.4 실행 (현재)
+- `POST /api/v1/cron/execute-intents`로 워커 실행.
+- 워커는 `ClawCore.validateIntentExecution` 선검증 후 `executeIntent` 호출.
+- 실행 상태는 `execution_jobs`에 기록.
 
-### 4.3 IntentBook
-- `proposeIntent(bytes32 intentHash, string intentURI, bytes32 snapshotHash)`
-- `attestIntent(bytes32 intentHash, address[] verifiers, bytes[] sigs)`
-- `isIntentApproved(bytes32 intentHash) view returns (bool)`
+## 4. API 표면 (v1)
+Admin:
+- `POST /api/v1/funds`
+- `POST /api/v1/funds/bootstrap`
 
-Events:
-- `IntentProposed(intentHash, intentURI, snapshotHash, proposer)`
-- `IntentAttested(intentHash, verifier)`
-- `IntentApproved(intentHash)`
+Bots:
+- `POST/GET /api/v1/funds/{fundId}/bots/register`
+- `POST /api/v1/funds/{fundId}/claims`
+- `GET /api/v1/funds/{fundId}/claims`
+- `POST /api/v1/funds/{fundId}/attestations`
+- `GET /api/v1/funds/{fundId}/snapshots/latest`
+- `POST /api/v1/funds/{fundId}/intents/propose`
+- `POST /api/v1/funds/{fundId}/intents/attestations/batch`
 
-### 4.4 ClawVault
-- `deposit(uint256 amount)` / `withdraw(uint256 shares)`
-- `executeIntent(TradeIntent intent, address[] verifiers, bytes[] sigs)`
+Ops:
+- `GET /api/v1/funds/{fundId}/status`
+- `GET /api/v1/metrics`
+- `GET /api/v1/executions`
+- `POST /api/v1/cron/execute-intents`
+- SSE: `/events/claims`, `/events/intents`
 
-리스크 컨트롤(온체인 강제):
-- token/router allowlist
-- `maxTradeAmount`, `maxSlippageBps`, `cooldownSeconds`
-- daily loss limit (optional)
-- emergency pause
+## 5. 컨트랙트-릴레이어 결합 포인트
+아래 ABI/시그니처가 바뀌면 relayer 동시 수정이 필요함:
+- `IntentBook.getIntentExecutionData(...)`
+- `IntentBook.attestIntent(...)`
+- `ClawCore.validateIntentExecution(...)`
+- `ClawCore.executeIntent(...)`
 
-Events:
-- `Deposited(user, amount, shares)`
-- `Withdrew(user, shares, amount)`
-- `ExecutedIntent(intentHash, tokenIn, tokenOut, amountIn, amountOut)`
+Relayer 호출 지점:
+- `packages/relayer/lib/onchain.ts`
+- `packages/relayer/lib/executor.ts`
 
-## 5. 시퀀스 다이어그램
-### 5.1 Claim 검증
-```mermaid
-sequenceDiagram
-  participant C as Crawler Agent
-  participant S as Storage (IPFS/HTTPS)
-  participant CB as ClaimBook (onchain)
-  participant V as Verifier Agents
-  participant R as Relayer
-  C->>S: Put ClaimPayload JSON => claimURI
-  C->>CB: submitClaim(claimHash, claimURI, ...)
-  V->>S: Fetch claimURI + re-crawl/verify proof
-  V->>R: Send signature over claimHash
-  R->>CB: attestClaim(claimHash, [verifiers], [sigs])
-  CB-->>R: ClaimFinalized (when threshold met)
-```
+## 6. 미구현/리스크 TODO
+- 검증자 스냅샷을 env 기반에서 온체인 소스로 전환.
+- dry-run/simulation UX를 relayer/agent 사용자 경로로 제품화.
+- claim onchain 경로를 현 스택에 정식 통합하거나 명시적 제거.
+- strategy 자동화는 현재 BUY 편향(SELL은 규격/컨트랙트 지원, 자동 전략 분기 보강 필요).
+- 운영 모니터링/재시도/알림 체계 고도화.
 
-### 5.2 Intent 실행
-```mermaid
-sequenceDiagram
-  participant SA as Strategy Agent
-  participant IB as IntentBook (onchain)
-  participant V as Verifier Agents
-  participant R as Relayer
-  participant VA as ClawVault (onchain)
-  SA->>IB: proposeIntent(intentHash, intentURI, snapshotHash)
-  V->>R: Sign intentHash after checks
-  R->>IB: attestIntent(intentHash, [verifiers], [sigs])
-  R->>VA: executeIntent(intent, [verifiers], [sigs])
-  VA-->>R: ExecutedIntent
-```
-
-## 6. 신뢰/위협 모델 (MVP)
-### 6.1 가정
-- 오프체인 계산은 신뢰하지 않음; 서명과 온체인 룰만이 사실상 보안 경계.
-- Relayer가 악성일 수 있으나, 충분한 verifier 서명 없이는 실행 불가.
-- Verifier가 부정직할 수 있음; MVP에서는 threshold + allowlist로 완화.
-
-### 6.2 위협과 완화
-- Sybil verifiers: MVP allowlist; 이후 stake + identity + reputation weighting.
-- Data lies: evidenceURI 요구 + 독립 verifier 다수.
-- Intent manipulation: vault에서 allowlist + minOut + deadline + caps 강제.
-- Replay attacks: EIP-712 typed data에 nonce/expiry 포함.
-- MEV: 작은 사이즈 + 타이트한 슬리피지; 이후 private tx 고려.
-
-## 7. ERC-8004 매핑 (옵션 / 향후)
-ERC-8004 "Trustless Agents"에 맞추려면:
-- `AgentRegistry` -> Identity Registry(agentId/agentURI)에 준하는 역할
-- `Points/Reputation` -> Reputation Registry(피드백 신호)에 준하는 역할
-- `ClaimBook/IntentBook` -> Validation Registry(requestHash -> response)와 유사
-
-MVP는 단순 registry로 시작하고, 이후 ERC-8004-compliant 구현으로 교체/어댑팅할 수 있습니다.
-
-## 8. MVP 구현 노트
-- 온체인 저장은 최소화(해시 + URI + 카운터).
-- 이벤트를 충분히 설계하고, 데모용 인덱싱은 스크립트로 빠르게.
-- MVP는 allowlisted verifiers로 sybil 복잡도를 피함.
-- DEX 통합 리스크를 줄이려면 데모용 AMM을 직접 배포(결정적 데모).
-
+## 7. 운영 기본값
+- 권장: `CLAIM_FINALIZATION_MODE=OFFCHAIN`
+- intent 승인/합의는 `IntentBook` 온체인 기준
+- 최종 실행은 relayer executor가 `ClawCore.executeIntent` 호출
