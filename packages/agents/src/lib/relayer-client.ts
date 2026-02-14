@@ -131,6 +131,36 @@ interface SubmitClaimResponse {
   claimHash: Hex;
 }
 
+export interface IntentOnchainBundleItem {
+  verifier: Address;
+  expiresAt: string;
+  nonce: string;
+  signature: Hex;
+}
+
+export interface IntentOnchainBundleResponse {
+  intentHash: Hex;
+  subjectState: 'PENDING' | 'READY_FOR_ONCHAIN' | 'APPROVED' | 'REJECTED';
+  thresholdWeight: string;
+  attestedWeight: string;
+  thresholdReached: boolean;
+  verifiers: Address[];
+  signatures: Hex[];
+  attestations: IntentOnchainBundleItem[];
+}
+
+export interface ReadyExecutionPayloadItem {
+  jobId: number;
+  intentHash: Hex;
+  jobStatus: string;
+  attemptCount: number;
+  nextRunAt: number;
+  maxNotional: string;
+  deadline: string;
+  intent: TradeIntent;
+  executionRoute: IntentExecutionRouteInput;
+}
+
 const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -383,6 +413,98 @@ export class RelayerClient {
           nonce: String(attestation.nonce),
           signature: attestation.signature
         }))
+      },
+      withAuth: true
+    });
+  }
+
+  async getIntentOnchainBundle(
+    fundId: string,
+    intentHash: Hex
+  ): Promise<IntentOnchainBundleResponse & Record<string, unknown>> {
+    return this.request<IntentOnchainBundleResponse & Record<string, unknown>>({
+      method: 'GET',
+      path: `/api/v1/funds/${encodeURIComponent(fundId)}/intents/${encodeURIComponent(
+        intentHash
+      )}/onchain-bundle`,
+      withAuth: true
+    });
+  }
+
+  async markIntentOnchainAttested(
+    fundId: string,
+    intentHash: Hex,
+    txHash: Hex
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>({
+      method: 'POST',
+      path: `/api/v1/funds/${encodeURIComponent(fundId)}/intents/${encodeURIComponent(
+        intentHash
+      )}/onchain-attested`,
+      body: {
+        txHash
+      },
+      withAuth: true
+    });
+  }
+
+  async listReadyExecutionPayloads(
+    fundId: string,
+    query: { limit?: number; offset?: number } = {}
+  ): Promise<
+    Record<string, unknown> & {
+      total: number;
+      items: ReadyExecutionPayloadItem[];
+    }
+  > {
+    const params: Record<string, string> = {};
+    if (query.limit !== undefined) params.limit = String(query.limit);
+    if (query.offset !== undefined) params.offset = String(query.offset);
+
+    return this.request<
+      Record<string, unknown> & {
+        total: number;
+        items: ReadyExecutionPayloadItem[];
+      }
+    >({
+      method: 'GET',
+      path: `/api/v1/funds/${encodeURIComponent(fundId)}/intents/ready-execution`,
+      query: params,
+      withAuth: true
+    });
+  }
+
+  async markIntentOnchainExecuted(
+    fundId: string,
+    intentHash: Hex,
+    txHash: Hex
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>({
+      method: 'POST',
+      path: `/api/v1/funds/${encodeURIComponent(fundId)}/intents/${encodeURIComponent(
+        intentHash
+      )}/onchain-executed`,
+      body: {
+        txHash
+      },
+      withAuth: true
+    });
+  }
+
+  async markIntentOnchainFailed(
+    fundId: string,
+    intentHash: Hex,
+    error: string,
+    retryDelayMs?: number
+  ): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>({
+      method: 'POST',
+      path: `/api/v1/funds/${encodeURIComponent(fundId)}/intents/${encodeURIComponent(
+        intentHash
+      )}/onchain-failed`,
+      body: {
+        error,
+        retryDelayMs
       },
       withAuth: true
     });

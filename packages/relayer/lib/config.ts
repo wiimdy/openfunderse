@@ -82,7 +82,7 @@ function parseWeightCsv(value: string | undefined): Array<{ validator: Address; 
 export function loadRuntimeConfig() {
   const chainId = BigInt(env("CHAIN_ID"));
   const rpcUrl = env("RPC_URL");
-  const signerKey = env("RELAYER_SIGNER_PRIVATE_KEY") as Hex;
+  const signerKey = envOptional("RELAYER_SIGNER_PRIVATE_KEY") as Hex | undefined;
   const claimBookAddress = envOptional("CLAIM_BOOK_ADDRESS") as Address | undefined;
   const intentBookAddress = env("INTENT_BOOK_ADDRESS") as Address;
   const clawVaultAddress = env("CLAW_VAULT_ADDRESS") as Address;
@@ -126,7 +126,12 @@ export function loadReadOnlyRuntimeConfig() {
 export function loadFactoryRuntimeConfig() {
   const chainId = BigInt(env("CHAIN_ID"));
   const rpcUrl = env("RPC_URL");
-  const signerKey = env("RELAYER_SIGNER_PRIVATE_KEY") as Hex;
+  const signerKey =
+    (envOptional("FACTORY_SIGNER_PRIVATE_KEY") ??
+      envOptional("RELAYER_SIGNER_PRIVATE_KEY")) as Hex | undefined;
+  if (!signerKey) {
+    throw new Error("missing required env: FACTORY_SIGNER_PRIVATE_KEY");
+  }
   const factoryAddress = env("CLAW_FUND_FACTORY_ADDRESS") as Address;
 
   return {
@@ -141,13 +146,9 @@ export function loadExecutionConfig() {
   const chainId = BigInt(env("CHAIN_ID"));
   const rpcUrl = env("RPC_URL");
   const coreAddress = env("CLAW_CORE_ADDRESS") as Address;
-  const signerKey =
-    (envOptional("EXECUTOR_PRIVATE_KEY") ??
-      envOptional("RELAYER_SIGNER_PRIVATE_KEY")) as Hex | undefined;
+  const signerKey = envOptional("EXECUTOR_PRIVATE_KEY") as Hex | undefined;
   if (!signerKey) {
-    throw new Error(
-      "missing required env: EXECUTOR_PRIVATE_KEY (or RELAYER_SIGNER_PRIVATE_KEY fallback)"
-    );
+    throw new Error("missing required env: EXECUTOR_PRIVATE_KEY");
   }
 
   return {

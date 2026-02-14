@@ -6,6 +6,7 @@ import {
 
 const ALLOWED: ReadonlySet<string> = new Set([
   "READY",
+  "READY_FOR_ONCHAIN",
   "RUNNING",
   "EXECUTED",
   "FAILED_RETRYABLE",

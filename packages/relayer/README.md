@@ -44,13 +44,23 @@ npm run dev -w @claw/relayer
   - strategy intent 접수/검증(snapshotHash 연계)
   - `executionRoute` 필수 입력으로 `allowlistHash`를 서버에서 계산/고정
 - `POST /api/v1/funds/{fundId}/intents/attestations/batch`
-  - intent attestation batch 제출(중복 제거, EIP-712 검증, weighted threshold 충족 시 onchain `attestIntent`)
+  - intent attestation batch 제출(중복 제거, EIP-712 검증, weighted threshold 충족 시 `READY_FOR_ONCHAIN` 큐잉)
+- `GET /api/v1/funds/{fundId}/intents/{intentHash}/onchain-bundle`
+  - strategy bot가 `IntentBook.attestIntent`에 필요한 verifiers/attestations bundle 조회
+- `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-attested`
+  - strategy AA가 onchain attestation 완료 후 relayer 상태를 `APPROVED`(+execution `READY`)로 ack
+- `GET /api/v1/funds/{fundId}/intents/ready-execution`
+  - strategy AA가 `ClawCore.executeIntent`에 필요한 intent/executionRoute payload 조회
+- `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-executed`
+  - strategy AA 실행 성공 tx를 execution job(`EXECUTED`)로 ack
+- `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-failed`
+  - strategy AA 실행 실패를 retryable 상태로 기록
 - `GET /api/v1/funds/{fundId}/status`
   - DB 기반 pending/approved 요약 + in-memory metrics 카운터 조회
 - `GET /api/v1/metrics`
   - 요청/검증/중복/온체인 제출 성공/실패 카운터 조회
 - `POST /api/v1/cron/execute-intents`
-  - Vercel cron/worker가 승인된 intent 실행 잡 처리
+  - keyless 모드에서 비활성화(410). 온체인 실행은 strategy AA가 수행.
 - `GET /api/v1/executions`
   - 실행 잡 상태 조회
 
@@ -72,7 +82,7 @@ npm run dev -w @claw/relayer
 ## Implementation TODOs
 - 요청 schema 정의(zod or valibot)
 - DB 스키마(Drizzle + Postgres) 설계
-- onchain submitter job/queue 분리(현재는 요청 경로 내 동기 처리)
+- onchain submitter는 strategy AA 책임. relayer는 bundle/payload 제공 + 상태 저장 역할.
 - 인증/권한(운영자, verifier allowlist, strategy-only bot registration)
 - strategy bot -> Telegram room/role mapping 동기화
 
@@ -92,9 +102,11 @@ npm run dev -w @claw/relayer
 - `CLAIM_THRESHOLD_WEIGHT`, `INTENT_THRESHOLD_WEIGHT`
 - `VERIFIER_WEIGHT_SNAPSHOT` (`address:weight,address:weight,...`)
 - `CLAW_FUND_FACTORY_ADDRESS` (for `POST /api/v1/funds/bootstrap`)
+- `FACTORY_SIGNER_PRIVATE_KEY` (for `POST /api/v1/funds/bootstrap` or `factory:create-fund`)
 - `CLAIM_FINALIZATION_MODE` (`OFFCHAIN`/`ONCHAIN`)
 - `CLAIM_ATTESTATION_VERIFIER_ADDRESS` (claim EIP-712 domain address)
 - `CLAIM_BOOK_ADDRESS` (only when `CLAIM_FINALIZATION_MODE=ONCHAIN`)
+- relayer keyless 운영에서는 `RELAYER_SIGNER_PRIVATE_KEY`가 필요하지 않음
 
 ## Web2 viem example (factory struct payload)
 ```bash

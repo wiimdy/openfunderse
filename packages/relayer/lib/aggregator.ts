@@ -9,17 +9,16 @@ import {
 import { relayerEvents } from "@/lib/event-emitter";
 import { incCounter } from "@/lib/metrics";
 import {
-  getSubjectState,
+  getSubjectStateByFund,
   incrementSubjectAttestedWeight,
   insertAttestation,
   listPendingAttestations,
+  markIntentReadyForOnchain,
   markSubjectApproved,
-  markSubjectSubmitError,
   upsertSubjectState,
   type SubjectType
 } from "@/lib/supabase";
 import { loadRuntimeConfig, type ClaimFinalizationMode } from "@/lib/config";
-import { submitClaimAttestationsOnchain, submitIntentAttestationsOnchain } from "@/lib/onchain";
 import {
   loadClaimValidatorSnapshot,
   loadIntentValidatorSnapshot,
@@ -71,16 +70,21 @@ function isVerifierAllowed(verifier: Address): boolean {
   return allowlist.has(verifier.toLowerCase());
 }
 
-async function maybeSubmitOnchain(subjectType: SubjectType, subjectHash: Hex): Promise<{
+async function maybeFinalizeSubject(
+  fundId: string,
+  subjectType: SubjectType,
+  subjectHash: Hex
+): Promise<{
   finalized: boolean;
   finalizationMode: ClaimFinalizationMode;
+  readyForOnchain?: boolean;
   txHash?: Hex;
   error?: string;
 }> {
   const cfg = loadRuntimeConfig();
   const finalizationMode =
     subjectType === "CLAIM" ? cfg.claimFinalizationMode : ("ONCHAIN" as const);
-  const state = await getSubjectState(subjectType, subjectHash);
+  const state = await getSubjectStateByFund(fundId, subjectType, subjectHash);
   if (!state) return { finalized: false, finalizationMode };
   if (state.status === "APPROVED") {
     const approvedMode: ClaimFinalizationMode =
@@ -92,11 +96,8 @@ async function maybeSubmitOnchain(subjectType: SubjectType, subjectHash: Hex): P
     };
   }
 
-  const rows = await listPendingAttestations(subjectType, subjectHash);
+  const rows = await listPendingAttestations(subjectType, subjectHash, fundId);
   if (rows.length === 0) return { finalized: false, finalizationMode };
-
-  const fundId = rows[0]?.fund_id;
-  if (!fundId) return { finalized: false, finalizationMode };
 
   const snapshot =
     subjectType === "CLAIM"
@@ -108,12 +109,11 @@ async function maybeSubmitOnchain(subjectType: SubjectType, subjectHash: Hex): P
     return { finalized: false, finalizationMode };
   }
 
-  const signatures = rows.map((row) => row.signature as Hex);
-
   incCounter("threshold_met");
 
   if (subjectType === "CLAIM" && cfg.claimFinalizationMode === "OFFCHAIN") {
     await markSubjectApproved({
+      fundId,
       subjectType,
       subjectHash
     });
@@ -123,42 +123,31 @@ async function maybeSubmitOnchain(subjectType: SubjectType, subjectHash: Hex): P
     };
   }
 
-  try {
-    const txHash =
-      subjectType === "CLAIM"
-        ? await submitClaimAttestationsOnchain({
-            claimHash: subjectHash,
-            verifiers,
-            signatures
-          })
-        : await submitIntentAttestationsOnchain({
-            intentHash: subjectHash,
-            verifiers,
-            signatures
-          });
-
-    await markSubjectApproved({
-      subjectType,
-      subjectHash,
-      txHash
-    });
-
-    incCounter("onchain_submit_success");
-
+  // Keyless relayer policy:
+  // - CLAIM in ONCHAIN mode: unsupported (no relayer signer), keep pending with explicit error.
+  // - INTENT: mark READY_FOR_ONCHAIN so strategy AA submits onchain attest/execute.
+  if (subjectType === "CLAIM") {
+    const message =
+      "CLAIM_FINALIZATION_MODE=ONCHAIN is not supported in keyless relayer mode; use OFFCHAIN.";
     return {
-      finalized: true,
+      finalized: false,
       finalizationMode: "ONCHAIN",
-      txHash
+      error: message
+    };
+  }
+
+  try {
+    await markIntentReadyForOnchain({
+      fundId,
+      intentHash: subjectHash
+    });
+    return {
+      finalized: false,
+      finalizationMode: "ONCHAIN",
+      readyForOnchain: true
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await markSubjectSubmitError({
-      subjectType,
-      subjectHash,
-      message
-    });
-    incCounter("onchain_submit_fail");
-
     return {
       finalized: false,
       finalizationMode: "ONCHAIN",
@@ -209,7 +198,7 @@ export async function ingestClaimAttestation(input: ClaimInput) {
     epochId: input.epochId,
     thresholdWeight: snapshot.thresholdWeight
   });
-  const stateBeforeInsert = await getSubjectState("CLAIM", input.claimHash);
+  const stateBeforeInsert = await getSubjectStateByFund(input.fundId, "CLAIM", input.claimHash);
   const alreadyApproved = stateBeforeInsert?.status === "APPROVED";
 
   const inserted = await insertAttestation({
@@ -275,7 +264,7 @@ export async function ingestClaimAttestation(input: ClaimInput) {
     attestedWeight: attestedWeight.toString(),
     thresholdWeight: snapshot.thresholdWeight.toString()
   });
-  const submit = await maybeSubmitOnchain("CLAIM", input.claimHash);
+  const submit = await maybeFinalizeSubject(input.fundId, "CLAIM", input.claimHash);
 
   if (submit.finalized) {
     relayerEvents.emitEvent("snapshot:finalized", {
@@ -300,6 +289,7 @@ export async function ingestClaimAttestation(input: ClaimInput) {
       finalized: submit.finalized,
       finalizationMode: submit.finalizationMode,
       submitted: submit.finalized,
+      readyForOnchain: submit.readyForOnchain ?? false,
       txHash: submit.txHash,
       submitError: submit.error
     }
@@ -347,7 +337,7 @@ export async function ingestIntentAttestation(input: IntentInput) {
     epochId: null,
     thresholdWeight: snapshot.thresholdWeight
   });
-  const stateBeforeInsert = await getSubjectState("INTENT", input.intentHash);
+  const stateBeforeInsert = await getSubjectStateByFund(input.fundId, "INTENT", input.intentHash);
   const alreadyApproved = stateBeforeInsert?.status === "APPROVED";
 
   const inserted = await insertAttestation({
@@ -413,7 +403,7 @@ export async function ingestIntentAttestation(input: IntentInput) {
     attestedWeight: attestedWeight.toString(),
     thresholdWeight: snapshot.thresholdWeight.toString()
   });
-  const submit = await maybeSubmitOnchain("INTENT", input.intentHash);
+  const submit = await maybeFinalizeSubject(input.fundId, "INTENT", input.intentHash);
 
   return {
     ok: true as const,
@@ -429,6 +419,7 @@ export async function ingestIntentAttestation(input: IntentInput) {
       finalized: submit.finalized,
       finalizationMode: submit.finalizationMode,
       submitted: submit.finalized,
+      readyForOnchain: submit.readyForOnchain ?? false,
       txHash: submit.txHash,
       submitError: submit.error
     }
