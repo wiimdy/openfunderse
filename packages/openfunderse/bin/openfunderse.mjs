@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -390,6 +391,7 @@ async function buildEnvScaffold(profile, runtimeDir, runtimePackage) {
 
 async function writeEnvScaffold(options) {
   const runtimeDir = options.runtimeDir ? path.resolve(options.runtimeDir) : process.cwd();
+  const codexHome = options.codexHome ? path.resolve(options.codexHome) : defaultCodexHome();
   const runtimePackage = options.runtimePackage || DEFAULT_RUNTIME_PACKAGE;
   const rawProfile =
     typeof options.envProfile === "string" && options.envProfile.trim().length > 0
@@ -398,7 +400,7 @@ async function writeEnvScaffold(options) {
   const profile = normalizeEnvProfile(rawProfile);
   const envTarget = options.envFile
     ? path.resolve(options.envFile)
-    : path.join(runtimeDir, defaultEnvFileNameForProfile(profile));
+    : path.join(codexHome, defaultEnvFileNameForProfile(profile));
 
   const alreadyExists = existsSync(envTarget);
   if (alreadyExists && !options.force) {
@@ -424,8 +426,8 @@ async function writeEnvScaffold(options) {
   };
 }
 
-function defaultEnvPathForRole(role) {
-  return path.join(process.cwd(), `.env.${role}`);
+function defaultEnvPathForRole(role, codexHome) {
+  return path.join(path.resolve(codexHome), `.env.${role}`);
 }
 
 function readAssignedEnvValue(content, key) {
@@ -556,6 +558,14 @@ function shellQuote(input) {
   return `'${input.replace(/'/g, `'\\''`)}'`;
 }
 
+function sha256Hex(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function generateBotApiKeySecret() {
+  return `ofs_${randomBytes(24).toString("hex")}`;
+}
+
 async function confirmBotInit({ role, envFile, privateKeyKey, isRotation, assumeYes }) {
   const mode = isRotation ? "wallet rotation" : "new wallet bootstrap";
   console.log("WARNING: bot-init will generate a new wallet and update your env private key.");
@@ -671,7 +681,10 @@ function assertPrivateKeyRotationAllowed(envContent, role, force) {
 
 async function runBotInit(options) {
   const role = resolveBotInitRole(options);
-  const envFile = options.envFile ? path.resolve(options.envFile) : defaultEnvPathForRole(role);
+  const codexHome = options.codexHome ? path.resolve(options.codexHome) : defaultCodexHome();
+  const envFile = options.envFile
+    ? path.resolve(options.envFile)
+    : defaultEnvPathForRole(role, codexHome);
   const runtimeDir = options.runtimeDir ? path.resolve(options.runtimeDir) : process.cwd();
   const runtimePackage = options.runtimePackage || DEFAULT_RUNTIME_PACKAGE;
 
@@ -698,14 +711,36 @@ async function runBotInit(options) {
   const wallet = generateMonadWalletWithViem();
   const walletFiles = await persistWallet(role, wallet, options);
   const updates = roleEnvUpdates(role, wallet);
-  const nextEnvContent = upsertEnvValues(envContent, updates);
+  let nextEnvContent = upsertEnvValues(envContent, updates);
+  let envValues = parseEnvAssignments(nextEnvContent);
+  const botId = (envValues.BOT_ID || "").trim();
+  let botApiKey = (envValues.BOT_API_KEY || "").trim();
+  let generatedBotApiKey = "";
+  let botApiKeyHash = "";
+  let botApiKeyHashedEntry = "";
+
+  if (!botApiKey || isPlaceholderEnvValue(botApiKey)) {
+    generatedBotApiKey = generateBotApiKeySecret();
+    nextEnvContent = upsertEnvValues(nextEnvContent, {
+      BOT_API_KEY: generatedBotApiKey
+    });
+    envValues = parseEnvAssignments(nextEnvContent);
+    botApiKey = (envValues.BOT_API_KEY || "").trim();
+  }
+
+  if (botId && botApiKey && !isPlaceholderEnvValue(botApiKey)) {
+    botApiKeyHash = sha256Hex(botApiKey);
+    botApiKeyHashedEntry = `${botId}:sha256:${botApiKeyHash}`;
+    nextEnvContent = upsertEnvValues(nextEnvContent, {
+      BOT_API_KEY_SHA256: botApiKeyHash
+    });
+  }
 
   await mkdir(path.dirname(envFile), { recursive: true });
   await writeFile(envFile, nextEnvContent);
   await chmod(envFile, 0o600);
   let syncMeta = null;
   if (options.syncOpenclawEnv) {
-    const codexHome = options.codexHome ? path.resolve(options.codexHome) : defaultCodexHome();
     syncMeta = await syncOpenclawEnvVarsFromFile(envFile, codexHome);
   }
   const sourceCommand = `set -a; source ${shellQuote(envFile)}; set +a`;
@@ -726,6 +761,13 @@ async function runBotInit(options) {
   }
   console.log(`Wallet backup (keep secret): ${walletFiles.walletPath}`);
   console.log(`Private key backup (keep secret): ${walletFiles.privateKeyPath}`);
+  if (generatedBotApiKey) {
+    console.log("Generated random BOT_API_KEY and updated env file.");
+  }
+  if (botApiKeyHashedEntry) {
+    console.log(`Bot API key SHA-256: ${botApiKeyHash}`);
+    console.log(`Relayer BOT_API_KEYS hashed entry: ${botApiKeyHashedEntry}`);
+  }
   console.log(`Load env now: ${sourceCommand}`);
 }
 

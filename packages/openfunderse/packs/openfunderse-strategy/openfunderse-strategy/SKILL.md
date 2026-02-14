@@ -70,7 +70,7 @@ npx @wiimdy/openfunderse@latest bot-init \
 4) Load env for the current shell:
 
 ```bash
-set -a; source .env.strategy; set +a
+set -a; source ~/.openclaw/workspace/.env.strategy; set +a
 ```
 
 OpenClaw note:
@@ -80,6 +80,7 @@ OpenClaw note:
 Note:
 - The scaffold includes a temporary public key placeholder by default.
 - Always run `bot-init` before funding or running production actions.
+- `bot-init` generates a random `BOT_API_KEY` when current value is missing or placeholder.
 
 ## Credential Scope
 

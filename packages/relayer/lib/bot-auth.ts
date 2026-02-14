@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
+
+const SHA256_PREFIX = "sha256:";
+const SHA256_HEX_REGEX = /^[0-9a-f]{64}$/;
 
 function parseEntries(value: string | undefined): Record<string, string> {
   const result: Record<string, string> = {};
@@ -9,7 +12,10 @@ function parseEntries(value: string | undefined): Record<string, string> {
     const entry = raw.trim();
     if (!entry) continue;
 
-    const [id, data] = entry.split(":");
+    const separatorIndex = entry.indexOf(":");
+    if (separatorIndex <= 0) continue;
+    const id = entry.slice(0, separatorIndex);
+    const data = entry.slice(separatorIndex + 1);
     if (!id || !data) continue;
     result[id.trim()] = data.trim();
   }
@@ -50,6 +56,25 @@ function secureEqual(left: string, right: string): boolean {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function verifyBotApiKey(expectedKey: string, providedKey: string): boolean {
+  const normalizedExpected = expectedKey.trim();
+  const lowerExpected = normalizedExpected.toLowerCase();
+
+  if (lowerExpected.startsWith(SHA256_PREFIX)) {
+    const expectedHash = normalizedExpected.slice(SHA256_PREFIX.length).trim().toLowerCase();
+    if (!SHA256_HEX_REGEX.test(expectedHash)) return false;
+
+    const providedHash = sha256Hex(providedKey);
+    return secureEqual(expectedHash, providedHash);
+  }
+
+  return secureEqual(normalizedExpected, providedKey);
+}
+
 export function requireBotAuth(
   request: Request,
   requiredScopes: string[] = []
@@ -67,7 +92,7 @@ export function requireBotAuth(
   const keys = parseEntries(process.env.BOT_API_KEYS);
   const expectedKey = keys[botId];
 
-  if (!expectedKey || !secureEqual(expectedKey, providedKey)) {
+  if (!expectedKey || !verifyBotApiKey(expectedKey, providedKey)) {
     return {
       ok: false as const,
       response: unauthorized("Invalid bot credentials.")

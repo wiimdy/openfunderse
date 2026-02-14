@@ -16,10 +16,10 @@ npx @wiimdy/openfunderse@latest bot-init --skill-name strategy --yes
 npx @wiimdy/openfunderse@latest bot-init --skill-name participant --yes
 
 # 3) (optional) load env in current shell
-# @wiimdy/openfunderse-agents auto-loads .env.strategy / .env.participant by command role.
-set -a; source .env.strategy; set +a
+# @wiimdy/openfunderse-agents auto-loads env files from the workspace cwd by command role.
+set -a; source ~/.openclaw/workspace/.env.strategy; set +a
 # or
-set -a; source .env.participant; set +a
+set -a; source ~/.openclaw/workspace/.env.participant; set +a
 ```
 
 By default, `install` and `bot-init` also sync env keys into OpenClaw config (`~/.openclaw/openclaw.json > env.vars`).
@@ -36,7 +36,8 @@ Disable this with `--no-sync-openclaw-env`.
 - Use only:
   - `openfunderse-strategy`
   - `openfunderse-participant`
-- Default env scaffold path is role-based:
-  - strategy: `.env.strategy`
-  - participant: `.env.participant`
+- Default env scaffold path is role-based under OpenClaw workspace:
+  - strategy: `~/.openclaw/workspace/.env.strategy`
+  - participant: `~/.openclaw/workspace/.env.participant`
+- `bot-init` auto-generates a random `BOT_API_KEY` when value is missing/placeholder.
 - Use `--env-path` only when you want a custom filename/location.
