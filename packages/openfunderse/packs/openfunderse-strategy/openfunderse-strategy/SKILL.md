@@ -11,7 +11,7 @@ metadata:
         - RELAYER_URL
         - BOT_ID
         - BOT_API_KEY
-        - BOT_ADDRESS
+        - STRATEGY_ADDRESS
         - CHAIN_ID
         - RPC_URL
         - STRATEGY_PRIVATE_KEY
@@ -56,7 +56,7 @@ npx clawhub@latest install openfunderse-strategy
 2) Install runtime + generate env scaffold:
 
 ```bash
-npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
+npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
 ```
 
 3) Rotate the temporary bootstrap key and write a fresh strategy wallet to env:
@@ -70,8 +70,12 @@ npx @wiimdy/openfunderse@latest bot-init \
 4) Load env for the current shell:
 
 ```bash
-set -a; source .env; set +a
+set -a; source .env.strategy; set +a
 ```
+
+OpenClaw note:
+- `install` / `bot-init` sync env keys into `~/.openclaw/openclaw.json` (`env.vars`) by default.
+- Use `--no-sync-openclaw-env` if you want file-only behavior.
 
 Note:
 - The scaffold includes a temporary public key placeholder by default.

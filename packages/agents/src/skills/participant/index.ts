@@ -227,7 +227,12 @@ const toAddress = (value: string): Address => {
 };
 
 const participantAddressFromEnv = (override?: string): Address => {
-  const raw = (override ?? process.env.PARTICIPANT_BOT_ADDRESS ?? process.env.BOT_ADDRESS ?? '').trim();
+  const raw = (
+    override ??
+    process.env.PARTICIPANT_ADDRESS ??
+    process.env.PARTICIPANT_BOT_ADDRESS ??
+    ''
+  ).trim();
   if (!raw) return ZERO_ADDRESS;
   return toAddress(raw);
 };
@@ -281,7 +286,9 @@ export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput>
   try {
     const participant = participantAddressFromEnv(allocation.participant);
     if (participant === ZERO_ADDRESS) {
-      throw new Error('participant address is required (PARTICIPANT_BOT_ADDRESS or BOT_ADDRESS)');
+      throw new Error(
+        'participant address is required (PARTICIPANT_ADDRESS or PARTICIPANT_BOT_ADDRESS)'
+      );
     }
 
     const targetWeights = normalizeTargetWeights(allocation.targetWeights);

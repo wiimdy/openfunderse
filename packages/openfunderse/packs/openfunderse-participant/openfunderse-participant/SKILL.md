@@ -12,6 +12,7 @@ metadata:
         - BOT_API_KEY
         - CHAIN_ID
         - CLAIM_ATTESTATION_VERIFIER_ADDRESS
+        - PARTICIPANT_ADDRESS
       bins:
         - node
         - npm
@@ -48,8 +49,12 @@ npx @wiimdy/openfunderse@latest bot-init \
 4) Load env for the current shell:
 
 ```bash
-set -a; source .env; set +a
+set -a; source .env.participant; set +a
 ```
+
+OpenClaw note:
+- `install` / `bot-init` sync env keys into `~/.openclaw/openclaw.json` (`env.vars`) by default.
+- Use `--no-sync-openclaw-env` if you want file-only behavior.
 
 Note:
 - The scaffold includes a temporary public key placeholder by default.

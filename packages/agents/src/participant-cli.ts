@@ -97,7 +97,8 @@ const readJsonFile = async <T>(filePath: string): Promise<T> => {
 const buildClientOptionsForPrefix = (prefix: string): RelayerClientOptions | undefined => {
   const botId = process.env[`${prefix}_BOT_ID`];
   const botApiKey = process.env[`${prefix}_BOT_API_KEY`];
-  const botAddress = process.env[`${prefix}_BOT_ADDRESS`];
+  const botAddress =
+    process.env[`${prefix}_ADDRESS`] ?? process.env[`${prefix}_BOT_ADDRESS`];
 
   if (!botId && !botApiKey && !botAddress) {
     return undefined;
@@ -118,7 +119,8 @@ const buildClientOptionsForPrefix = (prefix: string): RelayerClientOptions | und
 const buildDefaultBotClientOptions = (): RelayerClientOptions | undefined => {
   const botId = process.env.BOT_ID;
   const botApiKey = process.env.BOT_API_KEY;
-  const botAddress = process.env.BOT_ADDRESS;
+  const botAddress =
+    process.env.PARTICIPANT_ADDRESS ?? process.env.PARTICIPANT_BOT_ADDRESS;
 
   if (!botId && !botApiKey && !botAddress) {
     return undefined;

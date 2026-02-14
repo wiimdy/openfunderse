@@ -1266,8 +1266,8 @@ export async function proposeIntentAndSubmit(
     'INTENT_BOOK_ADDRESS'
   );
   const strategySignerAddress = requireAddress(
-    input.strategySignerAddress ?? process.env.BOT_ADDRESS,
-    'BOT_ADDRESS (strategy signer)'
+    input.strategySignerAddress ?? process.env.STRATEGY_ADDRESS,
+    'STRATEGY_ADDRESS (strategy signer)'
   );
 
   const relayer = createRelayerClient();
