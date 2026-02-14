@@ -12,16 +12,23 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
-const ENTRYPOINT_ABI = parseAbi([
+const ENTRYPOINT_V07_ABI = parseAbi([
   'function getNonce(address sender, uint192 key) view returns (uint256)',
   'function getUserOpHash((address sender,uint256 nonce,bytes initCode,bytes callData,bytes32 accountGasLimits,uint256 preVerificationGas,bytes32 gasFees,bytes paymasterAndData,bytes signature) userOp) view returns (bytes32)'
+]);
+
+const ENTRYPOINT_V06_ABI = parseAbi([
+  'function getNonce(address sender, uint192 key) view returns (uint256)',
+  'function getUserOpHash((address sender,uint256 nonce,bytes initCode,bytes callData,uint256 callGasLimit,uint256 verificationGasLimit,uint256 preVerificationGas,uint256 maxFeePerGas,uint256 maxPriorityFeePerGas,bytes paymasterAndData,bytes signature) userOp) view returns (bytes32)'
 ]);
 
 const SIMPLE_ACCOUNT_ABI = parseAbi([
   'function execute(address dest, uint256 value, bytes data)'
 ]);
 
-interface UserOperationForHash {
+type UserOpVersion = 'v06' | 'v07';
+
+interface UserOperationV07ForHash {
   sender: Address;
   nonce: bigint;
   initCode: Hex;
@@ -33,7 +40,7 @@ interface UserOperationForHash {
   signature: Hex;
 }
 
-interface RpcUserOperation {
+interface RpcUserOperationV07 {
   sender: Address;
   nonce: Hex;
   initCode: Hex;
@@ -43,6 +50,45 @@ interface RpcUserOperation {
   gasFees: Hex;
   paymasterAndData: Hex;
   signature: Hex;
+}
+
+interface UserOperationV06ForHash {
+  sender: Address;
+  nonce: bigint;
+  initCode: Hex;
+  callData: Hex;
+  callGasLimit: bigint;
+  verificationGasLimit: bigint;
+  preVerificationGas: bigint;
+  maxFeePerGas: bigint;
+  maxPriorityFeePerGas: bigint;
+  paymasterAndData: Hex;
+  signature: Hex;
+}
+
+interface RpcUserOperationV06 {
+  sender: Address;
+  nonce: Hex;
+  initCode: Hex;
+  callData: Hex;
+  callGasLimit: Hex;
+  verificationGasLimit: Hex;
+  preVerificationGas: Hex;
+  maxFeePerGas: Hex;
+  maxPriorityFeePerGas: Hex;
+  paymasterAndData: Hex;
+  signature: Hex;
+}
+
+interface BundlerUserOpGasPriceLevel {
+  maxFeePerGas?: string;
+  maxPriorityFeePerGas?: string;
+}
+
+interface BundlerUserOpGasPriceResponse {
+  standard?: BundlerUserOpGasPriceLevel;
+  fast?: BundlerUserOpGasPriceLevel;
+  slow?: BundlerUserOpGasPriceLevel;
 }
 
 interface JsonRpcSuccess<T> {
@@ -78,6 +124,7 @@ export interface StrategyAaClientConfig {
   maxFeePerGas?: bigint;
   pollIntervalMs?: number;
   timeoutMs?: number;
+  userOpVersion?: UserOpVersion;
 }
 
 export interface ExecuteViaAaInput {
@@ -94,7 +141,8 @@ export interface UserOperationResult {
 
 const DEFAULT_CALL_GAS_LIMIT = 400_000n;
 const DEFAULT_VERIFICATION_GAS_LIMIT = 300_000n;
-const DEFAULT_PRE_VERIFICATION_GAS = 60_000n;
+const DEFAULT_PRE_VERIFICATION_GAS_V07 = 60_000n;
+const DEFAULT_PRE_VERIFICATION_GAS_V06 = 2_000_000n;
 const DEFAULT_POLL_INTERVAL_MS = 3_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
 
@@ -141,6 +189,10 @@ export class StrategyAaClient {
     const smartAccount = process.env.STRATEGY_AA_ACCOUNT_ADDRESS ?? '';
     const ownerPrivateKey =
       process.env.STRATEGY_AA_OWNER_PRIVATE_KEY ?? process.env.STRATEGY_PRIVATE_KEY ?? '';
+    const rawUserOpVersion = (process.env.STRATEGY_AA_USER_OP_VERSION ?? 'v07').toLowerCase();
+    if (rawUserOpVersion !== 'v06' && rawUserOpVersion !== 'v07') {
+      throw new Error('STRATEGY_AA_USER_OP_VERSION must be one of: v06, v07');
+    }
 
     if (!rpcUrl) throw new Error('STRATEGY_AA_RPC_URL (or RPC_URL) is required');
     if (!bundlerUrl) throw new Error('STRATEGY_AA_BUNDLER_URL is required');
@@ -183,7 +235,8 @@ export class StrategyAaClient {
       maxPriorityFeePerGas: parseBigIntEnv('STRATEGY_AA_MAX_PRIORITY_FEE_PER_GAS'),
       maxFeePerGas: parseBigIntEnv('STRATEGY_AA_MAX_FEE_PER_GAS'),
       pollIntervalMs: parseNumberEnv('STRATEGY_AA_POLL_INTERVAL_MS'),
-      timeoutMs: parseNumberEnv('STRATEGY_AA_TIMEOUT_MS')
+      timeoutMs: parseNumberEnv('STRATEGY_AA_TIMEOUT_MS'),
+      userOpVersion: rawUserOpVersion as UserOpVersion
     });
   }
 
@@ -197,23 +250,15 @@ export class StrategyAaClient {
   }
 
   async sendUserOperation(callData: Hex): Promise<UserOperationResult> {
-    const userOp = await this.buildSignedUserOperation(callData);
-    const userOpHash = await this.callBundler<Hex>('eth_sendUserOperation', [
-      this.toRpcUserOperation(userOp),
-      this.config.entryPoint
-    ]);
-    const receipt = await this.waitForUserOperationReceipt(userOpHash);
-    const maybeTxHash = (receipt as { receipt?: { transactionHash?: unknown } } | null)?.receipt
-      ?.transactionHash;
-    const transactionHash =
-      typeof maybeTxHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(maybeTxHash)
-        ? (maybeTxHash as Hex)
-        : null;
-    return {
-      userOpHash,
-      receipt,
-      transactionHash
-    };
+    if (this.userOpVersion() === 'v06') {
+      const userOp = await this.buildSignedUserOperationV06(callData);
+      const rpcUserOp = this.toRpcUserOperationV06(userOp);
+      return this.submitUserOperation(rpcUserOp);
+    }
+
+    const userOp = await this.buildSignedUserOperationV07(callData);
+    const rpcUserOp = this.toRpcUserOperationV07(userOp);
+    return this.submitUserOperation(rpcUserOp);
   }
 
   async waitForUserOperationReceipt(userOpHash: Hex): Promise<Record<string, unknown> | null> {
@@ -235,36 +280,117 @@ export class StrategyAaClient {
     throw new Error(`UserOperation receipt timeout after ${timeoutMs}ms: ${userOpHash}`);
   }
 
-  private async buildSignedUserOperation(callData: Hex): Promise<UserOperationForHash> {
+  private userOpVersion(): UserOpVersion {
+    return this.config.userOpVersion ?? 'v07';
+  }
+
+  private async submitUserOperation(
+    rpcUserOp: RpcUserOperationV07 | RpcUserOperationV06
+  ): Promise<UserOperationResult> {
+    const userOpHash = await this.callBundler<Hex>('eth_sendUserOperation', [
+      rpcUserOp,
+      this.config.entryPoint
+    ]);
+    const receipt = await this.waitForUserOperationReceipt(userOpHash);
+    const maybeTxHash = (receipt as { receipt?: { transactionHash?: unknown } } | null)?.receipt
+      ?.transactionHash;
+    const transactionHash =
+      typeof maybeTxHash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(maybeTxHash)
+        ? (maybeTxHash as Hex)
+        : null;
+    return {
+      userOpHash,
+      receipt,
+      transactionHash
+    };
+  }
+
+  private async resolveGasFees(preferBundlerGasRpc: boolean): Promise<{
+    maxPriorityFeePerGas: bigint;
+    maxFeePerGas: bigint;
+  }> {
+    let maxPriorityFeePerGas = this.config.maxPriorityFeePerGas;
+    let maxFeePerGas = this.config.maxFeePerGas;
+
+    if (preferBundlerGasRpc && (maxPriorityFeePerGas === undefined || maxFeePerGas === undefined)) {
+      const bundlerGas = await this.tryResolveBundlerGasFees();
+      if (bundlerGas) {
+        maxPriorityFeePerGas = maxPriorityFeePerGas ?? bundlerGas.maxPriorityFeePerGas;
+        maxFeePerGas = maxFeePerGas ?? bundlerGas.maxFeePerGas;
+      }
+    }
+
+    if (maxPriorityFeePerGas === undefined || maxFeePerGas === undefined) {
+      try {
+        const fee = await this.publicClient.estimateFeesPerGas();
+        const fallback = fee.gasPrice ?? 1n;
+        maxPriorityFeePerGas = maxPriorityFeePerGas ?? fee.maxPriorityFeePerGas ?? fallback;
+        maxFeePerGas = maxFeePerGas ?? fee.maxFeePerGas ?? fallback;
+      } catch {
+        const gasPrice = await this.publicClient.getGasPrice();
+        maxPriorityFeePerGas = maxPriorityFeePerGas ?? gasPrice;
+        maxFeePerGas = maxFeePerGas ?? gasPrice;
+      }
+    }
+
+    return { maxPriorityFeePerGas, maxFeePerGas };
+  }
+
+  private parseBigIntLike(raw: unknown): bigint | null {
+    if (typeof raw === 'bigint') {
+      return raw;
+    }
+    if (typeof raw === 'number') {
+      if (!Number.isFinite(raw) || raw < 0) return null;
+      return BigInt(Math.trunc(raw));
+    }
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      try {
+        return BigInt(raw);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  private async tryResolveBundlerGasFees(): Promise<{
+    maxPriorityFeePerGas: bigint;
+    maxFeePerGas: bigint;
+  } | null> {
+    try {
+      const response = await this.callBundler<BundlerUserOpGasPriceResponse>(
+        'pimlico_getUserOperationGasPrice',
+        []
+      );
+      const level = response.standard ?? response.fast ?? response.slow;
+      if (!level) return null;
+      const maxFeePerGas = this.parseBigIntLike(level.maxFeePerGas);
+      const maxPriorityFeePerGas = this.parseBigIntLike(level.maxPriorityFeePerGas);
+      if (maxFeePerGas === null || maxPriorityFeePerGas === null) {
+        return null;
+      }
+      return { maxPriorityFeePerGas, maxFeePerGas };
+    } catch {
+      return null;
+    }
+  }
+
+  private async buildSignedUserOperationV07(callData: Hex): Promise<UserOperationV07ForHash> {
     const nonce = await this.publicClient.readContract({
       address: this.config.entryPoint,
-      abi: ENTRYPOINT_ABI,
+      abi: ENTRYPOINT_V07_ABI,
       functionName: 'getNonce',
       args: [this.config.smartAccount, 0n]
     });
 
-    let suggestedMaxPriority = this.config.maxPriorityFeePerGas;
-    let suggestedMaxFee = this.config.maxFeePerGas;
-    if (suggestedMaxPriority === undefined || suggestedMaxFee === undefined) {
-      try {
-        const fee = await this.publicClient.estimateFeesPerGas();
-        const fallback = fee.gasPrice ?? 1n;
-        suggestedMaxPriority = suggestedMaxPriority ?? fee.maxPriorityFeePerGas ?? fallback;
-        suggestedMaxFee = suggestedMaxFee ?? fee.maxFeePerGas ?? fallback;
-      } catch {
-        const gasPrice = await this.publicClient.getGasPrice();
-        suggestedMaxPriority = suggestedMaxPriority ?? gasPrice;
-        suggestedMaxFee = suggestedMaxFee ?? gasPrice;
-      }
-    }
-
-    const maxPriorityFeePerGas = suggestedMaxPriority;
-    const maxFeePerGas = suggestedMaxFee;
+    const { maxPriorityFeePerGas, maxFeePerGas } = await this.resolveGasFees(false);
     const callGasLimit = this.config.callGasLimit ?? DEFAULT_CALL_GAS_LIMIT;
     const verificationGasLimit = this.config.verificationGasLimit ?? DEFAULT_VERIFICATION_GAS_LIMIT;
-    const preVerificationGas = this.config.preVerificationGas ?? DEFAULT_PRE_VERIFICATION_GAS;
+    const preVerificationGas =
+      this.config.preVerificationGas ?? DEFAULT_PRE_VERIFICATION_GAS_V07;
 
-    const draft: UserOperationForHash = {
+    const draft: UserOperationV07ForHash = {
       sender: this.config.smartAccount,
       nonce,
       initCode: this.config.initCode ?? ('0x' as Hex),
@@ -278,7 +404,7 @@ export class StrategyAaClient {
 
     const userOpHash = await this.publicClient.readContract({
       address: this.config.entryPoint,
-      abi: ENTRYPOINT_ABI,
+      abi: ENTRYPOINT_V07_ABI,
       functionName: 'getUserOpHash',
       args: [draft]
     });
@@ -292,7 +418,51 @@ export class StrategyAaClient {
     };
   }
 
-  private toRpcUserOperation(userOp: UserOperationForHash): RpcUserOperation {
+  private async buildSignedUserOperationV06(callData: Hex): Promise<UserOperationV06ForHash> {
+    const nonce = await this.publicClient.readContract({
+      address: this.config.entryPoint,
+      abi: ENTRYPOINT_V06_ABI,
+      functionName: 'getNonce',
+      args: [this.config.smartAccount, 0n]
+    });
+
+    const { maxPriorityFeePerGas, maxFeePerGas } = await this.resolveGasFees(true);
+    const callGasLimit = this.config.callGasLimit ?? DEFAULT_CALL_GAS_LIMIT;
+    const verificationGasLimit = this.config.verificationGasLimit ?? DEFAULT_VERIFICATION_GAS_LIMIT;
+    const preVerificationGas =
+      this.config.preVerificationGas ?? DEFAULT_PRE_VERIFICATION_GAS_V06;
+
+    const draft: UserOperationV06ForHash = {
+      sender: this.config.smartAccount,
+      nonce,
+      initCode: this.config.initCode ?? ('0x' as Hex),
+      callData,
+      callGasLimit,
+      verificationGasLimit,
+      preVerificationGas,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+      paymasterAndData: '0x',
+      signature: '0x'
+    };
+
+    const userOpHash = await this.publicClient.readContract({
+      address: this.config.entryPoint,
+      abi: ENTRYPOINT_V06_ABI,
+      functionName: 'getUserOpHash',
+      args: [draft]
+    });
+    const signature = await this.owner.signMessage({
+      message: { raw: userOpHash }
+    });
+
+    return {
+      ...draft,
+      signature
+    };
+  }
+
+  private toRpcUserOperationV07(userOp: UserOperationV07ForHash): RpcUserOperationV07 {
     return {
       sender: userOp.sender,
       nonce: toHex(userOp.nonce),
@@ -301,6 +471,22 @@ export class StrategyAaClient {
       accountGasLimits: userOp.accountGasLimits,
       preVerificationGas: toHex(userOp.preVerificationGas),
       gasFees: userOp.gasFees,
+      paymasterAndData: userOp.paymasterAndData,
+      signature: userOp.signature
+    };
+  }
+
+  private toRpcUserOperationV06(userOp: UserOperationV06ForHash): RpcUserOperationV06 {
+    return {
+      sender: userOp.sender,
+      nonce: toHex(userOp.nonce),
+      initCode: userOp.initCode,
+      callData: userOp.callData,
+      callGasLimit: toHex(userOp.callGasLimit),
+      verificationGasLimit: toHex(userOp.verificationGasLimit),
+      preVerificationGas: toHex(userOp.preVerificationGas),
+      maxFeePerGas: toHex(userOp.maxFeePerGas),
+      maxPriorityFeePerGas: toHex(userOp.maxPriorityFeePerGas),
       paymasterAndData: userOp.paymasterAndData,
       signature: userOp.signature
     };

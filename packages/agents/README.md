@@ -77,11 +77,17 @@ Role-split env for participant e2e:
 
 Strategy AA env:
 - `STRATEGY_AA_BUNDLER_URL`
+- `STRATEGY_AA_USER_OP_VERSION` (`v06` or `v07`)
 - `STRATEGY_AA_ENTRYPOINT_ADDRESS`
 - `STRATEGY_AA_ACCOUNT_ADDRESS`
 - `STRATEGY_AA_OWNER_PRIVATE_KEY` (or `STRATEGY_PRIVATE_KEY`)
 - `INTENT_BOOK_ADDRESS`, `CLAW_CORE_ADDRESS`
 - optional tuning: `STRATEGY_AA_CALL_GAS_LIMIT`, `STRATEGY_AA_VERIFICATION_GAS_LIMIT`, `STRATEGY_AA_PRE_VERIFICATION_GAS`, `STRATEGY_AA_MAX_PRIORITY_FEE_PER_GAS`, `STRATEGY_AA_MAX_FEE_PER_GAS`
+
+Monad testnet reference values:
+- public bundler: `https://public.pimlico.io/v2/10143/rpc`
+- `v06` + EntryPoint `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789`
+- `v07` + EntryPoint `0x0000000071727De22E5E9d8BAf0edAc6f37da032` (when your bundler supports packed UserOp)
 
 ## Participant commands
 
