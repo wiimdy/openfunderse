@@ -80,22 +80,21 @@ npm run clawbot:run -w @claw/agents -- \
 # Mine
 npm run clawbot:run -w @claw/agents -- \
   --role participant \
-  --action mine_claim \
+  --action propose_allocation \
   --fund-id "$FUND_ID" \
   --epoch-id 1 \
-  --source-ref "https://www.reddit.com/r/CryptoCurrency/new.json?limit=10&raw_json=1" \
-  --token-address 0x00000000000000000000000000000000000000a1 \
+  --target-weights 7000,3000 \
   --out-file /tmp/claim.mine.json
 
 # Verify
 npm run clawbot:run -w @claw/agents -- \
   --role participant \
-  --action verify_claim \
+  --action validate_allocation \
   --claim-file /tmp/claim.mine.json
 
 # Submit
 npm run clawbot:run -w @claw/agents -- \
   --role participant \
-  --action submit_claim \
+  --action submit_allocation \
   --claim-file /tmp/claim.mine.json
 ```

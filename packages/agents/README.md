@@ -26,7 +26,7 @@ npm run bot:smoke:e2e -w @claw/agents
 
 ## Role
 - Monorepo bot runtime package (execution code), not installer/distribution.
-- Owns crawl/verify/propose runtime flows used by local smoke/E2E paths.
+- Owns participant claim/strategy intent runtime flows used by local smoke/E2E paths.
 
 Shared protocol utilities:
 - `@claw/protocol-sdk` from `packages/sdk`
@@ -37,40 +37,12 @@ Run:
 npm run dev -w @claw/agents
 ```
 
-## Reddit MVP: Data Mining + Verification
+## Participant claim model (allocation only)
 
-MVP baseline source is Reddit (no API key required):
-- participant mines keyword stats from `r/<subreddit>/new.json`
-- participant re-crawls the mined post ids via `by_id` and checks deterministic match
-
-Commands:
-
-```bash
-# 1) mine claim + save evidence/claim bundle
-npm run crawl:reddit -w @claw/agents -- \
-  --subreddit CryptoCurrency \
-  --keywords monad,airdrop \
-  --limit 25
-
-# 2) verify an existing claim bundle
-npm run verify:reddit -w @claw/agents -- \
-  --claim /absolute/path/to/*.claim.json
-
-# 3) one-shot mvp flow (crawl -> verify)
-npm run flow:reddit -w @claw/agents -- \
-  --subreddit CryptoCurrency \
-  --keywords monad,airdrop \
-  --limit 25
-```
-
-Generated files are stored in:
-- `packages/agents/data/claims/*.claim.json`
-- `packages/agents/data/claims/*.evidence.json`
-- `packages/agents/data/claims/*.verification.json`
-
-Optional env:
-- `CRAWLER_ADDRESS=0x...`
-- `REDDIT_USER_AGENT=openclaw-mvp-crawler/0.1`
+Participant claim is `AllocationClaimV1`:
+- input: `targetWeights[]`, `horizonSec`, `nonce`
+- canonical hash: SDK `buildCanonicalAllocationClaimRecord`
+- no crawl/source/evidence payload in v0 claim model
 
 ## Wave A runtime env (relayer client + signer)
 
@@ -85,10 +57,7 @@ Signer:
 - `CHAIN_ID`
 - `INTENT_BOOK_ADDRESS` (required only for intent attestation signing)
 
-Participant source safety:
-- `PARTICIPANT_ALLOWED_SOURCE_HOSTS=www.reddit.com,api.coingecko.com`
-- `PARTICIPANT_MAX_RESPONSE_BYTES=524288`
-- `PARTICIPANT_ALLOW_HTTP_SOURCE=true` (local dev only)
+Participant submit safety:
 - `PARTICIPANT_AUTO_SUBMIT` (`false` by default)
 - `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT` (`true` by default)
 - optional host allowlist: `PARTICIPANT_TRUSTED_RELAYER_HOSTS=relayer.example.com`
@@ -112,31 +81,29 @@ Strategy signer env:
 ## Participant commands
 
 ```bash
-# 1) Mine a claim from source URL
-npm run participant:mine -w @claw/agents -- \
+# 1) Mine allocation claim
+npm run participant:propose-allocation -w @claw/agents -- \
   --fund-id demo-fund \
   --epoch-id 1 \
-  --source-ref https://www.reddit.com/r/CryptoCurrency/new.json?limit=10&raw_json=1 \
-  --token-address 0x0000000000000000000000000000000000000001 \
-  --out-file /tmp/participant-mine.json
+  --target-weights 7000,3000 \
+  --out-file /tmp/participant-allocation.json
 
 # 2) Verify mined claim
-npm run participant:verify -w @claw/agents -- \
-  --claim-file /tmp/participant-mine.json \
+npm run participant:validate-allocation -w @claw/agents -- \
+  --claim-file /tmp/participant-allocation.json \
   --max-data-age-seconds 300
 
 # 3) Submit mined claim to relayer
-npm run participant:submit -w @claw/agents -- \
-  --claim-file /tmp/participant-mine.json \
+npm run participant:submit-allocation -w @claw/agents -- \
+  --claim-file /tmp/participant-allocation.json \
   --submit
 
 # 4) One-shot e2e (mine -> verify -> submit)
-npm run participant:e2e -w @claw/agents -- \
+npm run participant:allocation-e2e -w @claw/agents -- \
   --fund-id demo-fund \
   --epoch-id 1 \
-  --source-ref https://www.reddit.com/r/CryptoCurrency/new.json?limit=10&raw_json=1 \
-  --token-address 0x0000000000000000000000000000000000000001 \
-  --report-file /tmp/participant-e2e-report.json \
+  --target-weights 7000,3000 \
+  --report-file /tmp/participant-allocation-e2e-report.json \
   --submit
 ```
 

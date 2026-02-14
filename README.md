@@ -8,9 +8,9 @@ Let whitelist assets be $\mathcal A=\{1,\dots,n\}$ and participants be $\mathcal
 Flow (v0 safe patch):
 1. Participants submit target weights $c_{i,t}\in\Delta^n$.
 2. Stake-weighted aggregate is projected into a feasible risk set.
-3. Strategy executes toward projected target under venue constraints.
-4. Participant prediction score $g_{i,t}$ is settled on oracle return.
-5. Stake weights update multiplicatively; positive NAV alpha mints extra shares.
+3. Strategy executes toward projected target under venue constraints and execution cost.
+4. Participant prediction score $g_{i,t}$ is settled on scoring oracle return.
+5. Positive NAV alpha mints extra shares; next weights are induced only by share balances.
 
 Fund state:
 ```math
@@ -37,7 +37,8 @@ x\in\Delta^n:
 
 Execution:
 ```math
-z_t^\star=\arg\min_{z}\|s_{t+1}(z)-s_t^\star\|_2^2,
+z_t^\star=\arg\min_{z}
+\left(\|s_{t+1}(z)-s_t^\star\|_2^2+\lambda\cdot \mathrm{Cost}(z)\right),
 ```
 with per-leg feasibility (example):
 ```math
@@ -45,25 +46,17 @@ y_\ell\ge x_\ell\pi_\ell,\qquad
 x_\ell\in[0,X_\ell],\;y_\ell\in[0,Y_\ell].
 ```
 
-Oracle return (manipulation-resistant source):
+Oracle model (execution vs scoring):
 ```math
-p_t:=P(t;W),\qquad
-r_t^H=\frac{p_{t+H}-p_t}{p_t},
+p_t^{\mathrm{exec}}:=P_{\mathrm{twap}}(t;W_{\mathrm{exec}}),\qquad
+p_t^{\mathrm{score}}:=P_{\mathrm{score}}(t),\qquad
+r_t^H=\frac{p_{t+H}^{\mathrm{score}}-p_t^{\mathrm{score}}}{p_t^{\mathrm{score}}},
 ```
-where $P$ is TWAP/medianized oracle over window $W$.
+where $P_{\mathrm{twap}}$ is execution-safe oracle and $P_{\mathrm{score}}$ is performance-scoring oracle.
 
 Participant prediction score:
 ```math
-g_{i,t}=(c_{i,t}-s_t^\star)^\top r_t^H.
-```
-
-Stake update (prediction-market style):
-```math
-\widetilde w_{i,t+1}
-=w_{i,t}\exp\!\left(\eta\cdot\mathrm{clip}(g_{i,t},-b,b)\right),
-\qquad
-w_{i,t+1}
-=\frac{\widetilde w_{i,t+1}}{\sum_{k\in\mathcal P}\widetilde w_{k,t+1}}.
+g_{i,t}=c_{i,t}^\top r_t^H-\mathrm{bench}_t.
 ```
 
 NAV alpha and mint budget:
@@ -75,7 +68,7 @@ M_t=\mu[\alpha_t^{\mathrm{NAV}}]_+N_t.
 
 Mint allocation (Sybil-resistant via stake weighting):
 ```math
-\phi(g)=\exp\!\left(\eta\cdot\mathrm{clip}(g,-b,b)\right),
+\phi(g)=[g]_+,
 \qquad
 \Delta N_{i,t}
 =M_t\frac{w_{i,t}\phi(g_{i,t})}{\sum_{k\in\mathcal P}w_{k,t}\phi(g_{k,t})+\varepsilon}.
@@ -83,16 +76,24 @@ Mint allocation (Sybil-resistant via stake weighting):
 
 Share-weight identity:
 ```math
-w_{i,t}=\frac{N_{i,t}}{N_t},\qquad N_t=\sum_{i\in\mathcal P}N_{i,t}.
+N_{i,t+1}=N_{i,t}+\Delta N_{i,t},\qquad
+N_{t+1}=\sum_{k\in\mathcal P}N_{k,t+1},\qquad
+w_{i,t+1}=\frac{N_{i,t+1}}{N_{t+1}}.
 ```
 
 Parameters:
 ```math
-\tau_t,\{u_j\}_{j\in\mathcal A},\eta,b,\mu,\varepsilon,W,\mathrm{bench}_t.
+\tau_t,\{u_j\}_{j\in\mathcal A},\lambda,\mu,\varepsilon,W_{\mathrm{exec}},\mathrm{bench}_t.
 ```
 
 *Inspired by stake-weighted subjective-consensus literature (incl. Yuma-style clipping), adapted to portfolio allocation with explicit risk projection and execution constraints.
 *Operational note: projection $\Pi_{\mathcal R_t}$, score computation, and oracle assembly are offchain (relayer/strategy), while settlement constraints remain onchain-enforced.
+
+## MVP Scope
+- Included: participant co-investment claims (`targetWeights`) -> epoch aggregate -> strategy intent propose -> intent attestation/bundle -> ready-for-onchain execution payload.
+- Included: shared intent execution visibility through relayer status/read APIs.
+- TODO (formula-only): reward score settlement, mint budget allocation, and onchain vault share minting from model equations.
+- Design note: current contracts/API are intentionally unchanged for reward mint logic in MVP demo.
 
 ## What matters first
 - `packages/contracts`: Foundry contracts (`ClawFundFactory`, `IntentBook`, `ClawCore`, `ClawVault4626`, NadFun adapter)
