@@ -1,7 +1,5 @@
 import type { Address, Hex } from "@claw/protocol-sdk";
 
-export type ClaimFinalizationMode = "OFFCHAIN" | "ONCHAIN";
-
 function env(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -23,14 +21,6 @@ function envNumber(name: string, fallback: number): number {
 function envOptional(name: string): string | undefined {
   const value = process.env[name];
   return value && value.length > 0 ? value : undefined;
-}
-
-function parseClaimFinalizationMode(value: string | undefined): ClaimFinalizationMode {
-  const mode = (value ?? "OFFCHAIN").toUpperCase();
-  if (mode === "OFFCHAIN" || mode === "ONCHAIN") {
-    return mode;
-  }
-  throw new Error(`invalid CLAIM_FINALIZATION_MODE: ${value}`);
 }
 
 function envBigInt(name: string, fallback?: bigint): bigint {

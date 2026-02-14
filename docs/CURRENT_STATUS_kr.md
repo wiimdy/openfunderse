@@ -15,7 +15,7 @@
 ### 3.1 P0 (연쇄의 시작점)
 - SDK claim 타입/해시를 `AllocationClaimV1`으로 교체
 - relayer DB 스키마를 allocation/epoch/settlement 중심으로 교체
-- relayer API에서 `/claims`, `/attestations`, `/snapshots/latest` 제거
+- relayer API에서 `/attestations`, `/snapshots/latest` 제거 (`/claims`는 AllocationClaimV1 제출 경로로 유지)
 
 ### 3.2 P1
 - agents participant/strategy 플로우를 새 API로 교체

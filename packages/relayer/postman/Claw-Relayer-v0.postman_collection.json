@@ -313,44 +313,6 @@
             },
             "description": "Strategy bot only. Aggregates latest participant claims for epoch and persists epochStateHash."
           }
-        },
-        {
-          "name": "POST attestations (legacy removed)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "x-bot-id",
-                "value": "{{participant_bot_id}}"
-              },
-              {
-                "key": "x-bot-api-key",
-                "value": "{{participant_bot_api_key}}"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"claimHash\": \"{{claim_hash}}\",\n  \"epochId\": \"{{epoch_id}}\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/attestations",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "funds",
-                "{{fund_id}}",
-                "attestations"
-              ]
-            },
-            "description": "Legacy endpoint removed. Expected 404."
-          }
         }
       ]
     },
@@ -546,38 +508,6 @@
               ]
             },
             "description": "Runs execution worker batch (use CRON secret when enabled)."
-          }
-        },
-        {
-          "name": "GET claim events (SSE, legacy removed)",
-          "request": {
-            "method": "GET",
-            "header": [
-              {
-                "key": "Accept",
-                "value": "text/event-stream"
-              },
-              {
-                "key": "Last-Event-ID",
-                "value": "{{last_event_id}}",
-                "disabled": true
-              }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/funds/{{fund_id}}/events/claims",
-              "host": [
-                "{{base_url}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "funds",
-                "{{fund_id}}",
-                "events",
-                "claims"
-              ]
-            },
-            "description": "Legacy endpoint removed. Expected 404."
           }
         },
         {

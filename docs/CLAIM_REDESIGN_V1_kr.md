@@ -144,7 +144,8 @@ interface AllocationClaimV1 {
   - claim mining/evidence 검증 제거
   - targetWeights 생성/검증/제출 로직 추가
 - `packages/agents/src/lib/relayer-client.ts`
-  - `/claims`, `/attestations`, `/snapshots/latest` 클라이언트 제거
+  - `/attestations`, `/snapshots/latest` 클라이언트 제거
+  - `/claims`, `/epochs/*` 기준으로 클라이언트 재구성
   - 새 allocation/epoch endpoints 추가
 - `packages/agents/src/skills/strategy/index.ts`
   - `snapshot.finalized`, `claimCount` 전제 제거
@@ -190,7 +191,8 @@ interface AllocationClaimV1 {
 
 ## 5. 완료 기준(Definition of Done)
 - 레거시 claim 필드(`sourceRef/extracted/evidenceURI`)가 코드/DB/API에서 완전히 제거됨
-- `/claims`, `/attestations`, `/snapshots/latest` 경로 제거 또는 410 반환
+- `/attestations`, `/snapshots/latest` 경로 제거
+- `/claims`는 `AllocationClaimV1` 제출 경로로 유지
 - participant는 `targetWeights` claim만 제출 가능
 - epoch settle 후 `w_{i,t+1}` 및 `\Delta N_{i,t}` 결과가 재현 가능(동일 입력 -> 동일 출력)
 - 온체인 민팅 반영량 합이 `M_t`와 일치

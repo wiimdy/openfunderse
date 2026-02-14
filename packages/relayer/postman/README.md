@@ -92,6 +92,5 @@ And prints Postman environment values to copy:
 - Participant bot registration endpoint is strategy-only (`bots.register` scope).
 - For weighted intent threshold, the signer address must be present in `VERIFIER_WEIGHT_SNAPSHOT` with positive weight.
 - `POST /intents/propose` does not accept direct `allowlistHash`; relayer computes it from `executionRoute` only.
-- Legacy endpoints `POST /attestations`, `GET /snapshots/latest`, `GET /events/claims` are removed (404).
 - Collection now includes `funds/bootstrap`, `executions`, `cron/execute-intents`, and SSE endpoint (`events/intents`).
 - If you only want quick negative-path testing, use the `bad signature` requests in the collection.
