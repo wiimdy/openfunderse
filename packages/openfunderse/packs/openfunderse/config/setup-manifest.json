@@ -1,7 +1,7 @@
 {
   "name": "openfunderse-agent-pack",
   "version": "0.1.0",
-  "installCommand": "npx @wiimdy/openfunderse@latest install openfunderse",
+  "installCommand": "npx @wiimdy/openfunderse@latest install openfunderse --with-runtime",
   "description": "Scaffold manifest for future MoltBot skills/prompts packaging.",
   "bundles": [
     {

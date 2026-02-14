@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -9,17 +10,20 @@ import { fileURLToPath } from "node:url";
 const THIS_FILE = fileURLToPath(import.meta.url);
 const PACKAGE_ROOT = path.resolve(path.dirname(THIS_FILE), "..");
 const PACKS_ROOT = path.join(PACKAGE_ROOT, "packs");
+const DEFAULT_RUNTIME_PACKAGE = "@wiimdy/openfunderse-agents";
 
 function printUsage() {
   console.log(`openfunderse
 
 Usage:
   openfunderse list
-  openfunderse install <pack-name> [--dest <skills-dir>] [--codex-home <dir>] [--force]
+  openfunderse install <pack-name> [--dest <skills-dir>] [--codex-home <dir>] [--force] [--with-runtime]
+                     [--runtime-package <name>] [--runtime-dir <dir>] [--runtime-manager <npm|pnpm|yarn|bun>]
 
 Examples:
   openfunderse list
   openfunderse install openfunderse
+  openfunderse install openfunderse --with-runtime
   openfunderse install openfunderse --codex-home /tmp/codex-home
 `);
 }
@@ -30,7 +34,11 @@ function parseArgs(argv) {
   const options = {
     force: false,
     dest: "",
-    codexHome: ""
+    codexHome: "",
+    withRuntime: false,
+    runtimePackage: "",
+    runtimeDir: "",
+    runtimeManager: ""
   };
   const positionals = [];
 
@@ -51,6 +59,25 @@ function parseArgs(argv) {
     }
     if (token === "--codex-home") {
       options.codexHome = args[i + 1] ?? "";
+      i += 1;
+      continue;
+    }
+    if (token === "--with-runtime") {
+      options.withRuntime = true;
+      continue;
+    }
+    if (token === "--runtime-package") {
+      options.runtimePackage = args[i + 1] ?? "";
+      i += 1;
+      continue;
+    }
+    if (token === "--runtime-dir") {
+      options.runtimeDir = args[i + 1] ?? "";
+      i += 1;
+      continue;
+    }
+    if (token === "--runtime-manager") {
+      options.runtimeManager = args[i + 1] ?? "";
       i += 1;
       continue;
     }
@@ -122,6 +149,65 @@ async function copySkillDir(sourceDir, destinationDir, force) {
   await cp(sourceDir, destinationDir, { recursive: true });
 }
 
+function detectRuntimeManager() {
+  const userAgent = process.env.npm_config_user_agent || "";
+  if (userAgent.startsWith("pnpm/")) return "pnpm";
+  if (userAgent.startsWith("yarn/")) return "yarn";
+  if (userAgent.startsWith("bun/")) return "bun";
+  return "npm";
+}
+
+function commandForRuntimeInstall(manager, runtimePackage) {
+  if (manager === "pnpm") {
+    return { cmd: "pnpm", args: ["add", runtimePackage] };
+  }
+  if (manager === "yarn") {
+    return { cmd: "yarn", args: ["add", runtimePackage] };
+  }
+  if (manager === "bun") {
+    return { cmd: "bun", args: ["add", runtimePackage] };
+  }
+  return { cmd: "npm", args: ["install", runtimePackage] };
+}
+
+async function installRuntimePackage(options) {
+  const runtimePackage = options.runtimePackage || DEFAULT_RUNTIME_PACKAGE;
+  const runtimeDir = options.runtimeDir ? path.resolve(options.runtimeDir) : process.cwd();
+  const runtimeManager = options.runtimeManager || detectRuntimeManager();
+  const packageJsonPath = path.join(runtimeDir, "package.json");
+
+  if (!existsSync(packageJsonPath)) {
+    throw new Error(
+      `runtime install target has no package.json: ${runtimeDir} (use --runtime-dir <project-root>)`
+    );
+  }
+
+  const { cmd, args } = commandForRuntimeInstall(runtimeManager, runtimePackage);
+  await new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      cwd: runtimeDir,
+      stdio: "inherit"
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve(undefined);
+        return;
+      }
+      reject(new Error(`runtime install failed with exit code ${code}`));
+    });
+  });
+
+  return {
+    runtimePackage,
+    runtimeDir,
+    runtimeManager
+  };
+}
+
 async function installPack(packName, options) {
   const packDir = path.join(PACKS_ROOT, packName);
   if (!existsSync(packDir)) {
@@ -180,10 +266,21 @@ async function installPack(packName, options) {
   };
   await writeFile(path.join(packMetaRoot, "install.json"), `${JSON.stringify(installedMeta, null, 2)}\n`);
 
+  let runtimeInstallMeta = null;
+  if (options.withRuntime) {
+    runtimeInstallMeta = await installRuntimePackage(options);
+  }
+
   console.log(`Installed pack: ${packName}`);
   console.log(`Skills root: ${skillsRoot}`);
   console.log(`Installed skills: ${installed.join(", ")}`);
   console.log(`Pack metadata: ${packMetaRoot}`);
+  if (runtimeInstallMeta) {
+    console.log(
+      `Installed runtime package: ${runtimeInstallMeta.runtimePackage} (${runtimeInstallMeta.runtimeManager})`
+    );
+    console.log(`Runtime install dir: ${runtimeInstallMeta.runtimeDir}`);
+  }
   console.log("Restart Codex to pick up new skills.");
 }
 

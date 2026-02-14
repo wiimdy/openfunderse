@@ -15,8 +15,16 @@ npx @wiimdy/openfunderse@latest list
 # install pack into ~/.codex/skills
 npx @wiimdy/openfunderse@latest install openfunderse
 
+# install pack + runtime package in one command (recommended)
+npx @wiimdy/openfunderse@latest install openfunderse --with-runtime
+
 # install into custom codex home
 npx @wiimdy/openfunderse@latest install openfunderse --codex-home /custom/.codex
+
+# install runtime into a specific project directory
+npx @wiimdy/openfunderse@latest install openfunderse \
+  --with-runtime \
+  --runtime-dir /path/to/project
 ```
 
 ## Notes
@@ -24,4 +32,6 @@ npx @wiimdy/openfunderse@latest install openfunderse --codex-home /custom/.codex
 - Skills are copied into `$CODEX_HOME/skills` (default `~/.codex/skills`).
 - Pack metadata/prompts are copied into `$CODEX_HOME/packs/<pack-name>`.
 - Use `--force` to overwrite existing installed skills.
+- `--with-runtime` installs `@wiimdy/openfunderse-agents` into the current project (`package.json` required).
+- Optional: `--runtime-package`, `--runtime-dir`, `--runtime-manager`.
 - Default unified bundle is `clawbot-core` (strategy + participant role actions).
