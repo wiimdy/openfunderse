@@ -5,10 +5,10 @@ ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 CONTRACTS_DIR="$ROOT/packages/contracts"
 SDK_DIR="$ROOT/packages/sdk"
 
-if [[ -f "$ROOT/.env" ]]; then
+if [[ -f "$CONTRACTS_DIR/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
-  source "$ROOT/.env"
+  source "$CONTRACTS_DIR/.env"
   set +a
 fi
 

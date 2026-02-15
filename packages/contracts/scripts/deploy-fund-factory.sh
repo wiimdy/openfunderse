@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 CONTRACTS_DIR="$ROOT/packages/contracts"
 
-if [[ -f "$ROOT/.env" ]]; then
+if [[ -f "$CONTRACTS_DIR/.env" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
     [[ "$line" != *=* ]] && continue
@@ -14,7 +14,7 @@ if [[ -f "$ROOT/.env" ]]; then
     if [[ -z "${!key:-}" ]]; then
       export "$key=$value"
     fi
-  done < "$ROOT/.env"
+  done < "$CONTRACTS_DIR/.env"
 fi
 
 : "${RPC_URL:?RPC_URL is required}"
