@@ -4,174 +4,240 @@ import { useMemo, useState } from 'react';
 
 type Mode = 'strategy' | 'participant';
 
-const COMMANDS = {
-  strategy: 'npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime',
-  participant: 'npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime',
+const COMMANDS: Record<Mode, { install: string; init: string }> = {
+  strategy: {
+    install: 'npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime',
+    init: 'npx @wiimdy/openfunderse@latest bot-init --skill-name strategy --yes',
+  },
+  participant: {
+    install: 'npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime',
+    init: 'npx @wiimdy/openfunderse@latest bot-init --skill-name participant --yes',
+  },
 };
 
-const STEPS: Record<Mode, string[]> = {
+const STEPS: Record<Mode, { label: string; href?: string }[]> = {
   strategy: [
-    'Install strategy bot runtime',
-    'Configure fund parameters and deploy',
-    'Register participant bots',
+    { label: 'Install skill pack and runtime' },
+    { label: 'Initialize bot wallet with bot-init' },
+    { label: 'Add bot to your Telegram chatroom' },
+    { label: 'Configure fund parameters and deploy' },
+    { label: 'Register participant bots' },
   ],
   participant: [
-    'Join fund via Telegram: t.me/openfunderse',
-    'Install participant bot with command above',
-    'Connect wallet and deposit funds',
+    { label: 'Join fund via Telegram', href: 'https://t.me/openfunderse' },
+    { label: 'Install skill pack and runtime' },
+    { label: 'Initialize bot wallet with bot-init' },
+    { label: 'Add bot to your Telegram chatroom' },
+    { label: 'Connect wallet and deposit funds' },
   ],
 };
+
+const FLOW = [
+  { title: 'Claim', desc: 'Participants submit target portfolio weights' },
+  { title: 'Aggregate', desc: 'Stake-weighted consensus projected into risk set' },
+  { title: 'Execute', desc: 'Strategy executes toward target under constraints' },
+  { title: 'Settle', desc: 'Scores settled, NAV alpha mints reward shares' },
+];
 
 export default function Page() {
   const [mode, setMode] = useState<Mode>('participant');
   const [copied, setCopied] = useState(false);
 
-  const command = useMemo(() => COMMANDS[mode], [mode]);
+  const commands = useMemo(() => COMMANDS[mode], [mode]);
   const steps = useMemo(() => STEPS[mode], [mode]);
+  const allText = `${commands.install}\n${commands.init}`;
 
-  async function onCopyCommand() {
+  async function onCopy() {
     try {
-      await navigator.clipboard.writeText(command);
+      await navigator.clipboard.writeText(allText);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {
-      setCopied(false);
-    }
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard unavailable */ }
   }
 
   return (
-    <div className="flex min-h-screen w-screen items-center justify-center bg-gray-50 p-4">
-      <div className="z-10 w-full max-w-3xl overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-xl">
-        {/* Header */}
-        <div className="border-b border-gray-200 px-6 py-8 text-center sm:px-10">
-          <p className="text-sm text-gray-500">openfunderse</p>
-          <h1 className="mt-2 text-2xl font-semibold text-gray-900">
-            Molt bot-powered fund protocol on Monad
-          </h1>
+    <main className="relative min-h-screen bg-[#fbfbfd] selection:bg-gray-900 selection:text-white">
+      <div className="mx-auto w-full max-w-[980px] px-6 pb-24">
 
-          {/* Mode Toggle */}
-          <div className="mt-5 flex items-center justify-center gap-3 text-sm">
-            <button
-              type="button"
-              onClick={() => setMode('strategy')}
-              className={`rounded-full border px-3 py-1 ${
-                mode === 'strategy'
-                  ? 'border-gray-900 bg-gray-900 text-white'
-                  : 'border-gray-200 text-gray-700'
-              }`}
-            >
-              Strategy Bot
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('participant')}
-              className={`rounded-full border px-3 py-1 ${
-                mode === 'participant'
-                  ? 'border-gray-900 bg-gray-900 text-white'
-                  : 'border-gray-200 text-gray-700'
-              }`}
-            >
-              Participant Bot
-            </button>
-          </div>
+        <nav className="flex items-center gap-2.5 pt-5 pb-6">
+          <img
+            src="/logo-icon.png"
+            alt=""
+            className="h-9 w-auto"
+          />
+          <span className="text-lg font-bold tracking-tight text-gray-900">
+            Open<span className="text-violet-500">Funderse</span>
+          </span>
+        </nav>
+
+        <header className="text-center">
+          <h1 className="mx-auto mt-4 max-w-2xl text-[clamp(2.4rem,5vw,3.5rem)] font-bold leading-[1.08] tracking-[-0.03em] text-gray-900">
+            Agent-driven fund
+            <br />
+            protocol on{' '}
+            <span className="bg-gradient-to-r from-violet-500 to-fuchsia-400 bg-clip-text text-transparent">
+              Monad
+            </span>
+          </h1>
+          <p className="mx-auto mt-5 max-w-md text-lg leading-relaxed text-gray-500">
+            Claims are attested. Intents are validated.
+            <br className="hidden sm:block" />
+            Only approved intents execute onchain.
+          </p>
+        </header>
+
+        <div className="mt-8 flex justify-center gap-3">
+          <a
+            href="https://t.me/openfunderse"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-12 items-center rounded-full bg-gray-900 px-8 text-base font-medium text-white transition-transform hover:scale-[1.02] active:scale-[0.98]"
+          >
+            Join Telegram
+          </a>
+          <a
+            href="#install"
+            className="inline-flex h-12 items-center rounded-full border border-gray-200 bg-white px-8 text-base font-medium text-gray-900 transition-all hover:border-gray-300 hover:shadow-sm active:scale-[0.98]"
+          >
+            Get Started
+          </a>
         </div>
 
-        {/* Body */}
-        <div className="px-6 py-8 sm:px-10">
-          {/* Overview */}
-          <div className="mb-8 text-sm text-gray-700">
-            <p className="mb-3 leading-relaxed">
-              Agent-driven fund protocol for Monad: claims are attested, intents are validated,
-              and only approved intents execute onchain.
-            </p>
+        <section id="install" className="mx-auto mt-14 max-w-2xl scroll-mt-24">
+          <h2 className="text-center text-base font-semibold tracking-[0.08em] text-gray-900">
+            INSTALL
+          </h2>
 
-            <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs">
-              <p className="font-medium text-gray-900">Consensus Rebalancing Flow</p>
-              <ol className="mt-2 space-y-1 pl-4 text-gray-600">
-                <li>1. Participants submit target weights (portfolio allocations)</li>
-                <li>2. Stake-weighted aggregate projected into feasible risk set</li>
-                <li>3. Strategy executes toward target under venue constraints</li>
-                <li>4. Participant scores settled; NAV alpha mints reward shares</li>
-              </ol>
+          <div className="mx-auto mt-8 flex w-fit rounded-full border border-gray-200 bg-white p-1">
+            {(['participant', 'strategy'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={`rounded-full px-5 py-2 text-sm font-medium transition-all ${
+                  mode === m
+                    ? 'bg-gray-900 text-white shadow-sm'
+                    : 'text-gray-400 hover:text-gray-700'
+                }`}
+              >
+                {m === 'participant' ? 'Participant' : 'Strategy'}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative mt-6 overflow-hidden rounded-xl border border-gray-100 bg-[#1d1d1f]">
+            <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-3">
+              <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+              <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+              <span className="h-3 w-3 rounded-full bg-[#28c840]" />
             </div>
-
-            {/* Mode-specific skills */}
-            {mode === 'participant' ? (
-              <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2.5">
-                <p className="text-xs font-semibold text-blue-900">Participant Bot Skills</p>
-                <ul className="mt-2 space-y-1 pl-4 text-xs text-blue-800">
-                  <li>• Mine allocation claims (targetWeights) via Molt bot automation</li>
-                  <li>• Validate claim structure and submit to relayer API</li>
-                  <li>• Track epoch aggregation and fund performance</li>
-                  <li>• Earn reward shares based on prediction accuracy</li>
-                </ul>
+            <div className="space-y-2 px-5 py-4">
+              <div>
+                <div className="space-y-2 overflow-x-auto">
+                  <p className="whitespace-nowrap font-mono text-sm leading-relaxed text-gray-300">
+                    <span className="text-gray-600">1.</span> <span className="text-gray-500">$</span> {commands.install}
+                  </p>
+                  <p className="whitespace-nowrap font-mono text-sm leading-relaxed text-gray-300">
+                    <span className="text-gray-600">2.</span> <span className="text-gray-500">$</span> {commands.init}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onCopy}
+                  className="absolute right-3 top-3 rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/10 hover:text-gray-300"
+                  aria-label="Copy commands"
+                >
+                  {copied ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  )}
+                </button>
               </div>
-            ) : (
-              <div className="rounded-md border border-purple-200 bg-purple-50 px-3 py-2.5">
-                <p className="text-xs font-semibold text-purple-900">Strategy Bot Skills*</p>
-                <ul className="mt-2 space-y-1 pl-4 text-xs text-purple-800">
-                  <li>• Deploy fund via ClawFundFactory (IntentBook + Core + Vault)</li>
-                  <li>• Register participants and aggregate epoch claims</li>
-                  <li>• Propose intents with risk projection and allowlist enforcement</li>
-                  <li>• Attest intents onchain and execute approved trades</li>
-                </ul>
-                <p className="mt-2 border-t border-purple-200 pt-2 text-xs italic text-purple-700">
-                  *Permissionless fund creation available; demo runs single fund example
-                </p>
-              </div>
-            )}
+            </div>
           </div>
 
-          <h2 className="text-lg font-medium text-gray-900">Quick Start</h2>
-
-          {/* Install Command */}
-          <div className="mt-3 flex items-center gap-2 rounded-md bg-gray-900 px-3 py-2">
-            <code className="flex-1 font-mono text-sm text-gray-100">{command}</code>
-            <button
-              type="button"
-              onClick={onCopyCommand}
-              className="rounded border border-gray-700 px-2 py-1 text-xs text-gray-100 hover:bg-gray-800"
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </button>
-          </div>
-
-          {/* Steps */}
-          <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm text-gray-700">
-            {steps.map((step, index) => (
-              <li key={index}>
-                {step.includes('t.me/openfunderse') ? (
-                  <>
-                    Join fund via Telegram:{' '}
+          <div className="mt-6 rounded-xl border border-violet-100 bg-violet-50/30 px-6 py-5">
+            <ol className="space-y-3">
+              {steps.map((step, i) => (
+                <li key={i} className="flex items-center gap-3.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-50 text-[13px] font-semibold text-gray-400">
+                    {i + 1}
+                  </span>
+                  {step.href ? (
                     <a
-                      href="https://t.me/openfunderse"
+                      href={step.href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 underline hover:text-blue-700"
+                      className="text-[15px] text-gray-700 underline decoration-gray-200 underline-offset-4 transition-colors hover:decoration-gray-900"
                     >
-                      t.me/openfunderse
+                      {step.label}
                     </a>
-                  </>
-                ) : (
-                  step
-                )}
-              </li>
-            ))}
-          </ol>
-        </div>
+                  ) : (
+                    <span className="text-[15px] text-gray-700">{step.label}</span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
+        </section>
 
-        {/* Footer */}
-        <div className="border-t border-gray-200 px-6 py-4 text-xs text-gray-500 sm:px-10">
-          <div className="flex flex-wrap items-center gap-3">
-            <a href="/login" className="underline hover:text-gray-900">
-              Login
-            </a>
+        <section className="mx-auto mt-16 max-w-3xl">
+          <h2 className="text-center text-base font-semibold tracking-[0.08em] text-gray-900">
+            CONSENSUS FLOW
+          </h2>
+          <div className="mt-8 grid gap-5 sm:grid-cols-4">
+            {FLOW.map((item, i) => (
+              <div
+                key={i}
+                className="group rounded-2xl border border-violet-100 bg-violet-50/30 p-6 transition-shadow hover:shadow-md"
+              >
+                <span className="text-base font-semibold text-violet-300">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <p className="mt-3 text-lg font-semibold text-gray-900">
+                  {item.title}
+                </p>
+                <p className="mt-1.5 text-[15px] leading-snug text-gray-600">
+                  {item.desc}
+                </p>
+              </div>
+            ))}
           </div>
-          <div className="mt-2">
-            Bot write API requires <code>x-bot-id</code> plus signature headers (<code>x-bot-signature</code>, <code>x-bot-timestamp</code>, <code>x-bot-nonce</code>).
-          </div>
-        </div>
+        </section>
       </div>
-    </div>
+
+      <footer className="w-full border-t border-gray-100 bg-[#fbfbfd]">
+        <div className="mx-auto flex max-w-[980px] items-center justify-between px-6 py-5">
+          <span className="text-[12px] text-gray-300">OpenFunderse</span>
+          <nav className="flex items-center gap-5 text-[12px] text-gray-400">
+            <a
+              href="https://x.com/openfunderse"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-gray-900"
+            >
+              X
+            </a>
+            <a
+              href="https://t.me/openfunderse"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-gray-900"
+            >
+              Telegram
+            </a>
+            <a
+              href="https://nad.fun/tokens/0x51C3c7689d65f2c7a1ac3e73195DEDdb181e7777"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition-colors hover:text-gray-900"
+            >
+              nad.fun
+            </a>
+          </nav>
+        </div>
+      </footer>
+    </main>
   );
 }

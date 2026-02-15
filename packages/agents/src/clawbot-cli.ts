@@ -1,5 +1,7 @@
 import { runParticipantCli } from './participant-cli.js';
 import { runStrategyCli } from './strategy-cli.js';
+import { startDaemon } from './daemon.js';
+import { resolveStrategySubmitGate } from './lib/strategy-safety.js';
 
 interface ParsedCli {
   command?: string;
@@ -51,29 +53,45 @@ const stripOption = (args: string[], key: string): string[] => {
   return result;
 };
 
-const mapCommand = (role: string, action: string): string => {
+const mapCommand = (role: string, action: string): { command: string; extraArgs: string[] } => {
   if (role === 'strategy') {
-    if (action === 'create_fund_onchain') return 'strategy-create-fund';
-    if (action === 'propose_intent') return 'strategy-propose';
-    if (action === 'dry_run_intent_execution') return 'strategy-dry-run-intent';
-    if (action === 'attest_intent_onchain') return 'strategy-attest-onchain';
-    if (action === 'execute_intent_onchain') return 'strategy-execute-ready';
+    if (action === 'daemon') return { command: 'daemon', extraArgs: [] };
+    if (action === 'create_fund' || action === 'create_fund_onchain') {
+      return { command: 'strategy-create-fund', extraArgs: [] };
+    }
+    if (action === 'propose_intent') return { command: 'strategy-propose', extraArgs: [] };
+    if (action === 'dry_run_intent' || action === 'dry_run_intent_execution') {
+      return { command: 'strategy-dry-run-intent', extraArgs: [] };
+    }
+    if (action === 'attest_intent' || action === 'attest_intent_onchain') {
+      return { command: 'strategy-attest-onchain', extraArgs: [] };
+    }
+    if (action === 'execute_intent' || action === 'execute_intent_onchain') {
+      return { command: 'strategy-execute-ready', extraArgs: [] };
+    }
   }
 
   if (role === 'participant') {
-    // Backward-compatible aliases for one release window.
-    if (action === 'mine_claim') return 'participant-propose-allocation';
-    if (action === 'verify_claim') return 'participant-validate-allocation';
-    if (action === 'verify_claim_or_intent_validity') return 'participant-validate-allocation';
-    if (action === 'submit_claim') return 'participant-submit-allocation';
-    if (action === 'submit_mined_claim') return 'participant-submit-allocation';
-    if (action === 'participant_e2e') return 'participant-allocation-e2e';
+    if (action === 'daemon') return { command: 'daemon', extraArgs: [] };
 
-    if (action === 'propose_allocation') return 'participant-propose-allocation';
-    if (action === 'validate_allocation') return 'participant-validate-allocation';
-    if (action === 'validate_allocation_or_intent') return 'participant-validate-allocation';
-    if (action === 'submit_allocation') return 'participant-submit-allocation';
-    if (action === 'allocation_e2e') return 'participant-allocation-e2e';
+    // Unified participant actions.
+    if (action === 'allocation') return { command: 'participant-allocation', extraArgs: [] };
+    if (action === 'join') return { command: 'participant-join', extraArgs: [] };
+
+    // Backward-compatible actions.
+    if (action === 'propose_allocation') return { command: 'participant-propose-allocation', extraArgs: [] };
+    if (action === 'submit_allocation') return { command: 'participant-submit-allocation', extraArgs: [] };
+    if (action === 'validate_allocation' || action === 'validate_allocation_or_intent') {
+      return { command: 'participant-allocation', extraArgs: ['--verify'] };
+    }
+    if (action === 'allocation_e2e') {
+      return { command: 'participant-allocation', extraArgs: ['--verify'] };
+    }
+
+    if (action === 'deposit') return { command: 'participant-deposit', extraArgs: [] };
+    if (action === 'withdraw') return { command: 'participant-withdraw', extraArgs: [] };
+    if (action === 'redeem') return { command: 'participant-redeem', extraArgs: [] };
+    if (action === 'vault_info') return { command: 'participant-vault-info', extraArgs: [] };
   }
 
   throw new Error(`unsupported clawbot action: role=${role}, action=${action}`);
@@ -86,12 +104,16 @@ const printUsage = (): void => {
 clawbot-run --role <strategy|participant> --action <action> [action options...]
 
 Telegram slash aliases:
-  /propose_intent, /dry_run_intent, /attest_intent, /execute_intent, /create_fund
-  /propose_allocation, /validate_allocation, /submit_allocation, /allocation_e2e
+  /create_fund, /propose_intent, /dry_run_intent, /attest_intent, /execute_intent, /daemon
+  /allocation, /join, /deposit, /withdraw, /redeem, /vault_info, /participant_daemon
 
 Examples:
   clawbot-run --role strategy --action propose_intent --fund-id demo-fund --intent-file ./intent.json --execution-route-file ./route.json
-  clawbot-run --role participant --action propose_allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000
+  clawbot-run --role participant --action allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000 --verify
+  clawbot-run --role participant --action join --room-id <telegram-room-id>
+  clawbot-run --role participant --action deposit --vault-address 0x... --amount 1000000000000000000 --native --submit
+  clawbot-run --role strategy --action daemon --fund-id demo-fund
+  clawbot-run --role participant --action daemon --fund-id demo-fund
 `);
 };
 
@@ -114,9 +136,41 @@ export const runClawbotCli = async (argv: string[]): Promise<boolean> => {
 
   const mapped = mapCommand(role, action);
   const forwarded = stripOption(stripOption(argv.slice(1), 'role'), 'action');
-  const delegatedArgv = [mapped, ...forwarded];
+  const delegatedArgv = [mapped.command, ...mapped.extraArgs, ...forwarded];
 
-  if (mapped.startsWith('strategy-')) {
+  if (mapped.command === 'strategy-propose') {
+    resolveStrategySubmitGate(parsed.flags.has('submit'));
+  }
+
+  if (mapped.command === 'daemon') {
+    const fundId = parsed.options.get('fund-id') ?? '';
+    if (!fundId) throw new Error('missing required option --fund-id for daemon mode');
+
+    const relayerUrl = process.env.RELAYER_URL ?? '';
+    const botId = process.env.BOT_ID ?? '';
+    const privateKey =
+      process.env.STRATEGY_PRIVATE_KEY ?? process.env.PARTICIPANT_PRIVATE_KEY ?? '';
+
+    console.log(`[daemon] starting ${role} daemon for fund ${fundId}`);
+    const instance = startDaemon({
+      role: role as 'strategy' | 'participant',
+      fundId,
+      relayerUrl,
+      botId,
+      privateKey
+    });
+
+    process.on('SIGINT', () => {
+      console.log('[daemon] shutting down...');
+      instance.stop();
+      process.exit(0);
+    });
+
+    await new Promise<void>(() => undefined);
+    return true;
+  }
+
+  if (mapped.command.startsWith('strategy-')) {
     await runStrategyCli(delegatedArgv);
     return true;
   }

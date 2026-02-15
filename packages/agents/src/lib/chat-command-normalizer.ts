@@ -40,33 +40,45 @@ const COMMAND_ALIAS: Record<string, string[]> = {
   'create-fund': ['clawbot-run', '--role', 'strategy', '--action', 'create_fund_onchain'],
   'create-fund-onchain': ['clawbot-run', '--role', 'strategy', '--action', 'create_fund_onchain'],
 
-  'propose-allocation': [
+  // Participant: unified allocation flow.
+  allocation: ['clawbot-run', '--role', 'participant', '--action', 'allocation'],
+  join: ['clawbot-run', '--role', 'participant', '--action', 'join'],
+  deposit: ['clawbot-run', '--role', 'participant', '--action', 'deposit'],
+  withdraw: ['clawbot-run', '--role', 'participant', '--action', 'withdraw'],
+  redeem: ['clawbot-run', '--role', 'participant', '--action', 'redeem'],
+  'vault-info': ['clawbot-run', '--role', 'participant', '--action', 'vault_info'],
+  'participant-daemon': ['clawbot-run', '--role', 'participant', '--action', 'daemon'],
+
+  // Backward-compatible participant aliases (deprecated, still supported).
+  'propose-allocation': ['clawbot-run', '--role', 'participant', '--action', 'allocation'],
+  'submit-allocation': [
     'clawbot-run',
     '--role',
     'participant',
     '--action',
-    'propose_allocation'
+    'submit_allocation'
   ],
   'validate-allocation': [
     'clawbot-run',
     '--role',
     'participant',
     '--action',
-    'validate_allocation'
+    'allocation',
+    '--verify'
   ],
   'validate-allocation-or-intent': [
     'clawbot-run',
     '--role',
     'participant',
     '--action',
-    'validate_allocation'
+    'allocation',
+    '--verify'
   ],
-  'submit-allocation': ['clawbot-run', '--role', 'participant', '--action', 'submit_allocation'],
-  'allocation-e2e': ['clawbot-run', '--role', 'participant', '--action', 'allocation_e2e'],
+  'allocation-e2e': ['clawbot-run', '--role', 'participant', '--action', 'allocation', '--verify'],
 
-  // Backward-compatible aliases.
-  'mine-claim': ['clawbot-run', '--role', 'participant', '--action', 'propose_allocation'],
-  'verify-claim': ['clawbot-run', '--role', 'participant', '--action', 'validate_allocation'],
+  // Backward-compatible generic names.
+  'mine-claim': ['clawbot-run', '--role', 'participant', '--action', 'allocation'],
+  'verify-claim': ['clawbot-run', '--role', 'participant', '--action', 'allocation', '--verify'],
   'submit-claim': ['clawbot-run', '--role', 'participant', '--action', 'submit_allocation']
 };
 

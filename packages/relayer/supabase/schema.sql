@@ -19,6 +19,11 @@ create table if not exists funds (
 alter table if exists funds add column if not exists is_verified boolean not null default false;
 alter table if exists funds add column if not exists visibility text not null default 'HIDDEN';
 alter table if exists funds add column if not exists verification_note text;
+alter table if exists funds add column if not exists allowlist_tokens_json text;
+alter table if exists funds add column if not exists auto_epoch_enabled boolean not null default false;
+alter table if exists funds add column if not exists epoch_duration_ms bigint not null default 120000;
+alter table if exists funds add column if not exists epoch_min_claims integer not null default 1;
+alter table if exists funds add column if not exists epoch_max_claims integer not null default 100;
 
 create table if not exists fund_bots (
   id bigserial primary key,
@@ -34,6 +39,15 @@ create table if not exists fund_bots (
   updated_at bigint not null,
   unique (fund_id, bot_id)
 );
+
+create table if not exists bot_auth_nonces (
+  id serial primary key,
+  bot_id text not null,
+  nonce text not null,
+  used_at timestamptz not null default now(),
+  unique (bot_id, nonce)
+);
+-- Periodically prune old nonce rows (e.g. older than 5 minutes) to keep this table bounded.
 
 -- DEPRECATED: bot_credentials table removed. Bot auth is now signature-based
 -- (EIP-191) using bot_address in fund_bots table. Kept commented for reference.
@@ -82,7 +96,7 @@ create table if not exists attestations (
   error text,
   created_at bigint not null,
   updated_at bigint not null,
-  unique (subject_type, subject_hash, verifier)
+  unique (fund_id, subject_type, subject_hash, verifier)
 );
 
 create table if not exists subject_state (
@@ -99,8 +113,43 @@ create table if not exists subject_state (
   last_error text,
   created_at bigint not null,
   updated_at bigint not null,
-  unique (subject_type, subject_hash)
+  unique (fund_id, subject_type, subject_hash)
 );
+
+alter table if exists attestations
+  drop constraint if exists attestations_subject_type_subject_hash_verifier_key;
+alter table if exists attestations
+  drop constraint if exists attestations_fund_subject_verifier_key;
+alter table if exists attestations
+  add constraint attestations_fund_subject_verifier_key
+  unique (fund_id, subject_type, subject_hash, verifier);
+
+alter table if exists subject_state
+  drop constraint if exists subject_state_subject_type_subject_hash_key;
+alter table if exists subject_state
+  drop constraint if exists subject_state_fund_subject_key;
+alter table if exists subject_state
+  add constraint subject_state_fund_subject_key
+  unique (fund_id, subject_type, subject_hash);
+
+create or replace function increment_subject_attested_weight_atomic(
+  p_fund_id text,
+  p_subject_type text,
+  p_subject_hash text,
+  p_delta text
+)
+returns table (attested_weight text)
+language sql
+as $$
+  update subject_state
+  set
+    attested_weight = ((attested_weight::numeric) + (p_delta::numeric))::text,
+    updated_at = (extract(epoch from now()) * 1000)::bigint
+  where fund_id = p_fund_id
+    and subject_type = p_subject_type
+    and subject_hash = lower(p_subject_hash)
+  returning subject_state.attested_weight;
+$$;
 
 create table if not exists allocation_claims (
   id bigserial primary key,
@@ -258,3 +307,63 @@ create index if not exists idx_epoch_states_fund_finalized on epoch_states(fund_
 create index if not exists idx_intents_fund_snapshot on intents(fund_id, snapshot_hash, created_at desc);
 create index if not exists idx_execution_jobs_status_next on execution_jobs(status, next_run_at, created_at);
 create index if not exists idx_funds_verified_visibility on funds(is_verified, visibility, updated_at desc);
+
+-- ============================================================
+-- Epoch lifecycle management (auto-epoch)
+-- ============================================================
+
+create table if not exists epoch_lifecycle (
+  id bigserial primary key,
+  fund_id text not null,
+  epoch_id text not null,
+  status text not null default 'OPEN',
+  opened_at bigint not null,
+  closes_at bigint not null,
+  closed_at bigint,
+  claim_count integer not null default 0,
+  created_at bigint not null,
+  updated_at bigint not null,
+  unique (fund_id, epoch_id)
+);
+
+create or replace function increment_epoch_claim_count_atomic(
+  p_fund_id text,
+  p_epoch_id text
+)
+returns table (claim_count integer)
+language sql
+as $$
+  update epoch_lifecycle
+  set
+    claim_count = epoch_lifecycle.claim_count + 1,
+    updated_at = (extract(epoch from now()) * 1000)::bigint
+  where fund_id = p_fund_id
+    and epoch_id = p_epoch_id
+    and status = 'OPEN'
+  returning epoch_lifecycle.claim_count;
+$$;
+
+-- Enforce at most one OPEN epoch per fund at the DB level.
+create unique index if not exists idx_epoch_lifecycle_one_open
+  on epoch_lifecycle(fund_id) where status = 'OPEN';
+
+create index if not exists idx_epoch_lifecycle_fund_status
+  on epoch_lifecycle(fund_id, status, closes_at);
+
+-- ============================================================
+-- Events outbox (durable SSE backing store)
+-- ============================================================
+
+create table if not exists events_outbox (
+  id bigserial primary key,
+  event_type text not null,
+  fund_id text not null,
+  payload jsonb not null default '{}',
+  created_at bigint not null
+);
+
+create index if not exists idx_events_outbox_fund_created
+  on events_outbox(fund_id, created_at desc);
+
+create index if not exists idx_events_outbox_id_type
+  on events_outbox(id, event_type);

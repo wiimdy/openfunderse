@@ -3,13 +3,13 @@
 Use this page as the primary docs entrypoint.
 
 ## Core (start here)
-- Product context: [`PRD.md`](PRD.md)
+- Product context: [`PRD.md`](PRD.md) | [`PRD_kr.md`](PRD_kr.md)
 - Claim redesign baseline (KR): [`CLAIM_REDESIGN_V1_kr.md`](CLAIM_REDESIGN_V1_kr.md)
-- Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md)
+- Architecture: [`ARCHITECTURE.md`](ARCHITECTURE.md) | [`ARCHITECTURE_kr.md`](ARCHITECTURE_kr.md)
 - Current implementation status (KR): [`CURRENT_STATUS_kr.md`](CURRENT_STATUS_kr.md)
 - System actions + threat model (KR): [`SYSTEM_ACTIONS_THREAT_MODEL_kr.md`](SYSTEM_ACTIONS_THREAT_MODEL_kr.md)
 - Unified skill/runtime refactor plan (KR): [`UNIFIED_SKILL_RUNTIME_PLAN_kr.md`](UNIFIED_SKILL_RUNTIME_PLAN_kr.md)
-- Roadmap: [`ROADMAP.md`](ROADMAP.md)
+- Roadmap: [`ROADMAP.md`](ROADMAP.md) | [`ROADMAP_kr.md`](ROADMAP_kr.md)
 
 ## Contracts / Protocol
 - Contracts package guide: [`../packages/contracts/README.md`](../packages/contracts/README.md)
@@ -20,21 +20,6 @@ Use this page as the primary docs entrypoint.
 ## Security / Audit trail
 - ERC-4626 hardening plan: [`security/erc4626-hardening-plan.md`](security/erc4626-hardening-plan.md)
 - Contract audit log (2026-02-13): [`security/contract-audit-log-2026-02-13.md`](security/contract-audit-log-2026-02-13.md)
-- Implementation review playbook: [`IMPLEMENTATION_REVIEW_PLAYBOOK.md`](IMPLEMENTATION_REVIEW_PLAYBOOK.md)
 
-## Product/operations references
-- Production readiness: [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md)
-- Build process: [`BUILD_PROCESS.md`](BUILD_PROCESS.md)
-- Feature scope: [`OPENCLAW_FEATURES.md`](OPENCLAW_FEATURES.md)
-
-## Korean versions
-- PRD: [`PRD_kr.md`](PRD_kr.md)
-- Architecture: [`ARCHITECTURE_kr.md`](ARCHITECTURE_kr.md)
-- Roadmap: [`ROADMAP_kr.md`](ROADMAP_kr.md)
-- Production readiness: [`PRODUCTION_READINESS_kr.md`](PRODUCTION_READINESS_kr.md)
-- Build process: [`BUILD_PROCESS_kr.md`](BUILD_PROCESS_kr.md)
-
-## Prompting/ChatOps appendices
-- ChatOps architecture: [`ARCHITECTURE_CHATOPS.md`](ARCHITECTURE_CHATOPS.md)
-- ChatOps architecture (KR): [`ARCHITECTURE_CHATOPS_kr.md`](ARCHITECTURE_CHATOPS_kr.md)
-- Prompt references: [`prompts/README.md`](prompts/README.md)
+## Operations
+- Production readiness: [`PRODUCTION_READINESS.md`](PRODUCTION_READINESS.md) | [`PRODUCTION_READINESS_kr.md`](PRODUCTION_READINESS_kr.md)

@@ -9,6 +9,9 @@ import {
 } from '@claw/protocol-sdk';
 import { EventSource } from 'eventsource';
 import { signAuthMessage, signBootstrapMessage } from './signer.js';
+import { validateStrategyRelayerUrl } from './strategy-safety.js';
+
+export type { Address, Hex } from '@claw/protocol-sdk';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 
@@ -92,7 +95,9 @@ export interface SseSubscription {
   close: () => void;
 }
 
-type IntentEventType = 'intent:attested';
+export type EpochEventType = 'epoch:opened' | 'epoch:closed' | 'epoch:aggregated';
+export type IntentEventType = 'intent:proposed' | 'intent:attested' | 'intent:ready';
+export type RelayerEventType = EpochEventType | IntentEventType;
 
 interface RequestConfig {
   method: 'GET' | 'POST';
@@ -224,6 +229,7 @@ export class RelayerClient {
     if (!this.baseUrl) {
       throw new Error('RELAYER_URL is required');
     }
+    validateStrategyRelayerUrl(this.baseUrl);
     if (!this.botId) {
       throw new Error('BOT_ID is required');
     }
@@ -414,6 +420,27 @@ export class RelayerClient {
     });
   }
 
+  async getFundByRoomId(
+    roomId: string
+  ): Promise<{ fundId: string; fundName: string; roomId: string } & Record<string, unknown>> {
+    return this.request<{ fundId: string; fundName: string; roomId: string } & Record<string, unknown>>({
+      method: 'GET',
+      path: `/api/v1/rooms/${encodeURIComponent(roomId)}/fund`,
+      withAuth: false
+    });
+  }
+
+  async joinFundByRoomId(
+    roomId: string
+  ): Promise<Record<string, unknown> & { fundId?: string; fundName?: string }> {
+    return this.request<Record<string, unknown> & { fundId?: string; fundName?: string }>({
+      method: 'POST',
+      path: `/api/v1/rooms/${encodeURIComponent(roomId)}/join`,
+      body: {},
+      withAuth: true
+    });
+  }
+
   async syncFundDeployment(
     input: SyncFundDeploymentInput
   ): Promise<Record<string, unknown>> {
@@ -458,6 +485,28 @@ export class RelayerClient {
       ['intent:attested'],
       handlers
     );
+  }
+
+  subscribeEvents(
+    options: { fundId?: string; types?: RelayerEventType[] },
+    handlers: SseHandlers<RelayerEventType>
+  ): SseSubscription {
+    const query = new URLSearchParams();
+    if (options.fundId) query.set('fundId', options.fundId);
+    if (options.types?.length) query.set('types', options.types.join(','));
+    const qs = query.toString();
+    const path = `/api/v1/events/stream${qs ? `?${qs}` : ''}`;
+
+    const allTypes: RelayerEventType[] = options.types ?? [
+      'epoch:opened',
+      'epoch:closed',
+      'epoch:aggregated',
+      'intent:proposed',
+      'intent:attested',
+      'intent:ready'
+    ];
+
+    return this.subscribeToEvents<RelayerEventType>(path, allTypes, handlers);
   }
 
   private subscribeToEvents<TType extends string>(

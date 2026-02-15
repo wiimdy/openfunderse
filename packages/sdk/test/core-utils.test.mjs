@@ -21,7 +21,12 @@ test("scope canonicalization normalizes text and keeps epoch", () => {
   assert.equal(s.fundId, "fund-001");
   assert.equal(s.roomId, "room-alpha");
   assert.equal(s.epochId, 12n);
-  assert.equal(scopeKey(s), "fund-001:room-alpha:12");
+  // scopeKey now returns collision-resistant keccak256 hash (fix #6)
+  const key = scopeKey(s);
+  assert.ok(key.startsWith("0x"), "scopeKey must return hex hash");
+  assert.equal(key.length, 66, "scopeKey must return 32-byte hex");
+  // deterministic: same input produces same hash
+  assert.equal(scopeKey(s), key);
 });
 
 test("assertSameScope rejects mismatched scope", () => {

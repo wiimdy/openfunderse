@@ -1,6 +1,6 @@
 {
   "name": "@wiimdy/openfunderse-agents",
-  "version": "0.1.4",
+  "version": "0.1.6",
   "private": false,
   "type": "module",
   "main": "./dist/index.js",
@@ -11,9 +11,15 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "participant:propose-allocation": "tsx src/index.ts participant-propose-allocation",
-    "participant:validate-allocation": "tsx src/index.ts participant-validate-allocation",
     "participant:submit-allocation": "tsx src/index.ts participant-submit-allocation",
+    "participant:join": "tsx src/index.ts participant-join",
+    "participant:allocation": "tsx src/index.ts participant-allocation",
+    "participant:deposit": "tsx src/index.ts participant-deposit",
+    "participant:withdraw": "tsx src/index.ts participant-withdraw",
+    "participant:redeem": "tsx src/index.ts participant-redeem",
+    "participant:vault-info": "tsx src/index.ts participant-vault-info",
     "participant:allocation-e2e": "tsx src/index.ts participant-allocation-e2e",
+    "participant:daemon": "tsx src/index.ts participant-daemon",
     "strategy:create:fund": "tsx src/index.ts strategy-create-fund",
     "strategy:attest:onchain": "tsx src/index.ts strategy-attest-onchain",
     "strategy:execute:ready": "tsx src/index.ts strategy-execute-ready",
@@ -21,6 +27,9 @@
     "strategy:dry-run:intent": "tsx src/index.ts strategy-dry-run-intent",
     "clawbot:run": "tsx src/index.ts clawbot-run",
     "bot:smoke:e2e": "node scripts/clawbot-e2e-smoke.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
@@ -32,5 +41,9 @@
   "files": [
     "dist",
     "README.md"
-  ]
+  ],
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
+    "vitest": "^4.0.18"
+  }
 }

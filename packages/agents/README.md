@@ -9,7 +9,7 @@ ER2 quickstart:
 Unified entrypoint:
 
 ```bash
-npm run clawbot:run -w @claw/agents -- \
+npm run clawbot:run -w @wiimdy/openfunderse-agents -- \
   --role strategy \
   --action propose_intent \
   --fund-id demo-fund \
@@ -19,7 +19,7 @@ npm run clawbot:run -w @claw/agents -- \
 
 One-command smoke:
 ```bash
-npm run bot:smoke:e2e -w @claw/agents
+npm run bot:smoke:e2e -w @wiimdy/openfunderse-agents
 ```
 
 ## Role
@@ -32,7 +32,7 @@ Shared protocol utilities:
 Run:
 
 ```bash
-npm run dev -w @claw/agents
+npm run dev -w @wiimdy/openfunderse-agents
 ```
 
 Env loading defaults (no manual `source` required):
@@ -44,7 +44,8 @@ Env loading defaults (no manual `source` required):
 Telegram slash compatibility:
 - Slash commands are accepted by the runtime entrypoint.
 - `/propose_intent` maps to `clawbot-run --role strategy --action propose_intent`.
-- `/propose_allocation` maps to `clawbot-run --role participant --action propose_allocation`.
+- `/allocation` maps to `clawbot-run --role participant --action allocation`.
+- `/join` maps to `clawbot-run --role participant --action join`.
 - Underscore option style is supported for key/value args (`fund_id=demo` -> `--fund-id demo`).
 
 ## Participant claim model (allocation only)
@@ -98,37 +99,43 @@ Strategy signer env:
 ## Participant commands
 
 ```bash
-# 1) Mine allocation claim
-npm run participant:propose-allocation -w @claw/agents -- \
+# Join fund by room id (recommended for Telegram group flows)
+npm run participant:join -w @wiimdy/openfunderse-agents -- --room-id <room-id>
+
+# Unified allocation (mine + optional verify + optional submit)
+npm run participant:allocation -w @wiimdy/openfunderse-agents -- \
+  --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000 --verify --submit
+
+# Legacy (still supported):
+npm run participant:propose-allocation -w @wiimdy/openfunderse-agents -- \
+  --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000 --out-file /tmp/participant-allocation.json
+npm run participant:submit-allocation -w @wiimdy/openfunderse-agents -- \
+  --claim-file /tmp/participant-allocation.json --submit
+```
+
+Daemon mode (auto-generate weights from NadFun signals):
+
+```bash
+# strategies: A (momentum), B (progress), C (impact-aware)
+npm run participant:daemon -w @wiimdy/openfunderse-agents -- \
   --fund-id demo-fund \
-  --epoch-id 1 \
-  --target-weights 7000,3000 \
-  --out-file /tmp/participant-allocation.json
-
-# 2) Verify mined claim
-npm run participant:validate-allocation -w @claw/agents -- \
-  --claim-file /tmp/participant-allocation.json \
-  --max-data-age-seconds 300
-
-# 3) Submit mined claim to relayer
-npm run participant:submit-allocation -w @claw/agents -- \
-  --claim-file /tmp/participant-allocation.json \
-  --submit
-
-# 4) One-shot e2e (mine -> verify -> submit)
-npm run participant:allocation-e2e -w @claw/agents -- \
-  --fund-id demo-fund \
-  --epoch-id 1 \
-  --target-weights 7000,3000 \
-  --report-file /tmp/participant-allocation-e2e-report.json \
+  --strategy A \
+  --interval-sec 60 \
+  --epoch-source relayer \
   --submit
 ```
 
+EC2/systemd deployment:
+- `packages/agents/EC2_PARTICIPANT_DAEMON.md`
+
 Slash aliases:
-- `/propose_allocation`
-- `/validate_allocation`
-- `/submit_allocation`
-- `/allocation_e2e`
+- `/allocation`
+- `/join`
+- `/deposit`
+- `/withdraw`
+- `/redeem`
+- `/vault_info`
+- `/participant_daemon`
 
 Default participant safety behavior:
 - `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` and no `--submit` => `decision: "READY"` (no relayer transmission)
@@ -141,13 +148,13 @@ Default participant safety behavior:
 cp packages/agents/config/deploy-config.template.json /tmp/deploy-config.json
 
 # 0) Create fund directly onchain via Factory (dry-run only)
-npm run strategy:create:fund -w @claw/agents -- \
+npm run strategy:create:fund -w @wiimdy/openfunderse-agents -- \
   --fund-id demo-fund-001 \
   --fund-name "Demo Fund 001" \
   --deploy-config-file /absolute/path/to/deploy-config.json
 
 # 0-1) Submit createFund onchain + sync deployment metadata to relayer
-npm run strategy:create:fund -w @claw/agents -- \
+npm run strategy:create:fund -w @wiimdy/openfunderse-agents -- \
   --fund-id demo-fund-001 \
   --fund-name "Demo Fund 001" \
   --deploy-config-file /absolute/path/to/deploy-config.json \
@@ -155,17 +162,17 @@ npm run strategy:create:fund -w @claw/agents -- \
   --submit
 
 # 1) READY_FOR_ONCHAIN intent attestation submit (IntentBook.attestIntent via signer tx)
-npm run strategy:attest:onchain -w @claw/agents -- \
+npm run strategy:attest:onchain -w @wiimdy/openfunderse-agents -- \
   --fund-id demo-fund \
   --intent-hash 0x...
 
 # 2) READY execution jobs submit (ClawCore.executeIntent via signer tx)
-npm run strategy:execute:ready -w @claw/agents -- \
+npm run strategy:execute:ready -w @wiimdy/openfunderse-agents -- \
   --fund-id demo-fund \
   --limit 10
 
 # 3) Dry-run intent execution against core
-npm run strategy:dry-run:intent -w @claw/agents -- \
+npm run strategy:dry-run:intent -w @wiimdy/openfunderse-agents -- \
   --intent-hash 0x... \
   --intent-file /tmp/intent.json \
   --execution-route-file /tmp/route.json
@@ -219,7 +226,7 @@ Programmatic skill path builds proposal first, then submits only when submit gat
 3. if step 2 passed, send onchain `IntentBook.proposeIntent` via strategy signer tx
 
 ```ts
-import { proposeIntentAndSubmit } from '@claw/agents';
+import { proposeIntentAndSubmit } from '@wiimdy/openfunderse-agents';
 
 const out = await proposeIntentAndSubmit({
   taskType: 'propose_intent',
@@ -271,9 +278,5 @@ Canonical pack files are maintained at:
 
 `packages/agents` keeps runtime code only (`src/*`, `dist/*`).
 
-Prompt references from docs:
-- `docs/jupyter-notebook/openclaw-agent-prompt-book.ipynb`
-- `docs/prompts/kr/base_system.md`
-- `docs/prompts/kr/participant_moltbot.md`
-- `docs/prompts/kr/strategy_moltbot.md`
-- `docs/prompts/kr/relayer_next_server.md`
+Prompt references:
+- See skill packs in `packages/openfunderse/packs/`

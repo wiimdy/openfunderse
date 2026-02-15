@@ -1,6 +1,8 @@
 import { encodeAbiParameters, keccak256, parseAbiParameters } from "viem";
 import type { Hex, ProtocolScope } from "./types.js";
 
+const SCOPE_KEY_INPUT = parseAbiParameters("string fundId,string roomId,uint64 epochId");
+
 function normalizeScopeText(value: string): string {
   return value.normalize("NFC").trim();
 }
@@ -13,9 +15,9 @@ export function canonicalScope(input: ProtocolScope): ProtocolScope {
   };
 }
 
-export function scopeKey(input: ProtocolScope): string {
+export function scopeKey(input: ProtocolScope): Hex {
   const v = canonicalScope(input);
-  return `${v.fundId}:${v.roomId}:${v.epochId.toString(10)}`;
+  return keccak256(encodeAbiParameters(SCOPE_KEY_INPUT, [v.fundId, v.roomId, v.epochId]));
 }
 
 export function assertSameScope(expected: ProtocolScope, received: ProtocolScope): void {

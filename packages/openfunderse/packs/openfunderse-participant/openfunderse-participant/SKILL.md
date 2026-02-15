@@ -67,14 +67,36 @@ This step is not required for normal OpenClaw skill execution.
 Telegram slash commands:
 
 ```text
-/propose_allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
-/validate_allocation --claim-file <path>
-/submit_allocation --claim-file <path> --submit
-/allocation_e2e --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--submit]
+/allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--verify] [--submit]
+/allocation --claim-file <path> [--verify] [--submit]
+/join --room-id <id>
+/deposit --amount <wei> [--vault-address <0x...>] [--native] [--submit]
+/withdraw --amount <wei> [--vault-address <0x...>] [--native] [--submit]
+/redeem --shares <wei> [--vault-address <0x...>] [--submit]
+/vault_info [--vault-address <0x...>] [--account <0x...>]
+/participant_daemon --fund-id <id> --strategy <A|B|C> [--interval-sec <n>] [--epoch-source <relayer|fixed>] [--epoch-id <n>] [--submit]
 ```
 
 Notes:
-- Slash parser accepts underscores, so `/submit_allocation` equals `/submit-allocation`.
+- `allocation` will auto-validate on submit (`--submit` implies verify).
+- `submit_allocation` (legacy) validates the claim hash first; without `--submit` it is validation-only dry-run.
+
+BotFather `/setcommands` (copy-paste ready):
+
+```text
+start - Show quick start
+help - Show command help
+allocation - Mine (optional verify) and optionally submit allocation claim
+join - Register this bot as a participant for the fund mapped to the room id
+deposit - Deposit native MON or ERC-20 into vault
+withdraw - Withdraw assets from vault (native or ERC-20)
+redeem - Burn vault shares and receive assets
+vault_info - Show vault status and user PnL
+participant_daemon - Run participant allocation daemon
+```
+
+Notes:
+- Slash parser accepts underscores, so `/participant_daemon` equals `/participant-daemon`.
 - `key=value` style is also accepted (`fund_id=demo-fund`).
 - On first install, register these commands in Telegram via `@BotFather` -> `/setcommands`.
 
@@ -104,9 +126,9 @@ Required headers:
 
 Relayer verifies this signature against Supabase `fund_bots.bot_address`.
 
-Participant bot registration is done by the strategy bot:
-- Strategy calls `POST /api/v1/funds/{fundId}/bots/register`
-- Relayer stores `botId` + `botAddress` in `fund_bots`
+Participant bot registration can be done by:
+- Participant: `POST /api/v1/rooms/{roomId}/join` (recommended for Telegram groups)
+- Strategy: `POST /api/v1/funds/{fundId}/bots/register` (direct registration)
 
 If the participant bot is not registered for the fund, relayer will reject participant write APIs with `401/403`.
 
@@ -121,6 +143,18 @@ No crawl/evidence/sourceRef schema is used.
 Vector mapping rule:
 - `targetWeights[i]` maps to strategy `riskPolicy.allowlistTokens[i]`.
 - Participants must submit weights in the same token order used by the strategy allowlist.
+
+## Daemon mode (auto-claim)
+
+For MVP, the participant runtime supports an always-on daemon that:
+1) reads NadFun testnet signals (quote/progress/buy logs),
+2) computes `targetWeights[]` using a fixed allowlist order,
+3) submits `AllocationClaimV1` to the relayer on a timer.
+
+Use `PARTICIPANT_STRATEGY` via the command flag:
+- `A`: momentum (buy pressure)
+- `B`: graduation proximity (progress)
+- `C`: impact-aware (quote-based)
 
 ## Submission safety gates
 
@@ -149,24 +183,11 @@ If gate is closed, return `decision=READY` (no submit).
 }
 ```
 
-### `validate_allocation_or_intent`
-```json
-{
-  "taskType": "validate_allocation_or_intent",
-  "fundId": "string",
-  "roomId": "string",
-  "epochId": "number",
-  "subjectType": "CLAIM | INTENT",
-  "subjectHash": "0x...",
-  "subjectPayload": "object",
-  "validationPolicy": {
-    "reproducible": true,
-    "maxDataAgeSeconds": 300
-  }
-}
-```
-
 ### `submit_allocation`
+
+Validates the claim hash first, then submits to relayer if `--submit` is passed.
+Without `--submit`, returns validation-only dry-run result.
+
 ```json
 {
   "taskType": "submit_allocation",
@@ -179,7 +200,7 @@ If gate is closed, return `decision=READY` (no submit).
 
 ## Rules
 
-1. **Supported Tasks Only**: Use only `propose_allocation`, `validate_allocation_or_intent`, `submit_allocation`.
+1. **Supported Tasks Only**: Use only `propose_allocation`, `submit_allocation` (validates automatically before submission).
 2. **Schema Rule**: Claim schema is `AllocationClaimV1` only (`claimVersion`, `fundId`, `epochId`, `participant`, `targetWeights`, `horizonSec`, `nonce`, `submittedAt`).
 3. **Weights Rule**: `targetWeights` must be integer, non-negative, non-empty, and sum > 0.
 4. **Index Mapping Rule**: `targetWeights[i]` MUST map to strategy `riskPolicy.allowlistTokens[i]` in the same order.

@@ -110,7 +110,6 @@ Parameters:
 | `packages/agents` | Runtime bots for participant/strategy | Reddit MVP participant flow, bot runtime exports | [`packages/agents/README.md`](packages/agents/README.md) |
 | `packages/sdk` | Canonical protocol utilities | Hashing, EIP-712 verification, weighted-threshold helpers | [`packages/sdk/README.md`](packages/sdk/README.md) |
 | `packages/openfunderse` | Codex skill-pack installer/distribution | `openfunderse` install CLI, pack manifests/prompts/skills | [`packages/openfunderse/README.md`](packages/openfunderse/README.md) |
-| `packages/indexer` | Deferred read-model/indexing layer | Placeholder scaffold for future event indexing | [`packages/indexer/README.md`](packages/indexer/README.md) |
 
 ## Quick start
 ```bash
