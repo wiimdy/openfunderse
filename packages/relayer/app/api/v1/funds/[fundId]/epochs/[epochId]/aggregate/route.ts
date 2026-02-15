@@ -12,6 +12,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+  getEpochStateByEpoch,
   getFundDeployment,
   listAllocationClaimsByEpoch,
   listStakeWeightsByFund,
@@ -220,6 +221,22 @@ export async function POST(
     functionName: "isSnapshotFinalized",
     args: [epochState.epochStateHash]
   })) as boolean;
+
+  const existingEpochState = await getEpochStateByEpoch({ fundId, epochId: epoch });
+  if (alreadyPublished && existingEpochState) {
+    return NextResponse.json(
+      {
+        status: "ALREADY_AGGREGATED",
+        endpoint: "POST /api/v1/funds/{fundId}/epochs/{epochId}/aggregate",
+        fundId,
+        epochId: epoch.toString(),
+        epochStateHash: existingEpochState.epoch_state_hash,
+        snapshotBookAddress,
+        snapshotPublish: { alreadyPublished: true, txHash: null }
+      },
+      { status: 200 }
+    );
+  }
 
   let publishTxHash: Hex | null = null;
   if (!alreadyPublished) {
