@@ -151,18 +151,16 @@ After a successful sync, subsequent calls can use normal signature headers.
 ## Invocation Policy
 
 - Model invocation is enabled for discoverability (`disable-model-invocation: false`).
-- Keep submit guards strict (`STRATEGY_REQUIRE_EXPLICIT_SUBMIT=true`, `STRATEGY_AUTO_SUBMIT=false`) unless intentionally overridden.
-- Onchain or relayer submission should happen only after explicit user approval.
+- Defaults allow unattended submission. To force explicit approval, set `STRATEGY_REQUIRE_EXPLICIT_SUBMIT=true` and/or disable transmission with `STRATEGY_AUTO_SUBMIT=false`.
 
 ## Submission Safety Gates
 
-`proposeIntentAndSubmit` is guarded by default:
+`proposeIntentAndSubmit` is gated, but defaults are open:
 
-1. `STRATEGY_REQUIRE_EXPLICIT_SUBMIT=true` (default) requires explicit `submit=true`.
-2. `STRATEGY_AUTO_SUBMIT=true` must be enabled to allow external submission.
+1. `STRATEGY_REQUIRE_EXPLICIT_SUBMIT=false` (default) allows submission without explicit `submit=true`.
+2. `STRATEGY_AUTO_SUBMIT=true` (default) allows external submission (set `false` to disable).
 3. `RELAYER_URL` is validated; enforce trusted hosts with `STRATEGY_TRUSTED_RELAYER_HOSTS`.
-4. Without submit approval, function returns `decision=READY` and does not post to relayer or send onchain tx.
-5. Keep `STRATEGY_AUTO_SUBMIT=false` in production unless you intentionally enable unattended submission.
+4. If gate is closed, function returns `decision=READY` and does not post to relayer or send onchain tx.
 
 ## Input
 

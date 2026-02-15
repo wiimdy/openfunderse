@@ -68,15 +68,7 @@ const mapCommand = (role: string, action: string): { command: string; extraArgs:
 
     // Unified action.
     if (action === 'allocation') return { command: 'participant-allocation', extraArgs: [] };
-
-    // Backward-compatible actions (deprecated).
-    if (action === 'propose_allocation') return { command: 'participant-allocation', extraArgs: [] };
-    if (action === 'validate_allocation') return { command: 'participant-allocation', extraArgs: ['--verify'] };
-    if (action === 'validate_allocation_or_intent') {
-      return { command: 'participant-allocation', extraArgs: ['--verify'] };
-    }
-    if (action === 'submit_allocation') return { command: 'participant-allocation', extraArgs: ['--submit'] };
-    if (action === 'allocation_e2e') return { command: 'participant-allocation', extraArgs: ['--verify'] };
+    if (action === 'join') return { command: 'participant-join', extraArgs: [] };
   }
 
   throw new Error(`unsupported clawbot action: role=${role}, action=${action}`);
@@ -90,11 +82,11 @@ clawbot-run --role <strategy|participant> --action <action> [action options...]
 
 Telegram slash aliases:
   /propose_intent, /dry_run_intent, /attest_intent, /execute_intent, /create_fund, /daemon
-  /allocation, /participant_daemon
+  /allocation, /join, /participant_daemon
 
 Examples:
   clawbot-run --role strategy --action propose_intent --fund-id demo-fund --intent-file ./intent.json --execution-route-file ./route.json
-  clawbot-run --role participant --action allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000 --verify
+  clawbot-run --role participant --action allocation --fund-id demo-fund --epoch-id 1 --target-weights 700000000000000000,300000000000000000 --verify
   clawbot-run --role strategy --action daemon --fund-id demo-fund
   clawbot-run --role participant --action daemon --fund-id demo-fund
 `);

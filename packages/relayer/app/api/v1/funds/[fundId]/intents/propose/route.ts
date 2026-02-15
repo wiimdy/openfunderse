@@ -11,7 +11,6 @@ import {
   createPublicClient,
   defineChain,
   http,
-  parseAbi,
   type Address
 } from "viem";
 import {
@@ -22,10 +21,11 @@ import {
   upsertSubjectState
 } from "@/lib/supabase";
 import { publishEvent } from "@/lib/event-publisher";
-
-const SNAPSHOT_BOOK_ABI = parseAbi([
-  "function isSnapshotFinalized(bytes32 snapshotHash) view returns (bool)"
-]);
+import {
+  SNAPSHOT_BOOK_ABI,
+  validateSnapshotBookInterface,
+  isSnapshotBookValid
+} from "@/lib/snapshot-book-validator";
 
 function jsonWithBigInt(value: unknown): string {
   return JSON.stringify(value, (_, inner) =>
@@ -178,6 +178,24 @@ export async function POST(
         }
       });
       const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+
+      const validation = await validateSnapshotBookInterface(publicClient, snapshotBookAddress);
+      if (!isSnapshotBookValid(validation)) {
+        return NextResponse.json(
+          {
+            error: "ONCHAIN_ERROR",
+            message: `snapshotBook at ${snapshotBookAddress} does not implement SnapshotBook interface`,
+            snapshotBookAddress,
+            validation: {
+              hasCode: validation.hasCode,
+              isSnapshotFinalizedCallable: validation.isSnapshotFinalizedCallable,
+              errors: validation.errors
+            }
+          },
+          { status: 502 }
+        );
+      }
+
       const finalized = (await publicClient.readContract({
         address: snapshotBookAddress,
         abi: SNAPSHOT_BOOK_ABI,

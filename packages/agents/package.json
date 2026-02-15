@@ -11,6 +11,7 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "participant:allocation": "tsx src/index.ts participant-allocation",
+    "participant:join": "tsx src/index.ts participant-join",
     "participant:daemon": "tsx src/index.ts participant-daemon",
     "strategy:create:fund": "tsx src/index.ts strategy-create-fund",
     "strategy:attest:onchain": "tsx src/index.ts strategy-attest-onchain",

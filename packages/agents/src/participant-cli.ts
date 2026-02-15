@@ -147,6 +147,37 @@ const buildParticipantClientOptions = (): RelayerClientOptions | undefined => {
   return buildDefaultBotClientOptions();
 };
 
+const relayerUrlFromEnv = (): string => {
+  const raw = (process.env.RELAYER_URL ?? '').trim();
+  if (!raw) throw new Error('RELAYER_URL is required');
+  return raw;
+};
+
+const fetchRelayerJson = async <T>(path: string): Promise<T> => {
+  const base = relayerUrlFromEnv();
+  const url = new URL(path, base);
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(10_000)
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`relayer request failed: ${response.status} ${response.statusText}: ${text}`);
+  }
+  return JSON.parse(text) as T;
+};
+
+const roomIdFromParsedOrEnv = (parsed: ParsedCli): string | undefined => {
+  const raw =
+    parsed.options.get('room-id') ??
+    process.env.ROOM_ID ??
+    process.env.TELEGRAM_ROOM_ID ??
+    '';
+  const value = raw.trim();
+  return value.length > 0 ? value : undefined;
+};
+
 const parseTargetWeights = (raw: string): Array<string | number | bigint> => {
   const tokens = raw
     .split(',')
@@ -195,19 +226,55 @@ const readObservationFromFile = async (
   throw new Error('unsupported claim file format');
 };
 
-const parseEpochId = (parsed: ParsedCli): number => {
-  const epochId = Number(requiredOption(parsed, 'epoch-id'));
-  if (!Number.isFinite(epochId)) {
-    throw new Error('--epoch-id must be a number');
+const resolveNextEpochIdFromRelayer = async (fundId: string): Promise<number> => {
+  const latest = await fetchRelayerJson<Record<string, unknown>>(
+    `/api/v1/funds/${encodeURIComponent(fundId)}/epochs/latest`
+  );
+  const epochState = (latest.epochState ?? latest.epoch_state ?? null) as any;
+  const epochId = epochState?.epochId ?? epochState?.epoch_id ?? null;
+  if (epochId === null || epochId === undefined) return 1;
+  const next = Number(epochId) + 1;
+  if (!Number.isFinite(next) || next <= 0) return 1;
+  return Math.trunc(next);
+};
+
+const epochIdFromParsedOrRelayer = async (
+  parsed: ParsedCli,
+  fundId: string
+): Promise<number> => {
+  const explicit = parsed.options.get('epoch-id');
+  if (explicit !== undefined) {
+    const value = Number(explicit);
+    if (!Number.isFinite(value)) {
+      throw new Error('--epoch-id must be a number');
+    }
+    return Math.trunc(value);
   }
-  return Math.trunc(epochId);
+  return resolveNextEpochIdFromRelayer(fundId);
+};
+
+const resolveFundIdFromRelayerByRoomId = async (parsed: ParsedCli): Promise<string> => {
+  const roomId = roomIdFromParsedOrEnv(parsed);
+  if (!roomId) {
+    throw new Error(
+      'fundId is required: pass --fund-id, set FUND_ID, or provide --room-id/ROOM_ID to resolve fund by chat room'
+    );
+  }
+  const out = await fetchRelayerJson<{ fundId?: string } & Record<string, unknown>>(
+    `/api/v1/rooms/${encodeURIComponent(roomId)}/fund`
+  );
+  const fundId = String(out.fundId ?? '').trim();
+  if (!fundId) {
+    throw new Error(`failed to resolve fundId from roomId=${roomId}`);
+  }
+  return fundId;
 };
 
 const proposeAllocationFromParsed = async (
-  parsed: ParsedCli
+  parsed: ParsedCli,
+  input: { fundId: string; epochId: number }
 ): Promise<{ fundId: string; epochId: number; mine: Awaited<ReturnType<typeof proposeAllocation>> }> => {
-  const fundId = requiredOption(parsed, 'fund-id');
-  const epochId = parseEpochId(parsed);
+  const { fundId, epochId } = input;
 
   const mine = await proposeAllocation({
     taskType: 'propose_allocation',
@@ -233,8 +300,17 @@ const runParticipantAllocation = async (
   parsed: ParsedCli,
   config?: { forceVerify?: boolean; stepName?: string }
 ): Promise<void> => {
-  const submitRequested = parsed.flags.has('submit');
-  const verifyRequested = Boolean(config?.forceVerify) || parsed.flags.has('verify');
+  const submitRequested = !parsed.flags.has('no-submit') && parsed.flags.has('submit');
+  const verifyRequested = (() => {
+    if (parsed.flags.has('no-verify')) return false;
+    if (parsed.flags.has('verify')) return true;
+    const raw = parsed.options.get('verify');
+    if (raw === undefined) return true;
+    const normalized = raw.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+    throw new Error('--verify must be true/false');
+  })();
   const stepName = config?.stepName ?? 'participant-allocation';
 
   const claimFile = parsed.options.get('claim-file');
@@ -299,7 +375,8 @@ const runParticipantAllocation = async (
       epochId,
       observation: bundle.observation,
       clientOptions: buildParticipantClientOptions(),
-      submit: submitRequested
+      submit: submitRequested,
+      disableAutoSubmit: parsed.flags.has('no-submit')
     });
 
     const result = {
@@ -324,9 +401,14 @@ const runParticipantAllocation = async (
     return;
   }
 
-  const proposed = await proposeAllocationFromParsed(parsed);
-  fundId = proposed.fundId;
-  epochId = proposed.epochId;
+  fundId =
+    parsed.options.get('fund-id')?.trim() ||
+    (process.env.FUND_ID ?? '').trim() ||
+    (process.env.PARTICIPANT_FUND_ID ?? '').trim() ||
+    (await resolveFundIdFromRelayerByRoomId(parsed));
+  epochId = await epochIdFromParsedOrRelayer(parsed, fundId);
+
+  const proposed = await proposeAllocationFromParsed(parsed, { fundId, epochId });
   mine = proposed.mine;
 
   if (mine.status !== 'OK' || !mine.observation) {
@@ -382,7 +464,8 @@ const runParticipantAllocation = async (
     epochId,
     observation: mine.observation,
     clientOptions: buildParticipantClientOptions(),
-    submit: submitRequested
+    submit: submitRequested,
+    disableAutoSubmit: parsed.flags.has('no-submit')
   });
 
   const result = {
@@ -398,11 +481,14 @@ const runParticipantAllocation = async (
     finalize:
       submit.decision === 'SUBMITTED'
         ? undefined
-        : {
-            status: 'SKIPPED',
-            reason:
-              'participant submit gate is not enabled; pass --submit and set PARTICIPANT_AUTO_SUBMIT=true'
-          }
+        : submit.status !== 'OK'
+          ? { status: 'ERROR', reason: submit.error ?? 'submission failed' }
+          : {
+              status: 'SKIPPED',
+              reason: parsed.flags.has('no-submit')
+                ? 'submission disabled by --no-submit'
+                : 'participant submission skipped by submit gate (pass --submit, or set PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=false and PARTICIPANT_AUTO_SUBMIT=true)'
+            }
   };
 
   console.log(jsonStringify(result));
@@ -419,7 +505,11 @@ const sleep = async (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 const runParticipantDaemon = async (parsed: ParsedCli): Promise<void> => {
-  const fundId = requiredOption(parsed, 'fund-id');
+  const fundId =
+    parsed.options.get('fund-id')?.trim() ||
+    (process.env.FUND_ID ?? '').trim() ||
+    (process.env.PARTICIPANT_FUND_ID ?? '').trim() ||
+    (await resolveFundIdFromRelayerByRoomId(parsed));
   const strategyRaw = requiredOption(parsed, 'strategy').trim().toUpperCase();
   const strategy = strategyRaw as ParticipantStrategyId;
   if (!['A', 'B', 'C'].includes(strategy)) {
@@ -515,24 +605,46 @@ const runParticipantDaemon = async (parsed: ParsedCli): Promise<void> => {
   }
 };
 
+const runParticipantJoin = async (parsed: ParsedCli): Promise<void> => {
+  const roomId = roomIdFromParsedOrEnv(parsed);
+  if (!roomId) {
+    throw new Error('participant-join requires --room-id (or ROOM_ID/TELEGRAM_ROOM_ID env)');
+  }
+  const clientOptions = buildParticipantClientOptions();
+  if (!clientOptions) {
+    throw new Error(
+      'participant-join requires bot credentials: set PARTICIPANT_BOT_ID/PARTICIPANT_PRIVATE_KEY (or BOT_ID/PARTICIPANT_PRIVATE_KEY)'
+    );
+  }
+  const relayer = createRelayerClient(clientOptions);
+  const out = await relayer.joinFundByRoomId(roomId);
+  console.log(jsonStringify(out));
+};
+
 const printUsage = (): void => {
   console.log(`
 [agents] participant commands
 
+participant-join
+  # register this bot as the participant for the fund mapped to the room id
+  --room-id <id>
+
 participant-allocation
   # mine (+ optional verify) (+ optional submit)
-  --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
+  --target-weights <w1,w2,...>
+  [--fund-id <id>] [--epoch-id <n>]
   [--participant <0x...>] [--horizon-sec <n>] [--nonce <n>] [--room-id <id>]
-  [--verify] [--max-data-age-seconds <n>] [--submit]
+  [--verify <true|false>] [--no-verify] [--max-data-age-seconds <n>] [--submit] [--no-submit]
   [--out-file <path>] [--report-file <path>]
 
   # submit from file (optionally verify)
   --claim-file <path>
-  [--room-id <id>] [--verify] [--max-data-age-seconds <n>] [--submit]
+  [--room-id <id>] [--verify <true|false>] [--no-verify] [--max-data-age-seconds <n>] [--submit] [--no-submit]
   [--out-file <path>] [--report-file <path>]
 
 participant-daemon
-  --fund-id <id> --strategy <A|B|C>
+  --strategy <A|B|C>
+  [--fund-id <id>]
   [--epoch-source <relayer|fixed>] [--epoch-id <n>]
   [--interval-sec <n>] [--horizon-sec <n>] [--room-id <id>]
   [--submit] [--once]
@@ -553,6 +665,10 @@ export const runParticipantCli = async (argv: string[]): Promise<boolean> => {
 
   if (command === 'participant-allocation') {
     await runParticipantAllocation(parsed);
+    return true;
+  }
+  if (command === 'participant-join') {
+    await runParticipantJoin(parsed);
     return true;
   }
   if (command === 'participant-daemon') {

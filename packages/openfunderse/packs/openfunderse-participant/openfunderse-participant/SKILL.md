@@ -67,13 +67,15 @@ This step is not required for normal OpenClaw skill execution.
 Telegram slash commands:
 
 ```text
-/allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--verify] [--submit]
-/allocation --claim-file <path> [--verify] [--submit]
-/participant_daemon --fund-id <id> --strategy <A|B|C> [--interval-sec <n>] [--epoch-source <relayer|fixed>] [--epoch-id <n>] [--submit]
+/join
+/allocation --target-weights <w1,w2,...> [fund_id=<id>] [epoch_id=<n>] [verify=false] [submit=false]
+/allocation --claim-file <path> [verify=false] [submit=false]
+/participant_daemon --strategy <A|B|C> [fund_id=<id>] [--interval-sec <n>] [--epoch-source <relayer|fixed>] [--epoch-id <n>] [--submit]
 ```
 
 Notes:
 - Slash parser accepts underscores (for example: `/participant_daemon` equals `/participant-daemon`).
+- `/join` uses the current chat room id (provided by the OpenClaw gateway as `--room-id`).
 - `key=value` style is also accepted (`fund_id=demo-fund`).
 - On first install, register these commands in Telegram via `@BotFather` -> `/setcommands`.
 
@@ -103,17 +105,27 @@ Required headers:
 
 Relayer verifies this signature against Supabase `fund_bots.bot_address`.
 
-Participant bot registration is done by the strategy bot:
-- Strategy calls `POST /api/v1/funds/{fundId}/bots/register`
-- Relayer stores `botId` + `botAddress` in `fund_bots`
+Participant bot registration:
+- Recommended: participant runs `/join` in the configured Telegram room (relayer maps `telegram_room_id -> fund_id`).
+- Alternatively: strategy bot can still register participants via `POST /api/v1/funds/{fundId}/bots/register`.
 
 If the participant bot is not registered for the fund, relayer will reject participant write APIs with `401/403`.
 
 `propose_allocation` outputs canonical allocation claim:
 - `claimVersion: "v1"`
 - `fundId`, `epochId`, `participant`
-- `targetWeights[]` (integer, non-negative, sum > 0)
+- `targetWeights[]` (integer, non-negative, sum == `CLAIM_WEIGHT_SCALE` (1e18))
 - `horizonSec`, `nonce`, `submittedAt`
+
+Default behavior:
+- If `fund_id`/`--fund-id` is omitted, runtime uses `FUND_ID` from env.
+- If `FUND_ID` is not set, runtime can resolve `fundId` from the chat room id mapping (room must be configured on the fund).
+- If `epoch_id`/`--epoch-id` is omitted, runtime queries relayer latest epoch and uses `latest + 1`.
+- Verification runs by default. Disable with `verify=false` (or `--no-verify`).
+- Submission is attempted when either:
+  - you pass `--submit` and `PARTICIPANT_AUTO_SUBMIT=true`, or
+  - `PARTICIPANT_AUTO_SUBMIT=true` and `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=false`.
+  Disable with `submit=false` (or `--no-submit`) or override env.
 
 No crawl/evidence/sourceRef schema is used.
 
@@ -135,9 +147,9 @@ Use `PARTICIPANT_STRATEGY` via the command flag:
 
 ## Submission safety gates
 
-`allocation --submit` is guarded by default:
-1. `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` requires explicit `submit=true`.
-2. `PARTICIPANT_AUTO_SUBMIT=true` must be enabled for network transmission.
+`allocation` submission is gated, but defaults are open:
+1. `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=false` (default) allows submission without explicit `submit=true`.
+2. `PARTICIPANT_AUTO_SUBMIT=true` (default) enables network transmission (set `false` to disable).
 3. `RELAYER_URL` host is checked by `PARTICIPANT_TRUSTED_RELAYER_HOSTS` when set.
 
 If gate is closed, return `decision=READY` (no submit).
@@ -153,7 +165,7 @@ If gate is closed, return `decision=READY` (no submit).
   "epochId": "number",
   "allocation": {
     "participant": "0x... optional",
-    "targetWeights": ["7000", "3000"],
+    "targetWeights": ["700000000000000000", "300000000000000000"],
     "horizonSec": 3600,
     "nonce": 1739500000
   }
@@ -192,7 +204,7 @@ If gate is closed, return `decision=READY` (no submit).
 
 1. **Supported Tasks Only**: Use only `propose_allocation`, `validate_allocation_or_intent`, `submit_allocation`.
 2. **Schema Rule**: Claim schema is `AllocationClaimV1` only (`claimVersion`, `fundId`, `epochId`, `participant`, `targetWeights`, `horizonSec`, `nonce`, `submittedAt`).
-3. **Weights Rule**: `targetWeights` must be integer, non-negative, non-empty, and sum > 0.
+3. **Weights Rule**: `targetWeights` must be integer, non-negative, non-empty, and sum == `CLAIM_WEIGHT_SCALE` (1e18).
 4. **Index Mapping Rule**: `targetWeights[i]` MUST map to strategy `riskPolicy.allowlistTokens[i]` in the same order.
 5. **Scope Validation**: If subject `fundId`/`epochId` differs from task scope, return `FAIL`.
 6. **Hash Validation**: For CLAIM, recompute canonical hash via SDK and compare with `subjectHash`; mismatch returns `FAIL`.

@@ -40,6 +40,10 @@ npm run dev -w @claw/relayer
   - participant 봇 등록
 - `GET /api/v1/funds/{fundId}/bots/register` (strategy bot only)
   - 등록된 봇 목록 조회
+- `GET /api/v1/rooms/{roomId}/fund`
+  - Telegram room id -> fundId 조회(1:1 매핑)
+- `POST /api/v1/rooms/{roomId}/join`
+  - participant 봇이 room 매핑을 통해 self-register (`fund_bots` upsert)
 - `POST /api/v1/funds/{fundId}/claims`
   - AllocationClaimV1(`targetWeights`) 검증/정규화 -> canonical hash 계산 -> 저장
 - `GET /api/v1/funds/{fundId}/claims`

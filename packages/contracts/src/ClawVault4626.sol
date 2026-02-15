@@ -327,12 +327,10 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function maxDeposit(address) public view returns (uint256) {
-        if (hasOpenPositions()) return 0;
         return type(uint256).max;
     }
 
     function maxMint(address) public view returns (uint256) {
-        if (hasOpenPositions()) return 0;
         return type(uint256).max;
     }
 
@@ -400,7 +398,6 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function deposit(uint256 assets, address receiver) external payable nonReentrant returns (uint256 shares) {
-        _requireNoOpenPositions();
         if (receiver == address(0)) revert InvalidAddress();
 
         if (msg.value != 0) {
@@ -412,7 +409,6 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function depositNative(address receiver) external payable nonReentrant returns (uint256 shares) {
-        _requireNoOpenPositions();
         if (receiver == address(0)) revert InvalidAddress();
         return _depositNative(msg.value, receiver, msg.sender);
     }
@@ -448,8 +444,6 @@ contract ClawVault4626 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     }
 
     function settleQueuedDeposits(uint256[] calldata requestIds) external nonReentrant returns (uint256 settledCount) {
-        _requireNoOpenPositions();
-
         uint256 len = requestIds.length;
         for (uint256 i = 0; i < len; i++) {
             uint256 requestId = requestIds[i];

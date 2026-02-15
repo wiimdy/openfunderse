@@ -52,6 +52,7 @@ const mockListAllocationClaimsByEpoch = vi.mocked(listAllocationClaimsByEpoch);
 const mockListStakeWeightsByFund = vi.mocked(listStakeWeightsByFund);
 const mockUpsertEpochState = vi.mocked(upsertEpochState);
 
+const mockGetCode = vi.fn();
 const mockReadContract = vi.fn();
 const mockSimulateContract = vi.fn();
 const mockWriteContract = vi.fn();
@@ -119,13 +120,20 @@ const makeEpochState = (overrides?: Partial<EpochStateRow>): EpochStateRow => ({
   ...overrides
 });
 
+const VALID_BYTECODE = "0x6080604052";
+
 const setPublishSuccess = (): void => {
+  mockGetCode.mockReset();
   mockReadContract.mockReset();
   mockSimulateContract.mockReset();
   mockWriteContract.mockReset();
   mockWaitForTransactionReceipt.mockReset();
 
-  mockReadContract.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+  mockGetCode.mockResolvedValue(VALID_BYTECODE);
+  mockReadContract
+    .mockResolvedValueOnce(false)   // validator: isSnapshotFinalized(bytes32(0))
+    .mockResolvedValueOnce(false)   // aggregator: isSnapshotFinalized(epochStateHash) → not published
+    .mockResolvedValueOnce(true);   // aggregator: post-publish read-back
   mockSimulateContract.mockResolvedValue({ request: { to: SNAPSHOT_BOOK_ADDRESS } });
   mockWriteContract.mockResolvedValue(TX_HASH);
   mockWaitForTransactionReceipt.mockResolvedValue({ status: "success" });
@@ -171,6 +179,7 @@ describe("aggregateEpoch", () => {
 
     mockCreatePublicClient.mockReturnValue(
       {
+        getCode: mockGetCode,
         readContract: mockReadContract,
         simulateContract: mockSimulateContract,
         waitForTransactionReceipt: mockWaitForTransactionReceipt
@@ -372,6 +381,7 @@ describe("aggregateEpoch", () => {
       delete process.env.RELAYER_SIGNER_PRIVATE_KEY;
       delete process.env.EXECUTOR_PRIVATE_KEY;
 
+      mockGetCode.mockResolvedValue(VALID_BYTECODE);
       mockReadContract.mockReset();
       mockReadContract.mockResolvedValue(false);
 
@@ -384,9 +394,30 @@ describe("aggregateEpoch", () => {
   });
 
   describe("on-chain errors (ONCHAIN_ERROR)", () => {
-    it("throws when readContract (isSnapshotFinalized) fails", async () => {
+    it("throws validation error when readContract (isSnapshotFinalized) reverts", async () => {
+      mockGetCode.mockResolvedValue(VALID_BYTECODE);
       mockReadContract.mockReset();
       mockReadContract.mockRejectedValueOnce(new Error("read failed"));
+
+      const error = await expectAggregateError(
+        aggregateEpoch(FUND_ID, EPOCH_ID),
+        "ONCHAIN_ERROR",
+        `snapshotBook at ${SNAPSHOT_BOOK_ADDRESS} does not implement SnapshotBook interface`
+      );
+
+      expect(error.details?.validation).toEqual({
+        hasCode: true,
+        isSnapshotFinalizedCallable: false,
+        errors: expect.arrayContaining([expect.stringContaining("read failed")])
+      });
+    });
+
+    it("throws when aggregator readContract fails after validation passes", async () => {
+      mockGetCode.mockResolvedValue(VALID_BYTECODE);
+      mockReadContract.mockReset();
+      mockReadContract
+        .mockResolvedValueOnce(false)
+        .mockRejectedValueOnce(new Error("read failed"));
 
       const error = await expectAggregateError(
         aggregateEpoch(FUND_ID, EPOCH_ID),
@@ -398,8 +429,11 @@ describe("aggregateEpoch", () => {
     });
 
     it("throws when publishSnapshot simulation fails", async () => {
+      mockGetCode.mockResolvedValue(VALID_BYTECODE);
       mockReadContract.mockReset();
-      mockReadContract.mockResolvedValueOnce(false);
+      mockReadContract
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false);
       mockSimulateContract.mockReset();
       mockSimulateContract.mockRejectedValueOnce(new Error("simulation failed"));
 
@@ -413,8 +447,11 @@ describe("aggregateEpoch", () => {
     });
 
     it("throws when transaction receipt shows reverted", async () => {
+      mockGetCode.mockResolvedValue(VALID_BYTECODE);
       mockReadContract.mockReset();
-      mockReadContract.mockResolvedValueOnce(false);
+      mockReadContract
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false);
       mockSimulateContract.mockReset();
       mockSimulateContract.mockResolvedValueOnce({ request: { to: SNAPSHOT_BOOK_ADDRESS } });
       mockWriteContract.mockReset();
@@ -432,8 +469,12 @@ describe("aggregateEpoch", () => {
     });
 
     it("throws when post-publish finalization check fails", async () => {
+      mockGetCode.mockResolvedValue(VALID_BYTECODE);
       mockReadContract.mockReset();
-      mockReadContract.mockResolvedValueOnce(false).mockResolvedValueOnce(false);
+      mockReadContract
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false);
       mockSimulateContract.mockReset();
       mockSimulateContract.mockResolvedValueOnce({ request: { to: SNAPSHOT_BOOK_ADDRESS } });
       mockWriteContract.mockReset();
@@ -451,8 +492,11 @@ describe("aggregateEpoch", () => {
     });
 
     it("wraps non-AggregateError from publish flow", async () => {
+      mockGetCode.mockResolvedValue(VALID_BYTECODE);
       mockReadContract.mockReset();
-      mockReadContract.mockResolvedValueOnce(false);
+      mockReadContract
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(false);
       mockSimulateContract.mockReset();
       mockSimulateContract.mockResolvedValueOnce({ request: { to: SNAPSHOT_BOOK_ADDRESS } });
       mockWriteContract.mockReset();
@@ -471,8 +515,11 @@ describe("aggregateEpoch", () => {
   describe("success paths", () => {
     it("returns ALREADY_AGGREGATED when snapshot already published and epoch state exists", async () => {
       const existing = makeEpochState({ epoch_state_hash: "0xexisting-state" });
+      mockGetCode.mockResolvedValue(VALID_BYTECODE);
       mockReadContract.mockReset();
-      mockReadContract.mockResolvedValueOnce(true);
+      mockReadContract
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
       mockGetEpochStateByEpoch.mockResolvedValue(existing);
 
       const result = await aggregateEpoch(FUND_ID, EPOCH_ID);
@@ -509,7 +556,8 @@ describe("aggregateEpoch", () => {
         claimCount: 1,
         aggregateWeights: ["10000", "0"]
       });
-      expect(mockReadContract).toHaveBeenCalledTimes(2);
+      expect(mockGetCode).toHaveBeenCalledTimes(1);
+      expect(mockReadContract).toHaveBeenCalledTimes(3);
       expect(mockSimulateContract).toHaveBeenCalledTimes(1);
       expect(mockWriteContract).toHaveBeenCalledTimes(1);
       expect(mockWaitForTransactionReceipt).toHaveBeenCalledTimes(1);
@@ -586,8 +634,11 @@ describe("aggregateEpoch", () => {
         { participant: PARTICIPANT_A.toLowerCase(), weight: BigInt(3) },
         { participant: PARTICIPANT_B.toLowerCase(), weight: BigInt(1) }
       ]);
+      mockGetCode.mockResolvedValue(VALID_BYTECODE);
       mockReadContract.mockReset();
-      mockReadContract.mockResolvedValueOnce(true);
+      mockReadContract
+        .mockResolvedValueOnce(false)
+        .mockResolvedValueOnce(true);
       mockGetEpochStateByEpoch.mockResolvedValue(undefined);
 
       const result = await aggregateEpoch(FUND_ID, EPOCH_ID);

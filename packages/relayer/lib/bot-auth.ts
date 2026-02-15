@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { verifyMessage, type Address, type Hex } from "viem";
+import { recoverMessageAddress, type Address, type Hex } from "viem";
 import { getBotsByBotId, insertBotAuthNonce } from "@/lib/supabase";
 
 const AUTH_MAX_AGE_SECONDS = 300;
@@ -39,31 +39,39 @@ export async function requireBotAuth(
   }
 
   const bots = await getBotsByBotId(botId);
-  if (!bots.length) {
+  const message = `openfunderse:auth:${botId}:${timestamp}:${nonce}`;
+
+  let recovered: Address | null = null;
+  try {
+    recovered = (await recoverMessageAddress({
+      message,
+      signature: signature as Hex
+    })) as Address;
+  } catch {
+    recovered = null;
+  }
+
+  if (!recovered) {
+    return {
+      ok: false as const,
+      response: unauthorized("Invalid signature.")
+    };
+  }
+
+  if (!bots.length && requiredScopes.length > 0) {
     return {
       ok: false as const,
       response: unauthorized("Bot not registered.")
     };
   }
 
-  const botAddress = bots[0].bot_address as Address;
-  const message = `openfunderse:auth:${botId}:${timestamp}:${nonce}`;
-
-  let valid = false;
-  try {
-    valid = await verifyMessage({
-      address: botAddress,
-      message,
-      signature: signature as Hex
-    });
-  } catch {
-    valid = false;
-  }
-
-  if (!valid) {
+  const registeredAddresses = new Set(
+    bots.map((b) => String(b.bot_address ?? "").trim().toLowerCase()).filter(Boolean)
+  );
+  if (registeredAddresses.size > 0 && !registeredAddresses.has(recovered.toLowerCase())) {
     return {
       ok: false as const,
-      response: unauthorized("Invalid signature.")
+      response: unauthorized("Signature does not match registered bot address.")
     };
   }
 
@@ -98,7 +106,7 @@ export async function requireBotAuth(
   return {
     ok: true as const,
     botId,
-    botAddress,
+    botAddress: recovered,
     scopes: Array.from(scopes)
   };
 }

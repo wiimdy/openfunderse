@@ -2,7 +2,7 @@
   "name": "claw-validation-market",
   "private": true,
   "version": "0.1.0",
-  "description": "Monorepo scaffold for contracts, relayer, indexer, and agents.",
+  "description": "Monorepo scaffold for contracts, relayer, and agents.",
   "engines": {
     "node": ">=20"
   },

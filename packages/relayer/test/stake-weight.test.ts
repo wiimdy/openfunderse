@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateStakeWeightInput } from "../lib/stake-validation.ts";
+import { validateStakeWeightInput } from "../lib/stake-validation";
 
 test("valid positive weight returns ok with normalized address", () => {
   const result = validateStakeWeightInput({

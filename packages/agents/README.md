@@ -45,6 +45,7 @@ Telegram slash compatibility:
 - Slash commands are accepted by the runtime entrypoint.
 - `/propose_intent` maps to `clawbot-run --role strategy --action propose_intent`.
 - `/allocation` maps to `clawbot-run --role participant --action allocation`.
+- `/join` maps to `clawbot-run --role participant --action join`.
 - Underscore option style is supported for key/value args (`fund_id=demo` -> `--fund-id demo`).
 
 ## Participant claim model (allocation only)
@@ -74,8 +75,8 @@ Signer:
 - `INTENT_BOOK_ADDRESS` (required only for intent attestation signing)
 
 Participant submit safety:
-- `PARTICIPANT_AUTO_SUBMIT` (`false` by default)
-- `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT` (`true` by default)
+- `PARTICIPANT_AUTO_SUBMIT` (`true` by default)
+- `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT` (`false` by default)
 - optional host allowlist: `PARTICIPANT_TRUSTED_RELAYER_HOSTS=relayer.example.com`
 - local dev only: `PARTICIPANT_ALLOW_HTTP_RELAYER=true`
 
@@ -86,8 +87,8 @@ Participant optional scoped env:
 Strategy signer env:
 - `STRATEGY_PRIVATE_KEY`
 - `STRATEGY_ADDRESS`
-- `STRATEGY_AUTO_SUBMIT` (`false` by default)
-- `STRATEGY_REQUIRE_EXPLICIT_SUBMIT` (`true` by default)
+- `STRATEGY_AUTO_SUBMIT` (`true` by default)
+- `STRATEGY_REQUIRE_EXPLICIT_SUBMIT` (`false` by default)
 - optional host allowlist: `STRATEGY_TRUSTED_RELAYER_HOSTS=relayer.example.com`
 - local dev only: `STRATEGY_ALLOW_HTTP_RELAYER=true`
 - `CLAW_FUND_FACTORY_ADDRESS`
@@ -100,12 +101,8 @@ Strategy signer env:
 ```bash
 # Unified: mine (+ optional verify) and optionally submit in one command
 npm run participant:allocation -w @wiimdy/openfunderse-agents -- \
-  --fund-id demo-fund \
-  --epoch-id 1 \
-  --target-weights 7000,3000 \
-  --report-file /tmp/participant-allocation-e2e-report.json \
-  --verify \
-  --submit
+  --target-weights 700000000000000000,300000000000000000 \
+  --report-file /tmp/participant-allocation-e2e-report.json
 ```
 
 Daemon mode (auto-generate weights from NadFun signals):
@@ -113,7 +110,6 @@ Daemon mode (auto-generate weights from NadFun signals):
 ```bash
 # strategies: A (momentum), B (progress), C (impact-aware)
 npm run participant:daemon -w @wiimdy/openfunderse-agents -- \
-  --fund-id demo-fund \
   --strategy A \
   --interval-sec 60 \
   --epoch-source relayer \
@@ -125,10 +121,12 @@ EC2/systemd deployment:
 
 Slash aliases:
 - `/allocation`
+- `/join`
 - `/participant_daemon`
 
 Default participant safety behavior:
-- `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` and no `--submit` => `decision: "READY"` (no relayer transmission)
+- Defaults (`PARTICIPANT_AUTO_SUBMIT=true`, `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=false`) => submits to relayer unless you pass `--no-submit` or override env.
+- `--no-submit` => `decision: "READY"` (no relayer transmission)
 - `--submit` but `PARTICIPANT_AUTO_SUBMIT=false` => fail-closed with `SAFETY_BLOCKED`
 
 ## Strategy commands (EOA signer)
@@ -212,7 +210,7 @@ Note:
 Programmatic skill path builds proposal first, then submits only when submit gates are explicitly enabled.
 
 1. build strategy decision (`proposeIntent`)
-2. if `submit=true` and `STRATEGY_AUTO_SUBMIT=true`, submit canonical intent to relayer (`POST /intents/propose`)
+2. if `submit=true` OR (`STRATEGY_AUTO_SUBMIT=true` and `STRATEGY_REQUIRE_EXPLICIT_SUBMIT=false`), submit canonical intent to relayer (`POST /intents/propose`)
 3. if step 2 passed, send onchain `IntentBook.proposeIntent` via strategy signer tx
 
 ```ts
@@ -245,7 +243,7 @@ const out = await proposeIntentAndSubmit({
 ```
 
 Default safety behavior:
-- `STRATEGY_REQUIRE_EXPLICIT_SUBMIT=true` and no `submit` => returns `decision: "READY"` (no relayer/onchain submission)
+- Defaults (`STRATEGY_AUTO_SUBMIT=true`, `STRATEGY_REQUIRE_EXPLICIT_SUBMIT=false`) => submits when an intent is `READY` unless you override env.
 - `submit: true` but `STRATEGY_AUTO_SUBMIT=false` => throws fail-closed error
 
 Implemented modules:

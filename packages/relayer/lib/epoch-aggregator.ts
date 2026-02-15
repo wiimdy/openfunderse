@@ -4,7 +4,6 @@ import {
   createWalletClient,
   defineChain,
   http,
-  parseAbi,
   type Address
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -15,11 +14,11 @@ import {
   listStakeWeightsByFund,
   upsertEpochState
 } from "@/lib/supabase";
-
-const SNAPSHOT_BOOK_ABI = parseAbi([
-  "function publishSnapshot(bytes32 snapshotRoot)",
-  "function isSnapshotFinalized(bytes32 snapshotHash) view returns (bool)"
-]);
+import {
+  SNAPSHOT_BOOK_ABI,
+  validateSnapshotBookInterface,
+  isSnapshotBookValid
+} from "@/lib/snapshot-book-validator";
 
 export class AggregateError extends Error {
   constructor(
@@ -221,6 +220,22 @@ export async function aggregateEpoch(
     chain,
     transport: http(rpcUrl)
   });
+
+  const validation = await validateSnapshotBookInterface(publicClient, snapshotBookAddress);
+  if (!isSnapshotBookValid(validation)) {
+    throw new AggregateError(
+      `snapshotBook at ${snapshotBookAddress} does not implement SnapshotBook interface`,
+      "ONCHAIN_ERROR",
+      {
+        snapshotBookAddress,
+        validation: {
+          hasCode: validation.hasCode,
+          isSnapshotFinalizedCallable: validation.isSnapshotFinalizedCallable,
+          errors: validation.errors
+        }
+      }
+    );
+  }
 
   let alreadyPublished = false;
   try {

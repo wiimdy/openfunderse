@@ -45,6 +45,7 @@ STRATEGY_ADDRESS=0x0000000000000000000000000000000000000000
 const PARTICIPANT_ENV_TEMPLATE = `# OpenFunderse participant env scaffold
 RELAYER_URL=https://your-relayer.example.com
 BOT_ID=bot-participant-1
+FUND_ID=demo-fund
 CHAIN_ID=10143
 PARTICIPANT_PRIVATE_KEY=\${TEMP_PRIVATE_KEY}
 PARTICIPANT_ADDRESS=0x0000000000000000000000000000000000000000
@@ -64,6 +65,7 @@ const BOTFATHER_PARTICIPANT_COMMANDS = [
   "start - Show quick start",
   "help - Show command help",
   "allocation - Mine (optional verify) and optionally submit allocation claim",
+  "join - Join fund by room id mapping",
   "participant_daemon - Run participant allocation daemon",
 ];
 

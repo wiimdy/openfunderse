@@ -318,6 +318,21 @@ export async function getFund(fundId: string) {
   return (data as FundRow | null) ?? undefined;
 }
 
+export async function getFundByTelegramRoomId(roomId: string) {
+  const db = supabase();
+  const normalized = String(roomId ?? "").trim();
+  if (!normalized) return undefined;
+  const { data, error } = await db
+    .from("funds")
+    .select(
+      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,is_verified,visibility,verification_note,created_by,created_at,updated_at,allowlist_tokens_json"
+    )
+    .eq("telegram_room_id", normalized)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as FundRow | null) ?? undefined;
+}
+
 export async function listPublicFunds(input?: {
   limit?: number;
   offset?: number;

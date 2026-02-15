@@ -19,6 +19,11 @@ import {
   upsertFundBot,
   upsertFundDeployment
 } from "@/lib/supabase";
+import {
+  validateSnapshotBookInterface,
+  isSnapshotBookValid,
+  type SnapshotBookValidation
+} from "@/lib/snapshot-book-validator";
 
 const FUND_FACTORY_ABI = parseAbi([
   "event FundDeployed(uint256 indexed fundId, address indexed fundOwner, address indexed strategyAgent, address intentBook, address core, address vault, address snapshotBook, address asset)"
@@ -404,6 +409,16 @@ export async function POST(request: Request) {
 
   const tx = await publicClient.getTransaction({ hash: txHash });
 
+  let snapshotBookValidation: SnapshotBookValidation | null = null;
+  try {
+    snapshotBookValidation = await validateSnapshotBookInterface(
+      publicClient,
+      deployed.snapshotBookAddress
+    );
+  } catch {
+    snapshotBookValidation = null;
+  }
+
   await upsertFundDeployment({
     fundId,
     chainId: chainConfig.chainId,
@@ -476,7 +491,15 @@ export async function POST(request: Request) {
         clawCoreAddress: deployed.clawCoreAddress,
         clawVaultAddress: deployed.clawVaultAddress,
         deployerAddress: tx.from
-      }
+      },
+      snapshotBookValidation: snapshotBookValidation
+        ? {
+            valid: isSnapshotBookValid(snapshotBookValidation),
+            hasCode: snapshotBookValidation.hasCode,
+            isSnapshotFinalizedCallable: snapshotBookValidation.isSnapshotFinalizedCallable,
+            errors: snapshotBookValidation.errors
+          }
+        : { valid: false, errors: ["validation could not be performed"] }
     },
     { status: 200 }
   );

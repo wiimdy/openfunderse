@@ -6,8 +6,8 @@ Target: verify strategy/participant bot actions against relayer + onchain flows 
 ```bash
 cd /path/to/claw-validation-market
 npm install
-npm run build -w @claw/protocol-sdk
-npm run build -w @claw/agents
+npm run build -w @wiimdy/openfunderse-sdk
+npm run build -w @wiimdy/openfunderse-agents
 ```
 
 ## 2) Env
@@ -34,7 +34,7 @@ For onchain actions additionally:
 
 ## 3) Core smoke (single command)
 ```bash
-npm run bot:smoke:e2e -w @claw/agents
+npm run bot:smoke:e2e -w @wiimdy/openfunderse-agents
 ```
 
 This runs:
@@ -46,7 +46,7 @@ This runs:
 ## 4) Manual strategy flow
 ```bash
 # Propose
-npm run clawbot:run -w @claw/agents -- \
+npm run clawbot:run -w @wiimdy/openfunderse-agents -- \
   --role strategy \
   --action propose_intent \
   --fund-id "$FUND_ID" \
@@ -54,7 +54,7 @@ npm run clawbot:run -w @claw/agents -- \
   --execution-route-file /tmp/route.json
 
 # Dry run core
-npm run clawbot:run -w @claw/agents -- \
+npm run clawbot:run -w @wiimdy/openfunderse-agents -- \
   --role strategy \
   --action dry_run_intent_execution \
   --intent-hash 0x... \
@@ -62,14 +62,14 @@ npm run clawbot:run -w @claw/agents -- \
   --execution-route-file /tmp/route.json
 
 # Attest onchain
-npm run clawbot:run -w @claw/agents -- \
+npm run clawbot:run -w @wiimdy/openfunderse-agents -- \
   --role strategy \
   --action attest_intent_onchain \
   --fund-id "$FUND_ID" \
   --intent-hash 0x...
 
 # Execute ready queue
-npm run clawbot:run -w @claw/agents -- \
+npm run clawbot:run -w @wiimdy/openfunderse-agents -- \
   --role strategy \
   --action execute_intent_onchain \
   --fund-id "$FUND_ID"
@@ -77,24 +77,10 @@ npm run clawbot:run -w @claw/agents -- \
 
 ## 5) Manual participant flow
 ```bash
-# Mine
-npm run clawbot:run -w @claw/agents -- \
+# Mine (+ optional verify) and optionally submit
+npm run clawbot:run -w @wiimdy/openfunderse-agents -- \
   --role participant \
-  --action propose_allocation \
-  --fund-id "$FUND_ID" \
-  --epoch-id 1 \
-  --target-weights 7000,3000 \
-  --out-file /tmp/claim.mine.json
-
-# Verify
-npm run clawbot:run -w @claw/agents -- \
-  --role participant \
-  --action validate_allocation \
-  --claim-file /tmp/claim.mine.json
-
-# Submit
-npm run clawbot:run -w @claw/agents -- \
-  --role participant \
-  --action submit_allocation \
-  --claim-file /tmp/claim.mine.json
+  --action allocation \
+  --target-weights 700000000000000000,300000000000000000 \
+  --report-file /tmp/claim.report.json
 ```

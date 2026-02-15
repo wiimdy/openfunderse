@@ -42,32 +42,7 @@ const COMMAND_ALIAS: Record<string, string[]> = {
 
   // Participant: unified allocation flow.
   allocation: ['clawbot-run', '--role', 'participant', '--action', 'allocation'],
-
-  // Backward-compatible participant aliases (deprecated, still supported).
-  'propose-allocation': ['clawbot-run', '--role', 'participant', '--action', 'allocation'],
-  'validate-allocation': [
-    'clawbot-run',
-    '--role',
-    'participant',
-    '--action',
-    'allocation',
-    '--verify'
-  ],
-  'validate-allocation-or-intent': [
-    'clawbot-run',
-    '--role',
-    'participant',
-    '--action',
-    'allocation',
-    '--verify'
-  ],
-  'submit-allocation': ['clawbot-run', '--role', 'participant', '--action', 'allocation', '--submit'],
-  'allocation-e2e': ['clawbot-run', '--role', 'participant', '--action', 'allocation', '--verify'],
-
-  // Backward-compatible generic names.
-  'mine-claim': ['clawbot-run', '--role', 'participant', '--action', 'allocation'],
-  'verify-claim': ['clawbot-run', '--role', 'participant', '--action', 'allocation', '--verify'],
-  'submit-claim': ['clawbot-run', '--role', 'participant', '--action', 'allocation', '--submit']
+  join: ['clawbot-run', '--role', 'participant', '--action', 'join']
 };
 
 const normalizeCommandToken = (token: string): string => {
@@ -93,7 +68,8 @@ const normalizeOptionToken = (token: string): string[] => {
     return [`--${key}`];
   }
   if (['false', '0', 'no', 'off'].includes(normalizedValue)) {
-    return [];
+    // Allow overriding default-on flags (ex: submit=false, verify=false) in chat contexts.
+    return [`--no-${key}`];
   }
 
   return [`--${key}`, value];

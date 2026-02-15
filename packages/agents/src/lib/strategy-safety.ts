@@ -1,5 +1,6 @@
-const DEFAULT_REQUIRE_EXPLICIT_SUBMIT = true;
-const DEFAULT_AUTO_SUBMIT = false;
+// Defaults: allow unattended submission unless explicitly disabled via env / CLI.
+const DEFAULT_REQUIRE_EXPLICIT_SUBMIT = false;
+const DEFAULT_AUTO_SUBMIT = true;
 
 const PRIVATE_HOST_PATTERNS = [
   /^localhost$/i,
@@ -39,11 +40,13 @@ export interface StrategySubmitGate {
   submitRequested: boolean;
   autoSubmitEnabled: boolean;
   requireExplicitSubmit: boolean;
+  disableAutoSubmit: boolean;
   shouldSubmit: boolean;
 }
 
 export const resolveStrategySubmitGate = (
-  submitRequested: boolean
+  submitRequested: boolean,
+  disableAutoSubmit = false
 ): StrategySubmitGate => {
   const requireExplicitSubmit = envBool(
     'STRATEGY_REQUIRE_EXPLICIT_SUBMIT',
@@ -61,7 +64,10 @@ export const resolveStrategySubmitGate = (
     submitRequested,
     autoSubmitEnabled,
     requireExplicitSubmit,
-    shouldSubmit: submitRequested || (!requireExplicitSubmit && autoSubmitEnabled)
+    disableAutoSubmit,
+    shouldSubmit: disableAutoSubmit
+      ? submitRequested
+      : submitRequested || (!requireExplicitSubmit && autoSubmitEnabled)
   };
 };
 

@@ -97,6 +97,8 @@ export interface SubmitAllocationInput {
   observation: ProposeAllocationObservation;
   clientOptions?: RelayerClientOptions;
   submit?: boolean;
+  // When true, never submit even if auto-submit is enabled (used for explicit dry-runs).
+  disableAutoSubmit?: boolean;
 }
 
 export interface SubmitAllocationOutput {
@@ -122,8 +124,9 @@ export interface SubmitAllocationOutput {
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
-const DEFAULT_REQUIRE_EXPLICIT_SUBMIT = true;
-const DEFAULT_AUTO_SUBMIT = false;
+// Defaults: allow unattended submission unless explicitly disabled via env / CLI.
+const DEFAULT_REQUIRE_EXPLICIT_SUBMIT = false;
+const DEFAULT_AUTO_SUBMIT = true;
 const PRIVATE_HOST_PATTERNS = [
   /^localhost$/i,
   /^127\./,
@@ -195,12 +198,14 @@ const validateParticipantRelayerUrl = (rawUrl: string, hosts: string[]): void =>
 };
 
 const participantSubmitSafety = (
-  submitRequested: boolean
+  submitRequested: boolean,
+  disableAutoSubmit: boolean
 ): {
   submitRequested: boolean;
   autoSubmitEnabled: boolean;
   requireExplicitSubmit: boolean;
   trustedRelayerHosts: string[];
+  disableAutoSubmit: boolean;
   shouldSubmit: boolean;
 } => {
   const requireExplicitSubmit = envBool(
@@ -209,12 +214,15 @@ const participantSubmitSafety = (
   );
   const autoSubmitEnabled = envBool('PARTICIPANT_AUTO_SUBMIT', DEFAULT_AUTO_SUBMIT);
   const hosts = trustedRelayerHosts();
-  const shouldSubmit = submitRequested || (!requireExplicitSubmit && autoSubmitEnabled);
+  const shouldSubmit = disableAutoSubmit
+    ? submitRequested
+    : submitRequested || (!requireExplicitSubmit && autoSubmitEnabled);
   return {
     submitRequested,
     autoSubmitEnabled,
     requireExplicitSubmit,
     trustedRelayerHosts: hosts,
+    disableAutoSubmit,
     shouldSubmit
   };
 };
@@ -468,7 +476,10 @@ export async function submitAllocation(
     const claim = fromSerializedClaim(input.observation.canonicalClaim);
     const canonical = buildCanonicalAllocationClaimRecord({ claim });
 
-    const safety = participantSubmitSafety(input.submit ?? false);
+    const safety = participantSubmitSafety(
+      input.submit ?? false,
+      input.disableAutoSubmit ?? false
+    );
     if (safety.submitRequested && !safety.autoSubmitEnabled) {
       return {
         status: 'ERROR',

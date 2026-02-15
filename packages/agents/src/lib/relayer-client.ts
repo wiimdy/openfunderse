@@ -420,6 +420,27 @@ export class RelayerClient {
     });
   }
 
+  async getFundByRoomId(
+    roomId: string
+  ): Promise<{ fundId: string; fundName: string; roomId: string } & Record<string, unknown>> {
+    return this.request<{ fundId: string; fundName: string; roomId: string } & Record<string, unknown>>({
+      method: 'GET',
+      path: `/api/v1/rooms/${encodeURIComponent(roomId)}/fund`,
+      withAuth: false
+    });
+  }
+
+  async joinFundByRoomId(
+    roomId: string
+  ): Promise<Record<string, unknown> & { fundId?: string; fundName?: string }> {
+    return this.request<Record<string, unknown> & { fundId?: string; fundName?: string }>({
+      method: 'POST',
+      path: `/api/v1/rooms/${encodeURIComponent(roomId)}/join`,
+      body: {},
+      withAuth: true
+    });
+  }
+
   async syncFundDeployment(
     input: SyncFundDeploymentInput
   ): Promise<Record<string, unknown>> {

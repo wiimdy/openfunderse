@@ -902,7 +902,10 @@ const runStrategyPropose = async (parsed: ParsedCli): Promise<void> => {
   const routeFile = requiredOption(parsed, 'execution-route-file');
   const intentUri = parsed.options.get('intent-uri');
   const maxNotional = optionBigInt(parsed, 'max-notional');
-  const safety = resolveStrategySubmitGate(parsed.flags.has('submit'));
+  const safety = resolveStrategySubmitGate(
+    parsed.flags.has('submit'),
+    parsed.flags.has('no-submit')
+  );
 
   const intentRaw = JSON.parse(await readFile(intentFile, 'utf8')) as unknown;
   const routeRaw = JSON.parse(await readFile(routeFile, 'utf8')) as unknown;
@@ -927,7 +930,7 @@ const runStrategyPropose = async (parsed: ParsedCli): Promise<void> => {
         fundId,
         decision: 'READY',
         reason:
-          'strategy submit gate is not enabled; pass --submit and set STRATEGY_AUTO_SUBMIT=true',
+          'strategy submission skipped by submit gate (pass --submit, or set STRATEGY_REQUIRE_EXPLICIT_SUBMIT=false and STRATEGY_AUTO_SUBMIT=true; use --no-submit for dry-runs)',
         safety
       })
     );
@@ -1032,7 +1035,7 @@ strategy-execute-ready
 
 strategy-propose
   --fund-id <id> --intent-file <path> --execution-route-file <path>
-  [--max-notional <wei>] [--intent-uri <uri>] [--submit]
+  [--max-notional <wei>] [--intent-uri <uri>] [--submit] [--no-submit]
 
 strategy-dry-run-intent
   --intent-hash <0x...> --intent-file <path> --execution-route-file <path>

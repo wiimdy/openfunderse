@@ -237,8 +237,9 @@ const DEFAULT_MAX_IMPACT_BPS = 60;
 const DEFAULT_SELL_TAKE_PROFIT_BPS = 2000;
 const DEFAULT_SELL_STOP_LOSS_BPS = 600;
 const DEFAULT_SELL_MAX_HOLD_SECONDS = 5400;
-const DEFAULT_REQUIRE_EXPLICIT_SUBMIT = true;
-const DEFAULT_AUTO_SUBMIT = false;
+// Defaults: allow unattended submission unless explicitly disabled via env.
+const DEFAULT_REQUIRE_EXPLICIT_SUBMIT = false;
+const DEFAULT_AUTO_SUBMIT = true;
 
 const PRIVATE_HOST_PATTERNS = [
   /^localhost$/i,

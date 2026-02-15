@@ -220,6 +220,7 @@ vi.mock("viem", async () => {
   return {
     ...actual,
     createPublicClient: vi.fn(() => ({
+      getCode: vi.fn(async () => "0x6080604052"),
       readContract: mockReadContract,
       simulateContract: vi.fn(async () => ({ request: {} })),
       waitForTransactionReceipt: vi.fn(async () => ({ status: "success" })),
@@ -271,11 +272,10 @@ describe("E2E: Epoch Lifecycle → Claims → Aggregate → Events", () => {
     process.env.RPC_URL = "https://rpc.monad.example";
     process.env.SNAPSHOT_PUBLISHER_PRIVATE_KEY = "0x" + "ab".repeat(32);
 
-    // First readContract call (isSnapshotFinalized) → false (not yet published)
-    // Second readContract call (post-publish check) → true
     mockReadContract
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+      .mockResolvedValueOnce(false)   // validator: isSnapshotFinalized(bytes32(0))
+      .mockResolvedValueOnce(false)   // aggregator: not yet published
+      .mockResolvedValueOnce(true);   // aggregator: post-publish check
 
     // Collect SSE events from real event-emitter
     collectedEvents.length = 0;
@@ -497,10 +497,10 @@ describe("E2E: Epoch Lifecycle → Claims → Aggregate → Events", () => {
       addClaim(claim.participant, claim.targetWeights, "1");
     }
 
-    // Reset readContract mocks for the aggregate call
     mockReadContract
-      .mockResolvedValueOnce(false)
-      .mockResolvedValueOnce(true);
+      .mockResolvedValueOnce(false)   // validator: isSnapshotFinalized(bytes32(0))
+      .mockResolvedValueOnce(false)   // aggregator: not yet published
+      .mockResolvedValueOnce(true);   // aggregator: post-publish check
 
     // Second tick after expiry: aggregates
     const results2 = await tickAllFunds({ nowMs: NOW + EPOCH_DURATION_MS + 1_000 });

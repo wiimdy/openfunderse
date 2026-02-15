@@ -63,7 +63,7 @@ async function main() {
     console.log('\n[smoke] 1) clawbot-run help');
     await run('npm', ['run', 'clawbot:run', '-w', AGENTS_WORKSPACE, '--', '--help']);
 
-    console.log('\n[smoke] 2) participant mine routing');
+    console.log('\n[smoke] 2) participant allocation (mine) routing');
     await run('npm', [
       'run',
       'clawbot:run',
@@ -73,13 +73,13 @@ async function main() {
       '--role',
       'participant',
       '--action',
-      'propose_allocation',
+      'allocation',
       '--fund-id',
       process.env.FUND_ID ?? 'demo-fund',
       '--epoch-id',
       '1',
       '--target-weights',
-      '7000,3000',
+      '700000000000000000,300000000000000000',
       '--participant',
       process.env.PARTICIPANT_ADDRESS ??
         process.env.PARTICIPANT_BOT_ADDRESS ??
@@ -88,7 +88,7 @@ async function main() {
       claimPath
     ]);
 
-    console.log('\n[smoke] 3) participant verify routing');
+    console.log('\n[smoke] 3) participant allocation (verify from file) routing');
     await run('npm', [
       'run',
       'clawbot:run',
@@ -98,9 +98,10 @@ async function main() {
       '--role',
       'participant',
       '--action',
-      'validate_allocation',
+      'allocation',
       '--claim-file',
       claimPath,
+      '--verify',
       '--max-data-age-seconds',
       '86400'
     ]);

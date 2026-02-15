@@ -272,7 +272,7 @@ contract ClawVaultNativeTest is Test {
         assertTrue(vault.balanceOf(feeRecipient) > 0);
     }
 
-    function testShareOpsBlockedWhileOpenPositionsExist() external {
+    function testWithdrawBlockedWhileOpenPositionsExist() external {
         vm.prank(alice);
         vault.depositNative{value: 1 ether}(alice);
 
@@ -281,10 +281,12 @@ contract ClawVaultNativeTest is Test {
 
         assertTrue(vault.hasOpenPositions());
 
-        vm.expectRevert(ClawVault4626.ShareOpsBlockedWithOpenPositions.selector);
+        // Deposit is allowed during open positions.
         vm.prank(alice);
-        vault.depositNative{value: 0.1 ether}(alice);
+        uint256 shares = vault.depositNative{value: 0.1 ether}(alice);
+        assertGt(shares, 0);
 
+        // Withdraw is still blocked.
         vm.expectRevert(ClawVault4626.ShareOpsBlockedWithOpenPositions.selector);
         vm.prank(alice);
         vault.withdraw(0.1 ether, alice, alice);
@@ -371,8 +373,10 @@ contract ClawVaultNativeTest is Test {
         adapter.setNextAmountOut(100e18);
         vault.executeTrade(bytes32("buy"), address(wmon), address(meme), 0.5 ether, 1, address(adapter), "");
 
-        assertEq(vault.maxDeposit(alice), 0);
-        assertEq(vault.maxMint(alice), 0);
+        // Deposit/mint views remain open during positions.
+        assertGt(vault.maxDeposit(alice), 0);
+        assertGt(vault.maxMint(alice), 0);
+        // Withdraw/redeem views are blocked during positions.
         assertEq(vault.maxWithdraw(alice), 0);
         assertEq(vault.maxRedeem(alice), 0);
     }
@@ -459,12 +463,13 @@ contract ClawVaultNativeTest is Test {
         assertEq(gasWallet.balance, beforeNative + 0.06 ether);
     }
 
-    function testSettleQueuedDepositsRevertsWhenOpenPositions() external {
+    function testSettleQueuedDepositsAllowedDuringOpenPositions() external {
         vm.prank(alice);
         vault.depositNative{value: 1 ether}(alice);
 
         adapter.setNextAmountOut(100e18);
         vault.executeTrade(bytes32("buy"), address(wmon), address(meme), 0.5 ether, 1, address(adapter), "");
+        assertTrue(vault.hasOpenPositions());
 
         wmon.mint(alice, 0.2 ether);
         vm.prank(alice);
@@ -472,11 +477,130 @@ contract ClawVaultNativeTest is Test {
         vm.prank(alice);
         uint256 requestId = vault.queueDeposit(0.2 ether, alice);
 
+        uint256 beforeShares = vault.balanceOf(alice);
         uint256[] memory ids = new uint256[](1);
         ids[0] = requestId;
+        vault.settleQueuedDeposits(ids);
+
+        assertGt(vault.balanceOf(alice), beforeShares);
+        (,,,,uint8 status) = vault.pendingDeposits(requestId);
+        assertEq(status, vault.DEPOSIT_REQUEST_SETTLED());
+    }
+
+    // ── Deposit-during-open-positions tests (issue #76) ─────────────────
+
+    function testDepositERC20AllowedDuringOpenPositions() external {
+        // Seed vault with initial deposit.
+        vm.prank(alice);
+        vault.depositNative{value: 1 ether}(alice);
+
+        // Open a meme position.
+        adapter.setNextAmountOut(100e18);
+        vault.executeTrade(bytes32("buy"), address(wmon), address(meme), 0.5 ether, 1, address(adapter), "");
+        assertTrue(vault.hasOpenPositions());
+
+        // New participant deposits ERC20 while position is open.
+        address bob = makeAddr("bob");
+        wmon.mint(bob, 0.5 ether);
+        vm.prank(bob);
+        wmon.approve(address(vault), 0.5 ether);
+        vm.prank(bob);
+        uint256 shares = vault.deposit(0.5 ether, bob);
+
+        assertGt(shares, 0);
+        assertEq(vault.balanceOf(bob), shares);
+    }
+
+    function testDepositNativeAllowedDuringOpenPositions() external {
+        vm.prank(alice);
+        vault.depositNative{value: 1 ether}(alice);
+
+        adapter.setNextAmountOut(100e18);
+        vault.executeTrade(bytes32("buy"), address(wmon), address(meme), 0.5 ether, 1, address(adapter), "");
+        assertTrue(vault.hasOpenPositions());
+
+        // New participant deposits native while position is open.
+        address bob = makeAddr("bob");
+        vm.deal(bob, 1 ether);
+        vm.prank(bob);
+        uint256 shares = vault.depositNative{value: 0.5 ether}(bob);
+
+        assertGt(shares, 0);
+        assertEq(vault.balanceOf(bob), shares);
+    }
+
+    function testSharePriceBasedOnBaseAssetDuringOpenPositions() external {
+        vm.prank(alice);
+        vault.depositNative{value: 1 ether}(alice);
+
+        uint256 priceBefore = vault.sharePriceX18();
+
+        // Buy meme: 0.5 WMON leaves vault.
+        adapter.setNextAmountOut(100e18);
+        vault.executeTrade(bytes32("buy"), address(wmon), address(meme), 0.5 ether, 1, address(adapter), "");
+        assertTrue(vault.hasOpenPositions());
+
+        uint256 priceDuring = vault.sharePriceX18();
+        // Price drops because totalAssets only counts WMON balance.
+        assertLt(priceDuring, priceBefore);
+
+        // New depositor gets shares at this lower price → more shares per asset.
+        address bob = makeAddr("bob");
+        vm.deal(bob, 0.5 ether);
+        vm.prank(bob);
+        uint256 bobShares = vault.depositNative{value: 0.5 ether}(bob);
+        // Bob gets exactly 0.5 ether worth at current NAV (0.5 WMON in vault, 1 share outstanding).
+        // sharePrice = 0.5e18/1e18 = 0.5e18 per share → 0.5e18 deposit / 0.5e18 price = 1e18 shares.
+        assertEq(bobShares, 1 ether);
+
+        // Close position profitably.
+        adapter.setNextAmountOut(0.8 ether);
+        vault.executeTrade(bytes32("sell"), address(meme), address(wmon), 100e18, 1, address(adapter), "");
+        assertFalse(vault.hasOpenPositions());
+
+        // Both alice and bob benefit from the price recovery.
+        uint256 priceAfter = vault.sharePriceX18();
+        assertGt(priceAfter, priceDuring);
+    }
+
+    function testWithdrawNativeStillBlockedDuringOpenPositions() external {
+        vm.prank(alice);
+        vault.depositNative{value: 1 ether}(alice);
+
+        adapter.setNextAmountOut(100e18);
+        vault.executeTrade(bytes32("buy"), address(wmon), address(meme), 0.5 ether, 1, address(adapter), "");
+        assertTrue(vault.hasOpenPositions());
 
         vm.expectRevert(ClawVault4626.ShareOpsBlockedWithOpenPositions.selector);
-        vault.settleQueuedDeposits(ids);
+        vm.prank(alice);
+        vault.withdrawNative(0.1 ether, alice, alice);
+
+        vm.expectRevert(ClawVault4626.ShareOpsBlockedWithOpenPositions.selector);
+        vm.prank(alice);
+        vault.redeem(0.1 ether, alice, alice);
+    }
+
+    function testMultipleDepositsDuringOpenPositionsAccounting() external {
+        vm.prank(alice);
+        vault.depositNative{value: 1 ether}(alice);
+
+        adapter.setNextAmountOut(100e18);
+        vault.executeTrade(bytes32("buy"), address(wmon), address(meme), 0.5 ether, 1, address(adapter), "");
+        assertTrue(vault.hasOpenPositions());
+
+        // Two deposits while position is open.
+        address bob = makeAddr("bob");
+        vm.deal(bob, 2 ether);
+        vm.prank(bob);
+        vault.depositNative{value: 0.3 ether}(bob);
+        vm.prank(bob);
+        vault.depositNative{value: 0.2 ether}(bob);
+
+        // Principal tracking is correct.
+        assertEq(vault.netDepositedAssets(bob), 0.5 ether);
+        assertGt(vault.balanceOf(bob), 0);
+        // Total supply increased.
+        assertGt(vault.totalSupply(), 1 ether);
     }
 
     function testCancelQueuedDeposit() external {
