@@ -98,6 +98,71 @@ function extractEvent(logs) {
   return null;
 }
 
+async function syncWithRelayer(txHash, fundResult, deployConfig) {
+  const relayerUrl = process.env.RELAYER_URL;
+  if (!relayerUrl) {
+    console.log("[factory-create-fund] RELAYER_URL not set, skipping relayer sync");
+    return;
+  }
+
+  const fundId = process.env.FUND_ID;
+  const fundName = process.env.FUND_NAME;
+  const strategyBotId = process.env.STRATEGY_BOT_ID;
+  const botApiKey = process.env.BOT_API_KEY;
+
+  if (!fundId || !fundName || !strategyBotId || !botApiKey) {
+    console.log("[factory-create-fund] missing FUND_ID/FUND_NAME/STRATEGY_BOT_ID/BOT_API_KEY, skipping relayer sync");
+    return;
+  }
+
+  const strategyBotAddress =
+    fundResult.strategyAgent ??
+    (deployConfig.strategyAgent === ZERO_ADDRESS
+      ? deployConfig.fundOwner
+      : deployConfig.strategyAgent);
+
+  const syncBody = {
+    txHash,
+    fundId,
+    fundName,
+    strategyBotId,
+    strategyBotAddress,
+    verifierThresholdWeight: process.env.VERIFIER_THRESHOLD_WEIGHT ?? "1",
+    intentThresholdWeight: process.env.INTENT_THRESHOLD_WEIGHT ?? "5"
+  };
+
+  console.log("[factory-create-fund] syncing with relayer");
+  console.log(stringify(syncBody));
+
+  const syncUrl = new URL("/api/v1/funds/sync-by-strategy", relayerUrl).toString();
+  const response = await fetch(syncUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-bot-id": strategyBotId,
+      "x-bot-api-key": botApiKey
+    },
+    body: JSON.stringify(syncBody)
+  });
+
+  const text = await response.text();
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = text;
+  }
+
+  if (!response.ok) {
+    console.error(`[factory-create-fund] relayer sync failed (status=${response.status})`);
+    console.error(stringify(parsed));
+    return;
+  }
+
+  console.log("[factory-create-fund] relayer sync OK");
+  console.log(stringify(parsed));
+}
+
 async function main() {
   const chainId = Number(env("CHAIN_ID"));
   if (!Number.isFinite(chainId) || chainId <= 0) {
@@ -199,24 +264,26 @@ async function main() {
   if (!event) {
     throw new Error("FundDeployed event not found in tx receipt");
   }
+  const fundResult = {
+    status: receipt.status,
+    blockNumber: receipt.blockNumber,
+    txHash,
+    fundId: event.fundId ?? simFundId,
+    fundOwner: event.fundOwner ?? fundOwner,
+    strategyAgent:
+      event.strategyAgent ??
+      (strategyAgent === ZERO_ADDRESS ? fundOwner : strategyAgent),
+    intentBook: event.intentBook ?? simIntentBook,
+    core: event.core ?? simCore,
+    vault: event.vault ?? simVault,
+    snapshotBook: event.snapshotBook,
+    asset: event.asset ?? asset
+  };
+
   console.log("[factory-create-fund] receipt summary");
-  console.log(
-    stringify({
-      status: receipt.status,
-      blockNumber: receipt.blockNumber,
-      txHash,
-      fundId: event.fundId ?? simFundId,
-      fundOwner: event.fundOwner ?? fundOwner,
-      strategyAgent:
-        event.strategyAgent ??
-        (strategyAgent === ZERO_ADDRESS ? fundOwner : strategyAgent),
-      intentBook: event.intentBook ?? simIntentBook,
-      core: event.core ?? simCore,
-      vault: event.vault ?? simVault,
-      snapshotBook: event.snapshotBook,
-      asset: event.asset ?? asset
-    })
-  );
+  console.log(stringify(fundResult));
+
+  await syncWithRelayer(txHash, fundResult, deployConfig);
 }
 
 main().catch((error) => {

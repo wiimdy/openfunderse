@@ -14,3 +14,6 @@ monad_mainnet = "${MONAD_MAINNET_RPC_URL}"
 [profile.monad_testnet]
 eth_rpc_url = "${MONAD_TESTNET_RPC_URL}"
 chain_id = 10143
+
+[etherscan]
+monad_testnet = { key = "${SCAN_API_KEY}", chain = 10143, url = "https://testnet.monadscan.com/api" }

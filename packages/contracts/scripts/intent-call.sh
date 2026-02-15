@@ -8,10 +8,11 @@ if [[ "$MODE" != "validate" && "$MODE" != "dry-run" ]]; then
 fi
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-if [[ -f "$ROOT/.env" ]]; then
+CONTRACTS_DIR="$ROOT/packages/contracts"
+if [[ -f "$CONTRACTS_DIR/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
-  source "$ROOT/.env"
+  source "$CONTRACTS_DIR/.env"
   set +a
 fi
 
