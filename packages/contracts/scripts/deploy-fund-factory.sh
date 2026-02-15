@@ -22,7 +22,13 @@ fi
 
 cd "$CONTRACTS_DIR"
 
+VERIFY_FLAGS=""
+if [[ -n "${SCAN_API_KEY:-}" ]]; then
+  VERIFY_FLAGS="--verify --etherscan-api-key $SCAN_API_KEY"
+fi
+
 forge script script/DeployClawFundFactory.s.sol:DeployClawFundFactory \
   --rpc-url "$RPC_URL" \
   --private-key "$DEPLOYER_PRIVATE_KEY" \
-  --broadcast
+  --broadcast \
+  $VERIFY_FLAGS

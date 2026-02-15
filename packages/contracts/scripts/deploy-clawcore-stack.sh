@@ -26,10 +26,16 @@ fi
 
 cd "$CONTRACTS_DIR"
 
+VERIFY_FLAGS=""
+if [[ -n "${SCAN_API_KEY:-}" ]]; then
+  VERIFY_FLAGS="--verify --etherscan-api-key $SCAN_API_KEY"
+fi
+
 forge script script/DeployClawCoreStack.s.sol:DeployClawCoreStack \
   --rpc-url "$RPC_URL" \
   --private-key "$DEPLOYER_PRIVATE_KEY" \
-  --broadcast
+  --broadcast \
+  $VERIFY_FLAGS
 
 CHAIN_ID="$(cast chain-id --rpc-url "$RPC_URL")"
 RUN_JSON="$CONTRACTS_DIR/broadcast/DeployClawCoreStack.s.sol/$CHAIN_ID/run-latest.json"
