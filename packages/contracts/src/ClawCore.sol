@@ -231,6 +231,9 @@ contract ClawCore is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         ExecutionRequest calldata req
     ) external onlyExecutor returns (uint256 amountOut) {
         if (paused) revert CorePaused();
+        (,,,,,, bytes32 allowlistHash) = intentBook.getIntentExecutionData(intentHash);
+        require(allowlistHash != bytes32(0), "minAmountOut below intent minimum");
+
         ExecutionValidation memory v = validateIntentExecution(intentHash, req);
         if (!v.exists) revert IntentNotFound();
         if (!v.approved) revert IntentNotApproved();

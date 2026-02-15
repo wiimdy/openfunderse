@@ -189,7 +189,7 @@ export async function ingestIntentAttestation(input: IntentInput) {
     };
   }
 
-  const attestedWeight = await incrementSubjectAttestedWeight("INTENT", input.intentHash, weight);
+  const attestedWeight = await incrementSubjectAttestedWeight(input.fundId, "INTENT", input.intentHash, weight);
 
   relayerEvents.emitEvent("intent:attested", {
     fundId: input.fundId,

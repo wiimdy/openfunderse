@@ -35,6 +35,15 @@ create table if not exists fund_bots (
   unique (fund_id, bot_id)
 );
 
+create table if not exists bot_auth_nonces (
+  id serial primary key,
+  bot_id text not null,
+  nonce text not null,
+  used_at timestamptz not null default now(),
+  unique (bot_id, nonce)
+);
+-- Periodically prune old nonce rows (e.g. older than 5 minutes) to keep this table bounded.
+
 -- DEPRECATED: bot_credentials table removed. Bot auth is now signature-based
 -- (EIP-191) using bot_address in fund_bots table. Kept commented for reference.
 -- create table if not exists bot_credentials (
@@ -82,7 +91,7 @@ create table if not exists attestations (
   error text,
   created_at bigint not null,
   updated_at bigint not null,
-  unique (subject_type, subject_hash, verifier)
+  unique (fund_id, subject_type, subject_hash, verifier)
 );
 
 create table if not exists subject_state (
@@ -99,8 +108,43 @@ create table if not exists subject_state (
   last_error text,
   created_at bigint not null,
   updated_at bigint not null,
-  unique (subject_type, subject_hash)
+  unique (fund_id, subject_type, subject_hash)
 );
+
+alter table if exists attestations
+  drop constraint if exists attestations_subject_type_subject_hash_verifier_key;
+alter table if exists attestations
+  drop constraint if exists attestations_fund_subject_verifier_key;
+alter table if exists attestations
+  add constraint attestations_fund_subject_verifier_key
+  unique (fund_id, subject_type, subject_hash, verifier);
+
+alter table if exists subject_state
+  drop constraint if exists subject_state_subject_type_subject_hash_key;
+alter table if exists subject_state
+  drop constraint if exists subject_state_fund_subject_key;
+alter table if exists subject_state
+  add constraint subject_state_fund_subject_key
+  unique (fund_id, subject_type, subject_hash);
+
+create or replace function increment_subject_attested_weight_atomic(
+  p_fund_id text,
+  p_subject_type text,
+  p_subject_hash text,
+  p_delta text
+)
+returns table (attested_weight text)
+language sql
+as $$
+  update subject_state
+  set
+    attested_weight = ((attested_weight::numeric) + (p_delta::numeric))::text,
+    updated_at = (extract(epoch from now()) * 1000)::bigint
+  where fund_id = p_fund_id
+    and subject_type = p_subject_type
+    and subject_hash = lower(p_subject_hash)
+  returning subject_state.attested_weight;
+$$;
 
 create table if not exists allocation_claims (
   id bigserial primary key,

@@ -9,6 +9,7 @@ import {
 } from '@claw/protocol-sdk';
 import { EventSource } from 'eventsource';
 import { signAuthMessage, signBootstrapMessage } from './signer.js';
+import { validateStrategyRelayerUrl } from './strategy-safety.js';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 
@@ -224,6 +225,7 @@ export class RelayerClient {
     if (!this.baseUrl) {
       throw new Error('RELAYER_URL is required');
     }
+    validateStrategyRelayerUrl(this.baseUrl);
     if (!this.botId) {
       throw new Error('BOT_ID is required');
     }
