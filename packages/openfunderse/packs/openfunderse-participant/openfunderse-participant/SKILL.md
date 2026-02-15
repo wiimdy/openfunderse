@@ -67,36 +67,36 @@ This step is not required for normal OpenClaw skill execution.
 Telegram slash commands:
 
 ```text
-/propose_allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
-/submit_allocation --claim-file <path> [--max-data-age-seconds <n>] [--submit]
+/allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--verify] [--submit]
+/allocation --claim-file <path> [--verify] [--submit]
+/join --room-id <id>
 /deposit --amount <wei> [--vault-address <0x...>] [--native] [--submit]
 /withdraw --amount <wei> [--vault-address <0x...>] [--native] [--submit]
 /redeem --shares <wei> [--vault-address <0x...>] [--submit]
 /vault_info [--vault-address <0x...>] [--account <0x...>]
+/participant_daemon --fund-id <id> --strategy <A|B|C> [--interval-sec <n>] [--epoch-source <relayer|fixed>] [--epoch-id <n>] [--submit]
 ```
 
-`submit_allocation` validates the claim hash first. Without `--submit` it shows a dry-run
-(validation-only result). With `--submit` it validates then sends to the relayer.
+Notes:
+- `allocation` will auto-validate on submit (`--submit` implies verify).
+- `submit_allocation` (legacy) validates the claim hash first; without `--submit` it is validation-only dry-run.
 
 BotFather `/setcommands` (copy-paste ready):
 
 ```text
 start - Show quick start
 help - Show command help
-propose_allocation - Mine allocation claim with target weights
-submit_allocation - Validate and submit claim to relayer
+allocation - Mine (optional verify) and optionally submit allocation claim
+join - Register this bot as a participant for the fund mapped to the room id
 deposit - Deposit native MON or ERC-20 into vault
 withdraw - Withdraw assets from vault (native or ERC-20)
 redeem - Burn vault shares and receive assets
 vault_info - Show vault status and user PnL
-/validate_allocation --claim-file <path>
-/submit_allocation --claim-file <path> --submit
-/allocation_e2e --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--submit]
-/participant_daemon --fund-id <id> --strategy <A|B|C> [--interval-sec <n>] [--epoch-source <relayer|fixed>] [--epoch-id <n>] [--submit]
+participant_daemon - Run participant allocation daemon
 ```
 
 Notes:
-- Slash parser accepts underscores, so `/submit_allocation` equals `/submit-allocation`.
+- Slash parser accepts underscores, so `/participant_daemon` equals `/participant-daemon`.
 - `key=value` style is also accepted (`fund_id=demo-fund`).
 - On first install, register these commands in Telegram via `@BotFather` -> `/setcommands`.
 
@@ -126,9 +126,9 @@ Required headers:
 
 Relayer verifies this signature against Supabase `fund_bots.bot_address`.
 
-Participant bot registration is done by the strategy bot:
-- Strategy calls `POST /api/v1/funds/{fundId}/bots/register`
-- Relayer stores `botId` + `botAddress` in `fund_bots`
+Participant bot registration can be done by:
+- Participant: `POST /api/v1/rooms/{roomId}/join` (recommended for Telegram groups)
+- Strategy: `POST /api/v1/funds/{fundId}/bots/register` (direct registration)
 
 If the participant bot is not registered for the fund, relayer will reject participant write APIs with `401/403`.
 

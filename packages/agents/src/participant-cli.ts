@@ -192,6 +192,16 @@ const buildParticipantClientOptions = (): RelayerClientOptions | undefined => {
   return buildDefaultBotClientOptions();
 };
 
+const roomIdFromParsedOrEnv = (parsed: ParsedCli): string | undefined => {
+  const raw =
+    parsed.options.get('room-id') ??
+    process.env.ROOM_ID ??
+    process.env.TELEGRAM_ROOM_ID ??
+    '';
+  const value = raw.trim();
+  return value.length > 0 ? value : undefined;
+};
+
 const parseTargetWeights = (raw: string): Array<string | number | bigint> => {
   const tokens = raw
     .split(',')
@@ -297,6 +307,189 @@ const readObservationFromFile = async (
   throw new Error('unsupported claim file format');
 };
 
+type ParticipantAllocationMode = 'MINE_AND_OPTIONALLY_SUBMIT' | 'SUBMIT_FROM_FILE';
+
+const runParticipantAllocation = async (
+  parsed: ParsedCli,
+  config?: { forceVerify?: boolean; stepName?: string }
+): Promise<void> => {
+  const stepName = config?.stepName ?? 'participant-allocation';
+  const submitRequested = parsed.flags.has('submit');
+  const verifyRequested =
+    Boolean(config?.forceVerify) || parsed.flags.has('verify') || submitRequested;
+
+  const claimFile = parsed.options.get('claim-file');
+  const mode: ParticipantAllocationMode = claimFile
+    ? 'SUBMIT_FROM_FILE'
+    : 'MINE_AND_OPTIONALLY_SUBMIT';
+
+  if (mode === 'SUBMIT_FROM_FILE') {
+    const bundle = await readObservationFromFile(String(claimFile));
+
+    const validation = await validateAllocationOrIntent({
+      taskType: 'validate_allocation_or_intent',
+      fundId: bundle.fundId,
+      roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
+      epochId: bundle.epochId,
+      subjectType: 'CLAIM',
+      subjectHash: bundle.observation.claimHash,
+      subjectPayload: observationToClaimPayload(bundle.observation),
+      validationPolicy: {
+        reproducible: true,
+        maxDataAgeSeconds: toNumberOption(parsed, 'max-data-age-seconds', 300)
+      }
+    });
+
+    if (verifyRequested && validation.verdict !== 'PASS') {
+      const result = {
+        step: stepName,
+        mode,
+        fundId: bundle.fundId,
+        epochId: bundle.epochId,
+        claimHash: bundle.observation.claimHash,
+        observation: bundle.observation,
+        verify: validation
+      };
+      console.log(jsonStringify(result));
+      const outFile = parsed.options.get('out-file');
+      if (outFile) await writeJsonFile(outFile, result);
+      const reportFile = parsed.options.get('report-file');
+      if (reportFile) await writeJsonFile(reportFile, result);
+      process.exitCode = 2;
+      return;
+    }
+
+    const output = await submitAllocation({
+      fundId: bundle.fundId,
+      epochId: bundle.epochId,
+      observation: bundle.observation,
+      clientOptions: buildParticipantClientOptions(),
+      submit: submitRequested
+    });
+
+    const result = {
+      step: stepName,
+      mode,
+      fundId: bundle.fundId,
+      epochId: bundle.epochId,
+      claimHash: output.claimHash ?? bundle.observation.claimHash,
+      observation: bundle.observation,
+      verify: validation,
+      submit: output
+    };
+
+    console.log(jsonStringify(result));
+    const outFile = parsed.options.get('out-file');
+    if (outFile) await writeJsonFile(outFile, result);
+    const reportFile = parsed.options.get('report-file');
+    if (reportFile) await writeJsonFile(reportFile, result);
+    if (output.status !== 'OK') {
+      process.exitCode = 2;
+    }
+    return;
+  }
+
+  const fundId = requiredOption(parsed, 'fund-id');
+  const epochIdRaw = Number(requiredOption(parsed, 'epoch-id'));
+  if (!Number.isFinite(epochIdRaw)) {
+    throw new Error('--epoch-id must be a number');
+  }
+  const epochId = Math.trunc(epochIdRaw);
+
+  const mine = await proposeAllocation({
+    taskType: 'propose_allocation',
+    fundId,
+    roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
+    epochId,
+    allocation: {
+      participant: parsed.options.get('participant'),
+      targetWeights: parseTargetWeights(requiredOption(parsed, 'target-weights')),
+      horizonSec: toNumberOption(parsed, 'horizon-sec', 3600),
+      nonce: parsed.options.has('nonce')
+        ? toNumberOption(parsed, 'nonce', Math.trunc(Date.now() / 1000))
+        : undefined
+    }
+  });
+
+  if (mine.status !== 'OK' || !mine.observation) {
+    const result = { step: stepName, mode, fundId, epochId, mine };
+    console.log(jsonStringify(result));
+    const outFile = parsed.options.get('out-file');
+    if (outFile) await writeJsonFile(outFile, result);
+    const reportFile = parsed.options.get('report-file');
+    if (reportFile) await writeJsonFile(reportFile, result);
+    process.exitCode = 2;
+    return;
+  }
+
+  let validation:
+    | Awaited<ReturnType<typeof validateAllocationOrIntent>>
+    | undefined;
+  if (verifyRequested) {
+    validation = await validateAllocationOrIntent({
+      taskType: 'validate_allocation_or_intent',
+      fundId,
+      roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
+      epochId,
+      subjectType: 'CLAIM',
+      subjectHash: mine.observation.claimHash,
+      subjectPayload: observationToClaimPayload(mine.observation),
+      validationPolicy: {
+        reproducible: true,
+        maxDataAgeSeconds: toNumberOption(parsed, 'max-data-age-seconds', 300)
+      }
+    });
+    if (validation.verdict !== 'PASS') {
+      const result = {
+        step: stepName,
+        mode,
+        fundId,
+        epochId,
+        claimHash: mine.observation.claimHash,
+        observation: mine.observation,
+        mine,
+        verify: validation
+      };
+      console.log(jsonStringify(result));
+      const outFile = parsed.options.get('out-file');
+      if (outFile) await writeJsonFile(outFile, result);
+      const reportFile = parsed.options.get('report-file');
+      if (reportFile) await writeJsonFile(reportFile, result);
+      process.exitCode = 2;
+      return;
+    }
+  }
+
+  const submit = await submitAllocation({
+    fundId,
+    epochId,
+    observation: mine.observation,
+    clientOptions: buildParticipantClientOptions(),
+    submit: submitRequested
+  });
+
+  const result = {
+    step: stepName,
+    mode,
+    fundId,
+    epochId,
+    claimHash: submit.claimHash ?? mine.observation.claimHash,
+    observation: mine.observation,
+    mine,
+    verify: validation,
+    submit
+  };
+
+  console.log(jsonStringify(result));
+  const outFile = parsed.options.get('out-file');
+  if (outFile) await writeJsonFile(outFile, result);
+  const reportFile = parsed.options.get('report-file');
+  if (reportFile) await writeJsonFile(reportFile, result);
+  if (submit.status !== 'OK') {
+    process.exitCode = 2;
+  }
+};
+
 const runParticipantProposeAllocation = async (parsed: ParsedCli): Promise<void> => {
   const fundId = requiredOption(parsed, 'fund-id');
   const epochId = Number(requiredOption(parsed, 'epoch-id'));
@@ -327,6 +520,22 @@ const runParticipantProposeAllocation = async (parsed: ParsedCli): Promise<void>
   if (output.status !== 'OK') {
     process.exitCode = 2;
   }
+};
+
+const runParticipantJoin = async (parsed: ParsedCli): Promise<void> => {
+  const roomId = roomIdFromParsedOrEnv(parsed);
+  if (!roomId) {
+    throw new Error('participant-join requires --room-id (or ROOM_ID/TELEGRAM_ROOM_ID env)');
+  }
+  const clientOptions = buildParticipantClientOptions();
+  if (!clientOptions) {
+    throw new Error(
+      'participant-join requires bot credentials: set PARTICIPANT_BOT_ID/PARTICIPANT_PRIVATE_KEY (or BOT_ID/PARTICIPANT_PRIVATE_KEY)'
+    );
+  }
+  const relayer = createRelayerClient(clientOptions);
+  const out = await relayer.joinFundByRoomId(roomId);
+  console.log(jsonStringify(out));
 };
 
 const runParticipantSubmitAllocation = async (parsed: ParsedCli): Promise<void> => {
@@ -870,6 +1079,20 @@ const printUsage = (): void => {
   console.log(`
 [agents] participant commands
 
+participant-allocation
+  # mine allocation (optional verify) and optionally submit
+  --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
+  [--participant <0x...>] [--horizon-sec <n>] [--nonce <n>] [--room-id <id>]
+  [--verify] [--max-data-age-seconds <n>] [--submit]
+  [--out-file <path>] [--report-file <path>]
+
+  # submit from file
+  --claim-file <path> [--room-id <id>] [--max-data-age-seconds <n>] [--verify] [--submit]
+  [--out-file <path>] [--report-file <path>]
+
+participant-join
+  --room-id <id>
+
 participant-propose-allocation
   --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
   [--participant <0x...>] [--horizon-sec <n>] [--nonce <n>] [--room-id <id>] [--out-file <path>]
@@ -920,6 +1143,21 @@ export const runParticipantCli = async (argv: string[]): Promise<boolean> => {
   }
   if (command === 'participant-submit-allocation') {
     await runParticipantSubmitAllocation(parsed);
+    return true;
+  }
+  if (command === 'participant-allocation') {
+    await runParticipantAllocation(parsed);
+    return true;
+  }
+  if (command === 'participant-allocation-e2e') {
+    await runParticipantAllocation(parsed, {
+      forceVerify: true,
+      stepName: 'participant-allocation-e2e'
+    });
+    return true;
+  }
+  if (command === 'participant-join') {
+    await runParticipantJoin(parsed);
     return true;
   }
   if (command === 'participant-deposit') {

@@ -12,6 +12,8 @@
     "start": "node dist/index.js",
     "participant:propose-allocation": "tsx src/index.ts participant-propose-allocation",
     "participant:submit-allocation": "tsx src/index.ts participant-submit-allocation",
+    "participant:join": "tsx src/index.ts participant-join",
+    "participant:allocation": "tsx src/index.ts participant-allocation",
     "participant:deposit": "tsx src/index.ts participant-deposit",
     "participant:withdraw": "tsx src/index.ts participant-withdraw",
     "participant:redeem": "tsx src/index.ts participant-redeem",

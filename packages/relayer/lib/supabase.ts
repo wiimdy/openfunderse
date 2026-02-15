@@ -248,6 +248,10 @@ export async function upsertFund(input: {
   visibility?: "PUBLIC" | "HIDDEN";
   verificationNote?: string | null;
   allowlistTokens?: string[];
+  autoEpochEnabled?: boolean;
+  epochDurationMs?: number;
+  epochMinClaims?: number;
+  epochMaxClaims?: number;
   createdBy: string;
 }) {
   const db = supabase();
@@ -279,6 +283,18 @@ export async function upsertFund(input: {
       input.allowlistTokens.map((t) => t.trim().toLowerCase())
     );
   }
+  if (input.autoEpochEnabled !== undefined) {
+    payload.auto_epoch_enabled = input.autoEpochEnabled;
+  }
+  if (input.epochDurationMs !== undefined) {
+    payload.epoch_duration_ms = input.epochDurationMs;
+  }
+  if (input.epochMinClaims !== undefined) {
+    payload.epoch_min_claims = input.epochMinClaims;
+  }
+  if (input.epochMaxClaims !== undefined) {
+    payload.epoch_max_claims = input.epochMaxClaims;
+  }
 
   const { error } = await db.from("funds").upsert(
     payload,
@@ -297,6 +313,19 @@ export async function getFund(fundId: string) {
       "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,is_verified,visibility,verification_note,created_by,created_at,updated_at,allowlist_tokens_json"
     )
     .eq("fund_id", fundId)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as FundRow | null) ?? undefined;
+}
+
+export async function getFundByTelegramRoomId(roomId: string) {
+  const db = supabase();
+  const { data, error } = await db
+    .from("funds")
+    .select(
+      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,is_verified,visibility,verification_note,created_by,created_at,updated_at,allowlist_tokens_json"
+    )
+    .eq("telegram_room_id", roomId)
     .maybeSingle();
   throwIfError(error, null);
   return (data as FundRow | null) ?? undefined;
