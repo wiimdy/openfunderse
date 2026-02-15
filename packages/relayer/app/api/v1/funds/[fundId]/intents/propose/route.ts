@@ -8,11 +8,23 @@ import {
   type TradeIntent
 } from "@claw/protocol-sdk";
 import {
+  createPublicClient,
+  defineChain,
+  http,
+  parseAbi,
+  type Address
+} from "viem";
+import {
   getFund,
+  getFundDeployment,
   getLatestEpochState,
   insertIntent,
   upsertSubjectState
 } from "@/lib/supabase";
+
+const SNAPSHOT_BOOK_ABI = parseAbi([
+  "function isSnapshotFinalized(bytes32 snapshotHash) view returns (bool)"
+]);
 
 function jsonWithBigInt(value: unknown): string {
   return JSON.stringify(value, (_, inner) =>
@@ -25,7 +37,7 @@ export async function POST(
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
-  const botAuth = requireBotAuth(request, ["intents.propose"]);
+  const botAuth = await requireBotAuth(request, ["intents.propose"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }
@@ -142,6 +154,47 @@ export async function POST(
       },
       { status: 400 }
     );
+  }
+
+  const deployment = await getFundDeployment(fundId);
+  if (deployment) {
+    const snapshotBookAddress = deployment.snapshot_book_address as Address;
+    const chainIdNum = Number(process.env.CHAIN_ID ?? "");
+    const rpcUrl = process.env.RPC_URL ?? "";
+    if (
+      Number.isFinite(chainIdNum) &&
+      chainIdNum > 0 &&
+      rpcUrl &&
+      /^0x[a-fA-F0-9]{40}$/.test(snapshotBookAddress)
+    ) {
+      const chain = defineChain({
+        id: Math.trunc(chainIdNum),
+        name: `claw-${Math.trunc(chainIdNum)}`,
+        nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
+        rpcUrls: {
+          default: { http: [rpcUrl] },
+          public: { http: [rpcUrl] }
+        }
+      });
+      const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+      const finalized = (await publicClient.readContract({
+        address: snapshotBookAddress,
+        abi: SNAPSHOT_BOOK_ABI,
+        functionName: "isSnapshotFinalized",
+        args: [intent.snapshotHash]
+      })) as boolean;
+      if (!finalized) {
+        return NextResponse.json(
+          {
+            error: "BAD_REQUEST",
+            message:
+              "snapshotHash is not finalized on-chain in SnapshotBook; aggregate the epoch first",
+            snapshotHash: intent.snapshotHash
+          },
+          { status: 400 }
+        );
+      }
+    }
   }
 
   let allowlistHash: `0x${string}`;

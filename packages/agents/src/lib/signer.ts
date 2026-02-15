@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import {
   intentAttestationTypedData,
   type Address,
@@ -8,6 +9,50 @@ import { privateKeyToAccount } from 'viem/accounts';
 
 const INTENT_DOMAIN_NAME = 'ClawIntentBook';
 const DOMAIN_VERSION = '1';
+
+export async function signAuthMessage(
+  privateKey: Hex,
+  botId: string
+): Promise<{ signature: Hex; timestamp: string; nonce: string }> {
+  const account = privateKeyToAccount(privateKey);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = crypto.randomUUID();
+  const message = `openfunderse:auth:${botId}:${timestamp}:${nonce}`;
+  const signature = await account.signMessage({ message });
+  return { signature, timestamp, nonce };
+}
+
+export interface BootstrapAuthInput {
+  fundId: string;
+  txHash: Hex;
+  strategyBotId: string;
+  strategyBotAddress: Address;
+}
+
+export interface BootstrapAuth {
+  signature: Hex;
+  nonce: string;
+  expiresAt: string;
+}
+
+export async function signBootstrapMessage(
+  privateKey: Hex,
+  input: BootstrapAuthInput
+): Promise<BootstrapAuth> {
+  const account = privateKeyToAccount(privateKey);
+  const nonce = crypto.randomUUID();
+  const expiresAt = Math.floor(Date.now() / 1000) + 300; // 5 minutes
+  const message =
+    `OpenFunderse fund bootstrap\\n` +
+    `fundId=${input.fundId}\\n` +
+    `txHash=${input.txHash}\\n` +
+    `strategyBotId=${input.strategyBotId}\\n` +
+    `strategyBotAddress=${input.strategyBotAddress}\\n` +
+    `expiresAt=${expiresAt}\\n` +
+    `nonce=${nonce}`;
+  const signature = await account.signMessage({ message });
+  return { signature, nonce, expiresAt: String(expiresAt) };
+}
 
 export interface BotSignerOptions {
   privateKey?: Hex;

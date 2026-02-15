@@ -8,6 +8,8 @@ import {
   type TradeIntent
 } from '@claw/protocol-sdk';
 import { EventSource } from 'eventsource';
+import { signAuthMessage, signBootstrapMessage } from './signer.js';
+import { validateStrategyRelayerUrl } from './strategy-safety.js';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 
@@ -36,7 +38,7 @@ export interface RelayerProposeIntentInput {
 export interface RelayerClientOptions {
   baseUrl?: string;
   botId?: string;
-  botApiKey?: string;
+  privateKey?: Hex;
   botAddress?: Address;
   requestTimeoutMs?: number;
   maxRetries?: number;
@@ -198,7 +200,7 @@ const normalizeErrorMessage = (payload: unknown, fallback: string): string => {
 export class RelayerClient {
   private readonly baseUrl: string;
   private readonly botId: string;
-  private readonly botApiKey: string;
+  private readonly privateKey: Hex;
   private readonly botAddress: Address;
   private readonly requestTimeoutMs: number;
   private readonly maxRetries: number;
@@ -209,7 +211,10 @@ export class RelayerClient {
   constructor(options: RelayerClientOptions = {}) {
     this.baseUrl = options.baseUrl ?? process.env.RELAYER_URL ?? '';
     this.botId = options.botId ?? process.env.BOT_ID ?? '';
-    this.botApiKey = options.botApiKey ?? process.env.BOT_API_KEY ?? '';
+    this.privateKey = (options.privateKey ??
+      process.env.STRATEGY_PRIVATE_KEY ??
+      process.env.PARTICIPANT_PRIVATE_KEY ??
+      '') as Hex;
     this.botAddress = options.botAddress ?? ZERO_ADDRESS;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 10_000;
     this.maxRetries = options.maxRetries ?? 2;
@@ -220,11 +225,12 @@ export class RelayerClient {
     if (!this.baseUrl) {
       throw new Error('RELAYER_URL is required');
     }
+    validateStrategyRelayerUrl(this.baseUrl);
     if (!this.botId) {
       throw new Error('BOT_ID is required');
     }
-    if (!this.botApiKey) {
-      throw new Error('BOT_API_KEY is required');
+    if (!this.privateKey) {
+      throw new Error('Private key is required (STRATEGY_PRIVATE_KEY or PARTICIPANT_PRIVATE_KEY)');
     }
   }
 
@@ -413,6 +419,12 @@ export class RelayerClient {
   async syncFundDeployment(
     input: SyncFundDeploymentInput
   ): Promise<Record<string, unknown>> {
+    const bootstrapAuth = await signBootstrapMessage(this.privateKey, {
+      fundId: input.fundId,
+      txHash: input.txHash,
+      strategyBotId: input.strategyBotId,
+      strategyBotAddress: input.strategyBotAddress
+    });
     return this.request<Record<string, unknown>>({
       method: 'POST',
       path: '/api/v1/funds/sync-by-strategy',
@@ -432,7 +444,8 @@ export class RelayerClient {
             : String(input.intentThresholdWeight),
         strategyPolicyUri: input.strategyPolicyUri,
         telegramRoomId: input.telegramRoomId,
-        telegramHandle: input.telegramHandle
+        telegramHandle: input.telegramHandle,
+        auth: bootstrapAuth
       },
       withAuth: true
     });
@@ -455,10 +468,10 @@ export class RelayerClient {
     handlers: SseHandlers<TType>
   ): SseSubscription {
     const url = new URL(path, this.baseUrl).toString();
-    const headers = this.buildHeaders(this.authOnRead);
 
     const source = new EventSource(url, {
-      fetch: (input, init) => {
+      fetch: async (input, init) => {
+        const headers = await this.buildHeaders(this.authOnRead);
         const mergedHeaders = new Headers(init?.headers);
         for (const [key, value] of Object.entries(headers)) {
           mergedHeaders.set(key, value);
@@ -509,7 +522,7 @@ export class RelayerClient {
 
     const endpoint = `${config.method} ${config.path}`;
     const requestId = randomUUID();
-    const headers = this.buildHeaders(config.withAuth ?? config.method !== 'GET');
+    const headers = await this.buildHeaders(config.withAuth ?? config.method !== 'GET');
     headers['x-request-id'] = requestId;
     if (config.body !== undefined && !headers['Content-Type']) {
       headers['Content-Type'] = 'application/json';
@@ -590,15 +603,18 @@ export class RelayerClient {
     });
   }
 
-  private buildHeaders(withAuth: boolean): Record<string, string> {
+  private async buildHeaders(withAuth: boolean): Promise<Record<string, string>> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...this.defaultHeaders
     };
 
     if (withAuth) {
+      const auth = await signAuthMessage(this.privateKey, this.botId);
       headers['x-bot-id'] = this.botId;
-      headers['x-bot-api-key'] = this.botApiKey;
+      headers['x-bot-signature'] = auth.signature;
+      headers['x-bot-timestamp'] = auth.timestamp;
+      headers['x-bot-nonce'] = auth.nonce;
     }
 
     return headers;

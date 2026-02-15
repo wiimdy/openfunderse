@@ -103,7 +103,7 @@ cat "$OUT_ENV"
 
 echo "[e2e] computing SDK-formatted intent payload..."
 cd "$ROOT"
-eval "$(npm run -w @claw/protocol-sdk intent:compute:nadfun --silent)"
+eval "$(npm run -w @wiimdy/openfunderse-sdk intent:compute:nadfun --silent)"
 
 echo "[e2e] proposing+attesting+executing intent onchain..."
 cd "$CONTRACTS_DIR"

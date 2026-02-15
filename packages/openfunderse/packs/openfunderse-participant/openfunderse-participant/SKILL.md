@@ -9,7 +9,6 @@ metadata:
         - RELAYER_URL
         - PARTICIPANT_PRIVATE_KEY
         - BOT_ID
-        - BOT_API_KEY
         - CHAIN_ID
         - PARTICIPANT_ADDRESS
       bins:
@@ -88,7 +87,28 @@ OpenClaw note:
 Note:
 - The scaffold includes a temporary public key placeholder by default.
 - Always run `bot-init` before funding or running production actions.
-- `bot-init` generates a random `BOT_API_KEY` when current value is missing or placeholder.
+- `bot-init` generates a new wallet (private key + address) and writes it into the role env file.
+
+## Relayer Bot Authentication (Signature)
+
+This skill authenticates relayer write APIs with an EIP-191 message signature (no `BOT_API_KEY`).
+
+Message format:
+- `openfunderse:auth:<botId>:<timestamp>:<nonce>`
+
+Required headers:
+- `x-bot-id: BOT_ID`
+- `x-bot-signature: <0x...>`
+- `x-bot-timestamp: <unix seconds>`
+- `x-bot-nonce: <uuid/random>`
+
+Relayer verifies this signature against Supabase `fund_bots.bot_address`.
+
+Participant bot registration is done by the strategy bot:
+- Strategy calls `POST /api/v1/funds/{fundId}/bots/register`
+- Relayer stores `botId` + `botAddress` in `fund_bots`
+
+If the participant bot is not registered for the fund, relayer will reject participant write APIs with `401/403`.
 
 `propose_allocation` outputs canonical allocation claim:
 - `claimVersion: "v1"`
@@ -157,19 +177,17 @@ If gate is closed, return `decision=READY` (no submit).
 }
 ```
 
-## Verification rules
-
 ## Rules
 
-1. **Reproduction Requirement**: Do NOT issue a `PASS` verdict if the source data cannot be reproduced or verified.
-2. **Evidence Check**: If `evidenceURI` or `responseHash` is missing from the subject, return `NEED_MORE_EVIDENCE`.
-3. **Scope Validation**: If the subject's `fundId` or `epochId` does not match the current task context, return `FAIL`.
-4. **Key Hygiene**: Use only dedicated participant/verifier keys. Never use custody/admin keys for attest operations.
-5. **Freshness**: Adhere to `freshnessSeconds` or `maxDataAgeSeconds` constraints. If data is stale, the verdict should reflect this.
-6. **Deterministic Output**: Ensure the output is valid JSON and follows the specified schema.
-7. **Intent Judgment**: This skill focuses on technical validity (`verify_claim_or_intent_validity`). Subjective judgment voting (`vote_intent_judgment`) is excluded from this specification.
-8. **Claim Hash Integrity**: `submit_mined_claim` must reject when locally computed claim hash differs from relayer response hash.
-9. **Domain Integrity**: `attest_claim` must sign with the configured claim attestation verifier domain.
-10. **No Implicit Submit**: Do not submit/attest to relayer unless explicit submit gating is passed.
-11. **Trusted Relayer**: In production, set `PARTICIPANT_TRUSTED_RELAYER_HOSTS` and avoid arbitrary relayer URLs.
-12. **Env Source Priority**: Resolve runtime env from `/home/ubuntu/.openclaw/openclaw.json` (`env.vars`) before local `.env*` files.
+1. **Supported Tasks Only**: Use only `propose_allocation`, `validate_allocation_or_intent`, `submit_allocation`.
+2. **Schema Rule**: Claim schema is `AllocationClaimV1` only (`claimVersion`, `fundId`, `epochId`, `participant`, `targetWeights`, `horizonSec`, `nonce`, `submittedAt`).
+3. **Weights Rule**: `targetWeights` must be integer, non-negative, non-empty, and sum > 0.
+4. **Index Mapping Rule**: `targetWeights[i]` MUST map to strategy `riskPolicy.allowlistTokens[i]` in the same order.
+5. **Scope Validation**: If subject `fundId`/`epochId` differs from task scope, return `FAIL`.
+6. **Hash Validation**: For CLAIM, recompute canonical hash via SDK and compare with `subjectHash`; mismatch returns `FAIL`.
+7. **Submit Endpoint**: `submit_allocation` sends claim to relayer `POST /api/v1/funds/{fundId}/claims`.
+8. **No Implicit Submit**: Submit only when explicit submit gate is satisfied.
+9. **Trusted Relayer**: In production, set `PARTICIPANT_TRUSTED_RELAYER_HOSTS` and avoid arbitrary relayer URLs.
+10. **Key Hygiene**: Use dedicated participant keys only; never use custody/admin keys.
+11. **Env Source Priority**: Resolve runtime env from `/home/ubuntu/.openclaw/openclaw.json` (`env.vars`) before local `.env*` files.
+12. **Legacy Tasks Disabled**: Do not use `mine_claim`, `verify_claim_or_intent_validity`, `submit_mined_claim`, `attest_claim`.

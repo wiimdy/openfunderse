@@ -9,7 +9,7 @@ export async function POST(
 ) {
   const { fundId } = await context.params;
 
-  const botAuth = requireBotAuth(request, ["intents.attest"]);
+  const botAuth = await requireBotAuth(request, ["intents.attest"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }

@@ -16,7 +16,7 @@ export async function GET(
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
-  const botAuth = requireBotAuth(request, ["intents.propose"]);
+  const botAuth = await requireBotAuth(request, ["intents.propose"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }

@@ -1,5 +1,6 @@
 import { runParticipantCli } from './participant-cli.js';
 import { runStrategyCli } from './strategy-cli.js';
+import { resolveStrategySubmitGate } from './lib/strategy-safety.js';
 
 interface ParsedCli {
   command?: string;
@@ -61,14 +62,6 @@ const mapCommand = (role: string, action: string): string => {
   }
 
   if (role === 'participant') {
-    // Backward-compatible aliases for one release window.
-    if (action === 'mine_claim') return 'participant-propose-allocation';
-    if (action === 'verify_claim') return 'participant-validate-allocation';
-    if (action === 'verify_claim_or_intent_validity') return 'participant-validate-allocation';
-    if (action === 'submit_claim') return 'participant-submit-allocation';
-    if (action === 'submit_mined_claim') return 'participant-submit-allocation';
-    if (action === 'participant_e2e') return 'participant-allocation-e2e';
-
     if (action === 'propose_allocation') return 'participant-propose-allocation';
     if (action === 'validate_allocation') return 'participant-validate-allocation';
     if (action === 'validate_allocation_or_intent') return 'participant-validate-allocation';
@@ -115,6 +108,10 @@ export const runClawbotCli = async (argv: string[]): Promise<boolean> => {
   const mapped = mapCommand(role, action);
   const forwarded = stripOption(stripOption(argv.slice(1), 'role'), 'action');
   const delegatedArgv = [mapped, ...forwarded];
+
+  if (mapped === 'strategy-propose') {
+    resolveStrategySubmitGate(parsed.flags.has('submit'));
+  }
 
   if (mapped.startsWith('strategy-')) {
     await runStrategyCli(delegatedArgv);

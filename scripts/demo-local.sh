@@ -76,25 +76,43 @@ fi
 echo ""
 echo "[5/6] Integration — in-process skill execution"
 INTEGRATION_CHECK=$(node --input-type=module -e "
-import { verifyClaim, proposeIntent } from './packages/agents/dist/index.js';
+import { mineClaim, verifyClaim, proposeIntent } from './packages/agents/dist/index.js';
 
 let passed = 0;
 let failed = 0;
 
+const mined = await mineClaim({
+  taskType: 'propose_allocation',
+  fundId: 'fund-001',
+  roomId: 'room-001',
+  epochId: 1,
+  allocation: {
+    participant: '0x00000000000000000000000000000000000000b2',
+    targetWeights: ['7000', '3000'],
+    horizonSec: 3600,
+    nonce: 1
+  }
+});
+
+if (mined.status === 'OK' && mined.observation) {
+  passed++;
+  console.log('MINE_ALLOCATION_PASS');
+} else {
+  failed++;
+  console.log('MINE_ALLOCATION_FAIL');
+}
+
 const claimResult = await verifyClaim({
-  taskType: 'verify_claim_or_intent_validity',
+  taskType: 'validate_allocation_or_intent',
   fundId: 'fund-001',
   roomId: 'room-001',
   epochId: 1,
   subjectType: 'CLAIM',
-  subjectHash: '0xabc',
-  subjectPayload: {
-    sourceRef: 'https://example.com',
-    extracted: '42',
-    responseHash: '0xdef',
-    evidenceURI: 'ipfs://test',
-    timestamp: Math.floor(Date.now() / 1000),
-  },
+  subjectHash: mined.status === 'OK' && mined.observation ? mined.observation.claimHash : '0x0',
+  subjectPayload:
+    mined.status === 'OK' && mined.observation
+      ? mined.observation.canonicalClaim
+      : {},
   validationPolicy: { reproducible: true, maxDataAgeSeconds: 3600 },
 });
 
@@ -107,7 +125,7 @@ if (claimResult.verdict === 'PASS') {
 }
 
 const intentMissingSnapshot = await verifyClaim({
-  taskType: 'verify_claim_or_intent_validity',
+  taskType: 'validate_allocation_or_intent',
   fundId: 'fund-001',
   roomId: 'room-001',
   epochId: 1,

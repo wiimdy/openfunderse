@@ -9,7 +9,7 @@ import {
 } from '../../lib/relayer-client.js';
 import { isAddress } from 'viem';
 
-export interface MineClaimInput {
+export interface ProposeAllocationInput {
   taskType: 'propose_allocation';
   fundId: string;
   roomId: string;
@@ -33,7 +33,7 @@ export interface SerializedAllocationClaimV1 {
   submittedAt: string;
 }
 
-export interface MineClaimObservation {
+export interface ProposeAllocationObservation {
   claimHash: string;
   participant: Address;
   targetWeights: string[];
@@ -43,19 +43,19 @@ export interface MineClaimObservation {
   canonicalClaim: SerializedAllocationClaimV1;
 }
 
-export interface MineClaimOutput {
+export interface ProposeAllocationOutput {
   status: 'OK' | 'ERROR';
   taskType: 'propose_allocation';
   fundId: string;
   epochId: number;
-  observation?: MineClaimObservation;
+  observation?: ProposeAllocationObservation;
   confidence: number;
   assumptions: string[];
   reasonCode?: string;
   error?: string;
 }
 
-export interface VerifyClaimInput {
+export interface ValidateAllocationOrIntentInput {
   taskType: 'validate_allocation_or_intent';
   fundId: string;
   roomId: string;
@@ -69,7 +69,7 @@ export interface VerifyClaimInput {
   };
 }
 
-export interface VerifyClaimOutput {
+export interface ValidateAllocationOrIntentOutput {
   status: 'OK' | 'ERROR';
   taskType: 'validate_allocation_or_intent';
   fundId: string;
@@ -91,15 +91,15 @@ export interface VerifyClaimOutput {
   error?: string;
 }
 
-export interface SubmitMinedClaimInput {
+export interface SubmitAllocationInput {
   fundId: string;
   epochId: number;
-  observation: MineClaimObservation;
+  observation: ProposeAllocationObservation;
   clientOptions?: RelayerClientOptions;
   submit?: boolean;
 }
 
-export interface SubmitMinedClaimOutput {
+export interface SubmitAllocationOutput {
   status: 'OK' | 'ERROR';
   fundId: string;
   epochId: number;
@@ -280,7 +280,9 @@ const fromSerializedClaim = (
   submittedAt: BigInt(claim.submittedAt)
 });
 
-export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput> {
+export async function proposeAllocation(
+  input: ProposeAllocationInput
+): Promise<ProposeAllocationOutput> {
   const { fundId, epochId, allocation } = input;
 
   try {
@@ -340,7 +342,9 @@ export async function mineClaim(input: MineClaimInput): Promise<MineClaimOutput>
   }
 }
 
-export async function verifyClaim(input: VerifyClaimInput): Promise<VerifyClaimOutput> {
+export async function validateAllocationOrIntent(
+  input: ValidateAllocationOrIntentInput
+): Promise<ValidateAllocationOrIntentOutput> {
   const { fundId, roomId, epochId, subjectType, subjectHash, subjectPayload } = input;
 
   const base = {
@@ -457,9 +461,9 @@ export async function verifyClaim(input: VerifyClaimInput): Promise<VerifyClaimO
   };
 }
 
-export async function submitMinedClaim(
-  input: SubmitMinedClaimInput
-): Promise<SubmitMinedClaimOutput> {
+export async function submitAllocation(
+  input: SubmitAllocationInput
+): Promise<SubmitAllocationOutput> {
   try {
     const claim = fromSerializedClaim(input.observation.canonicalClaim);
     const canonical = buildCanonicalAllocationClaimRecord({ claim });

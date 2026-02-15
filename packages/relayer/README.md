@@ -80,8 +80,24 @@ npm run dev -w @claw/relayer
 - `user`:
   - 튜토리얼 페이지 접근 (`/join`)
 - `bot`:
-  - write API 호출 시 `x-bot-id`, `x-bot-api-key` 필수
-  - `BOT_SCOPES`로 API scope 검증 (`claims.submit`, `intents.propose`, `intents.attest`, `bots.register`, `funds.bootstrap`)
+  - write API 호출 시 아래 헤더 필수:
+    - `x-bot-id`
+    - `x-bot-signature`
+    - `x-bot-timestamp`
+    - `x-bot-nonce`
+  - 서명 메시지(EIP-191):
+    - `openfunderse:auth:<botId>:<timestamp>:<nonce>`
+  - relayer는 Supabase `fund_bots.bot_address`에 저장된 주소로 서명을 검증합니다.
+  - scope는 봇 role(`fund_bots.role`) 기반으로 파생됩니다:
+    - strategy: `intents.propose`, `bots.register`, `funds.bootstrap`
+    - participant: `claims.submit`, `intents.attest`
+
+### Bot registration (how auth becomes valid)
+- Strategy bot:
+  - `POST /api/v1/funds/sync-by-strategy`에서 fund/배포 메타를 sync하면서 strategy bot을 `fund_bots`에 등록합니다.
+  - 최초 호출(아직 봇이 등록되지 않은 상태)에서는 body의 `auth`(bootstrap signature)를 사용합니다.
+- Participant bot:
+  - Strategy bot이 `POST /api/v1/funds/{fundId}/bots/register`로 participant bot을 `fund_bots`에 등록합니다.
 
 ## UI routes (scaffold)
 - `/`: 일반 유저용 참여/초기 셋업 안내 메인 페이지

@@ -5,6 +5,7 @@ import {
   defineChain,
   http,
   parseAbi,
+  verifyMessage,
   type Address,
   type Hex
 } from "viem";
@@ -123,10 +124,7 @@ function extractFundDeployedEvent(
 }
 
 export async function POST(request: Request) {
-  const botAuth = requireBotAuth(request, ["funds.bootstrap"]);
-  if (!botAuth.ok) {
-    return botAuth.response;
-  }
+  const botAuth = await requireBotAuth(request, ["funds.bootstrap"]);
 
   let body: Record<string, unknown>;
   try {
@@ -168,6 +166,7 @@ export async function POST(request: Request) {
   let strategyBotId: string;
   let strategyBotAddress: Address;
   let txHash: Hex;
+  let bootstrapAuth: { signature: string; nonce: string; expiresAt: string } | null;
   let verifierThresholdWeight: bigint;
   let intentThresholdWeight: bigint;
   try {
@@ -176,6 +175,14 @@ export async function POST(request: Request) {
     strategyBotId = asString(body.strategyBotId);
     strategyBotAddress = parseAddressField(body.strategyBotAddress, "strategyBotAddress");
     txHash = parseTxHash(body.txHash, "txHash");
+    const authObj = body.auth && typeof body.auth === "object" ? (body.auth as Record<string, unknown>) : null;
+    bootstrapAuth = authObj
+      ? {
+          signature: asString(authObj.signature),
+          nonce: asString(authObj.nonce),
+          expiresAt: asString(authObj.expiresAt)
+        }
+      : null;
 
     if (!fundId) {
       throw new Error("fundId is required");
@@ -209,7 +216,39 @@ export async function POST(request: Request) {
     );
   }
 
-  if (strategyBotId !== botAuth.botId) {
+  // If botAuth failed, allow one-time bootstrap via signature from strategyBotAddress.
+  if (!botAuth.ok) {
+    if (!bootstrapAuth?.signature || !bootstrapAuth?.nonce || !bootstrapAuth?.expiresAt) {
+      return botAuth.response;
+    }
+    const expiresAt = Number(bootstrapAuth.expiresAt);
+    const now = Math.floor(Date.now() / 1000);
+    if (!Number.isFinite(expiresAt) || expiresAt <= now) {
+      return NextResponse.json(
+        { error: "UNAUTHORIZED", message: "bootstrap auth expired" },
+        { status: 401 }
+      );
+    }
+    const message =
+      `OpenFunderse fund bootstrap\\n` +
+      `fundId=${fundId}\\n` +
+      `txHash=${txHash}\\n` +
+      `strategyBotId=${strategyBotId}\\n` +
+      `strategyBotAddress=${strategyBotAddress}\\n` +
+      `expiresAt=${expiresAt}\\n` +
+      `nonce=${bootstrapAuth.nonce}`;
+    const ok = await verifyMessage({
+      address: strategyBotAddress,
+      message,
+      signature: bootstrapAuth.signature as Hex
+    });
+    if (!ok) {
+      return NextResponse.json(
+        { error: "UNAUTHORIZED", message: "invalid bootstrap signature" },
+        { status: 401 }
+      );
+    }
+  } else if (strategyBotId !== botAuth.botId) {
     return NextResponse.json(
       {
         error: "FORBIDDEN",
@@ -357,7 +396,7 @@ export async function POST(request: Request) {
     intentThresholdWeight,
     strategyPolicyUri: body.strategyPolicyUri ? String(body.strategyPolicyUri) : null,
     telegramRoomId: body.telegramRoomId ? String(body.telegramRoomId) : null,
-    createdBy: botAuth.botId
+    createdBy: botAuth.ok ? botAuth.botId : strategyBotId
   });
 
   await upsertFundBot({
@@ -368,7 +407,7 @@ export async function POST(request: Request) {
     status: "ACTIVE",
     policyUri: body.strategyPolicyUri ? String(body.strategyPolicyUri) : null,
     telegramHandle: body.telegramHandle ? String(body.telegramHandle) : null,
-    registeredBy: botAuth.botId
+    registeredBy: botAuth.ok ? botAuth.botId : strategyBotId
   });
 
   return NextResponse.json(

@@ -9,7 +9,7 @@ export async function POST(
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
-  const botAuth = requireBotAuth(request, ["bots.register"]);
+  const botAuth = await requireBotAuth(request, ["bots.register"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }
@@ -102,7 +102,7 @@ export async function GET(
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
-  const botAuth = requireBotAuth(request, ["bots.register"]);
+  const botAuth = await requireBotAuth(request, ["bots.register"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }

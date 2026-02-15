@@ -2,10 +2,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { RelayerClientOptions } from './lib/relayer-client.js';
 import {
-  mineClaim,
-  submitMinedClaim,
-  verifyClaim,
-  type MineClaimObservation
+  proposeAllocation,
+  submitAllocation,
+  validateAllocationOrIntent,
+  type ProposeAllocationObservation
 } from './skills/participant/index.js';
 
 interface ParsedCli {
@@ -96,42 +96,42 @@ const readJsonFile = async <T>(filePath: string): Promise<T> => {
 
 const buildClientOptionsForPrefix = (prefix: string): RelayerClientOptions | undefined => {
   const botId = process.env[`${prefix}_BOT_ID`];
-  const botApiKey = process.env[`${prefix}_BOT_API_KEY`];
+  const privateKey = process.env[`${prefix}_PRIVATE_KEY`];
   const botAddress =
     process.env[`${prefix}_ADDRESS`] ?? process.env[`${prefix}_BOT_ADDRESS`];
 
-  if (!botId && !botApiKey && !botAddress) {
+  if (!botId && !privateKey && !botAddress) {
     return undefined;
   }
-  if (!botId || !botApiKey) {
+  if (!botId || !privateKey) {
     throw new Error(
-      `${prefix}_BOT_ID and ${prefix}_BOT_API_KEY must be set together`
+      `${prefix}_BOT_ID and ${prefix}_PRIVATE_KEY must be set together`
     );
   }
 
   return {
     botId,
-    botApiKey,
+    privateKey: privateKey as `0x${string}`,
     botAddress: botAddress as `0x${string}` | undefined
   };
 };
 
 const buildDefaultBotClientOptions = (): RelayerClientOptions | undefined => {
   const botId = process.env.BOT_ID;
-  const botApiKey = process.env.BOT_API_KEY;
+  const privateKey = process.env.PARTICIPANT_PRIVATE_KEY;
   const botAddress =
     process.env.PARTICIPANT_ADDRESS ?? process.env.PARTICIPANT_BOT_ADDRESS;
 
-  if (!botId && !botApiKey && !botAddress) {
+  if (!botId && !privateKey && !botAddress) {
     return undefined;
   }
-  if (!botId || !botApiKey) {
-    throw new Error('BOT_ID and BOT_API_KEY must be set together');
+  if (!botId || !privateKey) {
+    throw new Error('BOT_ID and PARTICIPANT_PRIVATE_KEY must be set together');
   }
 
   return {
     botId,
-    botApiKey,
+    privateKey: privateKey as `0x${string}`,
     botAddress: botAddress as `0x${string}` | undefined
   };
 };
@@ -162,17 +162,17 @@ const parseTargetWeights = (raw: string): Array<string | number | bigint> => {
 };
 
 const observationToClaimPayload = (
-  observation: MineClaimObservation
+  observation: ProposeAllocationObservation
 ): Record<string, unknown> => {
   return observation.canonicalClaim as unknown as Record<string, unknown>;
 };
 
 const readObservationFromFile = async (
   claimFile: string
-): Promise<{ fundId: string; epochId: number; observation: MineClaimObservation }> => {
+): Promise<{ fundId: string; epochId: number; observation: ProposeAllocationObservation }> => {
   const parsed = await readJsonFile<Record<string, unknown>>(claimFile);
   if (parsed.observation) {
-    const observation = parsed.observation as MineClaimObservation;
+    const observation = parsed.observation as ProposeAllocationObservation;
     const fundId = String(parsed.fundId ?? '');
     const epochId = Number(parsed.epochId ?? 0);
     if (!fundId || !Number.isFinite(epochId)) {
@@ -181,7 +181,7 @@ const readObservationFromFile = async (
     return { fundId, epochId: Math.trunc(epochId), observation };
   }
   if (parsed.claimHash && parsed.canonicalClaim) {
-    const observation = parsed as unknown as MineClaimObservation;
+    const observation = parsed as unknown as ProposeAllocationObservation;
     const fundId = String(parsed.fundId ?? '');
     const epochId = Number(parsed.epochId ?? 0);
     if (!fundId || !Number.isFinite(epochId)) {
@@ -192,14 +192,14 @@ const readObservationFromFile = async (
   throw new Error('unsupported claim file format');
 };
 
-const runParticipantMine = async (parsed: ParsedCli): Promise<void> => {
+const runParticipantProposeAllocation = async (parsed: ParsedCli): Promise<void> => {
   const fundId = requiredOption(parsed, 'fund-id');
   const epochId = Number(requiredOption(parsed, 'epoch-id'));
   if (!Number.isFinite(epochId)) {
     throw new Error('--epoch-id must be a number');
   }
 
-  const output = await mineClaim({
+  const output = await proposeAllocation({
     taskType: 'propose_allocation',
     fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
@@ -224,10 +224,10 @@ const runParticipantMine = async (parsed: ParsedCli): Promise<void> => {
   }
 };
 
-const runParticipantVerify = async (parsed: ParsedCli): Promise<void> => {
+const runParticipantValidateAllocation = async (parsed: ParsedCli): Promise<void> => {
   const claimFile = requiredOption(parsed, 'claim-file');
   const bundle = await readObservationFromFile(claimFile);
-  const output = await verifyClaim({
+  const output = await validateAllocationOrIntent({
     taskType: 'validate_allocation_or_intent',
     fundId: bundle.fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
@@ -251,11 +251,11 @@ const runParticipantVerify = async (parsed: ParsedCli): Promise<void> => {
   }
 };
 
-const runParticipantSubmit = async (parsed: ParsedCli): Promise<void> => {
+const runParticipantSubmitAllocation = async (parsed: ParsedCli): Promise<void> => {
   const claimFile = requiredOption(parsed, 'claim-file');
   const bundle = await readObservationFromFile(claimFile);
   const submitRequested = parsed.flags.has('submit');
-  const output = await submitMinedClaim({
+  const output = await submitAllocation({
     fundId: bundle.fundId,
     epochId: bundle.epochId,
     observation: bundle.observation,
@@ -276,7 +276,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     throw new Error('--epoch-id must be a number');
   }
 
-  const mine = await mineClaim({
+  const mine = await proposeAllocation({
     taskType: 'propose_allocation',
     fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
@@ -296,7 +296,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     return;
   }
 
-  const verify = await verifyClaim({
+  const verify = await validateAllocationOrIntent({
     taskType: 'validate_allocation_or_intent',
     fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
@@ -315,7 +315,7 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
     return;
   }
 
-  const submit = await submitMinedClaim({
+  const submit = await submitAllocation({
     fundId,
     epochId: Math.trunc(epochId),
     observation: mine.observation,
@@ -389,15 +389,15 @@ export const runParticipantCli = async (argv: string[]): Promise<boolean> => {
   }
 
   if (command === 'participant-propose-allocation') {
-    await runParticipantMine(parsed);
+    await runParticipantProposeAllocation(parsed);
     return true;
   }
   if (command === 'participant-validate-allocation') {
-    await runParticipantVerify(parsed);
+    await runParticipantValidateAllocation(parsed);
     return true;
   }
   if (command === 'participant-submit-allocation') {
-    await runParticipantSubmit(parsed);
+    await runParticipantSubmitAllocation(parsed);
     return true;
   }
   if (command === 'participant-allocation-e2e') {

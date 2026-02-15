@@ -1,5 +1,6 @@
 import { keccak256 } from "viem";
 import { canonicalAllocationClaim, canonicalIntent } from "./canonical.js";
+import { CLAIM_WEIGHT_SCALE } from "./constants.js";
 import {
   allocationClaimHash,
   intentExecutionAllowlistHash,
@@ -37,6 +38,15 @@ function assertWeightsSumPositive(weights: bigint[]): void {
   }
 }
 
+function assertWeightsSumEqualsScale(weights: bigint[]): void {
+  const sum = weights.reduce((acc, w) => acc + w, 0n);
+  if (sum !== CLAIM_WEIGHT_SCALE) {
+    throw new Error(
+      `targetWeights sum must equal CLAIM_WEIGHT_SCALE (${CLAIM_WEIGHT_SCALE}), got ${sum}`
+    );
+  }
+}
+
 export function buildCanonicalAllocationClaimRecord(input: {
   claim: AllocationClaimV1;
 }): CanonicalAllocationClaimRecord {
@@ -57,6 +67,7 @@ export function buildCanonicalAllocationClaimRecord(input: {
     }
   });
   assertWeightsSumPositive(claim.targetWeights);
+  assertWeightsSumEqualsScale(claim.targetWeights);
 
   return {
     claim,

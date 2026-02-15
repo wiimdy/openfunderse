@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import {
   createPublicClient,
   createWalletClient,
@@ -69,6 +70,20 @@ function stringify(value) {
   );
 }
 
+async function signAuthHeaders(privateKey, botId) {
+  const account = privateKeyToAccount(privateKey);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = crypto.randomUUID();
+  const message = `openfunderse:auth:${botId}:${timestamp}:${nonce}`;
+  const signature = await account.signMessage({ message });
+  return {
+    "x-bot-id": botId,
+    "x-bot-signature": signature,
+    "x-bot-timestamp": timestamp,
+    "x-bot-nonce": nonce
+  };
+}
+
 function extractEvent(logs) {
   for (const log of logs) {
     try {
@@ -108,10 +123,10 @@ async function syncWithRelayer(txHash, fundResult, deployConfig) {
   const fundId = process.env.FUND_ID;
   const fundName = process.env.FUND_NAME;
   const strategyBotId = process.env.STRATEGY_BOT_ID;
-  const botApiKey = process.env.BOT_API_KEY;
+  const botPrivateKey = process.env.STRATEGY_PRIVATE_KEY || process.env.BOT_PRIVATE_KEY;
 
-  if (!fundId || !fundName || !strategyBotId || !botApiKey) {
-    console.log("[factory-create-fund] missing FUND_ID/FUND_NAME/STRATEGY_BOT_ID/BOT_API_KEY, skipping relayer sync");
+  if (!fundId || !fundName || !strategyBotId || !botPrivateKey) {
+    console.log("[factory-create-fund] missing FUND_ID/FUND_NAME/STRATEGY_BOT_ID/STRATEGY_PRIVATE_KEY, skipping relayer sync");
     return;
   }
 
@@ -121,6 +136,24 @@ async function syncWithRelayer(txHash, fundResult, deployConfig) {
       ? deployConfig.fundOwner
       : deployConfig.strategyAgent);
 
+  const signerAccount = privateKeyToAccount(botPrivateKey);
+  const bootstrapNonce = crypto.randomUUID();
+  const bootstrapExpiresAt = Math.floor(Date.now() / 1000) + 300;
+  const bootstrapMessage =
+    `OpenFunderse fund bootstrap\\n` +
+    `fundId=${fundId}\\n` +
+    `txHash=${txHash}\\n` +
+    `strategyBotId=${strategyBotId}\\n` +
+    `strategyBotAddress=${strategyBotAddress}\\n` +
+    `expiresAt=${bootstrapExpiresAt}\\n` +
+    `nonce=${bootstrapNonce}`;
+  const bootstrapSignature = await signerAccount.signMessage({ message: bootstrapMessage });
+
+  const authTimestamp = Math.floor(Date.now() / 1000).toString();
+  const authNonce = crypto.randomUUID();
+  const authMessage = `openfunderse:auth:${strategyBotId}:${authTimestamp}:${authNonce}`;
+  const authSignature = await signerAccount.signMessage({ message: authMessage });
+
   const syncBody = {
     txHash,
     fundId,
@@ -128,7 +161,12 @@ async function syncWithRelayer(txHash, fundResult, deployConfig) {
     strategyBotId,
     strategyBotAddress,
     verifierThresholdWeight: process.env.VERIFIER_THRESHOLD_WEIGHT ?? "1",
-    intentThresholdWeight: process.env.INTENT_THRESHOLD_WEIGHT ?? "5"
+    intentThresholdWeight: process.env.INTENT_THRESHOLD_WEIGHT ?? "5",
+    auth: {
+      signature: bootstrapSignature,
+      nonce: bootstrapNonce,
+      expiresAt: String(bootstrapExpiresAt)
+    }
   };
 
   console.log("[factory-create-fund] syncing with relayer");
@@ -140,7 +178,9 @@ async function syncWithRelayer(txHash, fundResult, deployConfig) {
     headers: {
       "Content-Type": "application/json",
       "x-bot-id": strategyBotId,
-      "x-bot-api-key": botApiKey
+      "x-bot-signature": authSignature,
+      "x-bot-timestamp": authTimestamp,
+      "x-bot-nonce": authNonce
     },
     body: JSON.stringify(syncBody)
   });

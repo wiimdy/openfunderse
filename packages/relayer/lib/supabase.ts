@@ -450,6 +450,48 @@ export async function listFundBots(fundId: string) {
   }>;
 }
 
+export async function getBotsByBotId(botId: string) {
+  const db = supabase();
+  const { data, error } = await db
+    .from("fund_bots")
+    .select(
+      "fund_id,bot_id,role,bot_address,status,policy_uri,telegram_handle,registered_by,created_at,updated_at"
+    )
+    .eq("bot_id", botId)
+    .order("created_at", { ascending: true });
+  throwIfError(error, null);
+  return (data ?? []) as Array<{
+    fund_id: string;
+    bot_id: string;
+    role: string;
+    bot_address: string;
+    status: string;
+    policy_uri: string | null;
+    telegram_handle: string | null;
+    registered_by: string;
+    created_at: number;
+    updated_at: number;
+  }>;
+}
+
+export async function insertBotAuthNonce(
+  botId: string,
+  nonce: string
+): Promise<{ ok: true } | { ok: false; reason: "DUPLICATE" }> {
+  const db = supabase();
+  const { error } = await db.from("bot_auth_nonces").insert({
+    bot_id: botId,
+    nonce
+  });
+
+  if (error) {
+    if (isDuplicateError(error)) return { ok: false, reason: "DUPLICATE" };
+    throwIfError(error, null);
+  }
+
+  return { ok: true };
+}
+
 export async function getFundBot(fundId: string, botId: string) {
   const db = supabase();
   const { data, error } = await db
@@ -533,6 +575,7 @@ export async function upsertSubjectState(input: {
   const { data: existing, error: existingError } = await db
     .from("subject_state")
     .select("id")
+    .eq("fund_id", input.fundId)
     .eq("subject_type", input.subjectType)
     .eq("subject_hash", key)
     .maybeSingle();
@@ -557,12 +600,14 @@ export async function upsertSubjectState(input: {
   const { error } = await db
     .from("subject_state")
     .update({ threshold_weight: input.thresholdWeight.toString(), updated_at: now })
+    .eq("fund_id", input.fundId)
     .eq("subject_type", input.subjectType)
     .eq("subject_hash", key);
   throwIfError(error, null);
 }
 
 export async function incrementSubjectAttestedWeight(
+  fundId: string,
   subjectType: SubjectType,
   subjectHash: string,
   delta: bigint
@@ -571,25 +616,20 @@ export async function incrementSubjectAttestedWeight(
   const db = supabase();
   const key = subjectHash.toLowerCase();
 
-  const { data: current, error: currentError } = await db
-    .from("subject_state")
-    .select("attested_weight")
-    .eq("subject_type", subjectType)
-    .eq("subject_hash", key)
-    .maybeSingle();
-  throwIfError(currentError, null);
-
-  const prev = current ? BigInt(current.attested_weight) : BigInt(0);
-  const next = prev + delta;
-
-  const { error } = await db
-    .from("subject_state")
-    .update({ attested_weight: next.toString(), updated_at: nowMs() })
-    .eq("subject_type", subjectType)
-    .eq("subject_hash", key);
+  const { data, error } = await db.rpc("increment_subject_attested_weight_atomic", {
+    p_fund_id: fundId,
+    p_subject_type: subjectType,
+    p_subject_hash: key,
+    p_delta: delta.toString()
+  });
   throwIfError(error, null);
 
-  return next;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || row.attested_weight === undefined || row.attested_weight === null) {
+    throw new Error("subject_state_not_found");
+  }
+
+  return BigInt(String(row.attested_weight));
 }
 
 export async function getSubjectState(subjectType: SubjectType, subjectHash: string) {

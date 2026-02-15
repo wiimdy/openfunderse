@@ -22,7 +22,7 @@ set +a
 Required minimum:
 - `RELAYER_URL`
 - `BOT_ID`
-- `BOT_API_KEY`
+- `STRATEGY_PRIVATE_KEY` (or `PARTICIPANT_PRIVATE_KEY`)
 - `FUND_ID`
 - `CHAIN_ID`
 - `RPC_URL`
