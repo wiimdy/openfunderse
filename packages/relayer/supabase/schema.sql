@@ -222,6 +222,82 @@ create table if not exists execution_jobs (
   unique (fund_id, intent_hash)
 );
 
+-- Atomic increment for subject_state.attested_weight (prevents RMW race condition)
+create or replace function increment_attested_weight(
+  p_subject_type text,
+  p_subject_hash text,
+  p_delta text
+) returns text as $$
+declare
+  result text;
+begin
+  update subject_state
+    set attested_weight = (cast(attested_weight as numeric) + cast(p_delta as numeric))::text,
+        updated_at = (extract(epoch from now()) * 1000)::bigint
+    where subject_type = p_subject_type
+      and subject_hash = p_subject_hash
+    returning attested_weight into result;
+  return coalesce(result, p_delta);
+end;
+$$ language plpgsql;
+
+-- Atomic 4-table state transition for subject approval.
+-- CLAIM path: subject_state + attestations + claims → return (no execution_jobs).
+-- INTENT path: subject_state + attestations + intents + execution_jobs upsert.
+-- Reads existing tx_hash from subject_state when p_tx_hash is null.
+create or replace function mark_subject_approved(
+  p_subject_type text,
+  p_subject_hash text,
+  p_fund_id text,
+  p_tx_hash text default null
+) returns void as $$
+declare
+  v_now bigint := (extract(epoch from now()) * 1000)::bigint;
+  v_effective_tx_hash text := p_tx_hash;
+begin
+  if v_effective_tx_hash is null then
+    select tx_hash into v_effective_tx_hash
+      from subject_state
+      where fund_id = p_fund_id
+        and subject_type = p_subject_type
+        and subject_hash = p_subject_hash;
+  end if;
+
+  update subject_state
+    set status = 'APPROVED',
+        tx_hash = v_effective_tx_hash,
+        updated_at = v_now
+    where fund_id = p_fund_id
+      and subject_type = p_subject_type
+      and subject_hash = p_subject_hash;
+
+  update attestations
+    set status = 'APPROVED',
+        tx_hash = v_effective_tx_hash,
+        updated_at = v_now
+    where fund_id = p_fund_id
+      and subject_type = p_subject_type
+      and subject_hash = p_subject_hash
+      and status in ('PENDING', 'READY_FOR_ONCHAIN');
+
+  if p_subject_type = 'CLAIM' then
+    update claims
+      set status = 'APPROVED', updated_at = v_now
+      where fund_id = p_fund_id and claim_hash = p_subject_hash;
+    return;
+  end if;
+
+  update intents
+    set status = 'APPROVED', updated_at = v_now
+    where fund_id = p_fund_id and intent_hash = p_subject_hash;
+
+  insert into execution_jobs (fund_id, intent_hash, status, attempt_count, next_run_at, created_at, updated_at)
+    values (p_fund_id, p_subject_hash, 'READY', 0, v_now, v_now, v_now)
+    on conflict (fund_id, intent_hash)
+    do update set status = 'READY', next_run_at = v_now, updated_at = v_now;
+end;
+$$ language plpgsql;
+
 create index if not exists idx_attestations_subject on attestations(subject_type, subject_hash, status);
 create index if not exists idx_fund_bots_fund on fund_bots(fund_id, status);
 create index if not exists idx_fund_deployments_chain on fund_deployments(chain_id, onchain_fund_id);

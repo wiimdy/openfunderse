@@ -688,7 +688,6 @@ export async function incrementSubjectAttestedWeight(
   if (delta < BigInt(0)) throw new Error("delta must be non-negative");
   const db = supabase();
   const key = subjectHash.toLowerCase();
-
   const { data, error } = await db.rpc("increment_subject_attested_weight_atomic", {
     p_fund_id: fundId,
     p_subject_type: subjectType,
@@ -761,76 +760,15 @@ export async function markSubjectApproved(input: {
   txHash?: string | null;
 }): Promise<void> {
   const db = supabase();
-  const now = nowMs();
   const key = input.subjectHash.toLowerCase();
-  let txHash = input.txHash ? input.txHash.toLowerCase() : null;
+  const txHash = input.txHash ? input.txHash.toLowerCase() : null;
 
-  if (txHash === null) {
-    const { data: existing, error: existingError } = await db
-      .from("subject_state")
-      .select("tx_hash")
-      .eq("fund_id", input.fundId)
-      .eq("subject_type", input.subjectType)
-      .eq("subject_hash", key)
-      .maybeSingle();
-    throwIfError(existingError, null);
-    txHash = existing?.tx_hash ? String(existing.tx_hash).toLowerCase() : null;
-  }
-
-  {
-    const { error } = await db
-      .from("subject_state")
-      .update({ status: "APPROVED", tx_hash: txHash, updated_at: now })
-      .eq("fund_id", input.fundId)
-      .eq("subject_type", input.subjectType)
-      .eq("subject_hash", key);
-    throwIfError(error, null);
-  }
-
-  {
-    const { error } = await db
-      .from("attestations")
-      .update({ status: "APPROVED", tx_hash: txHash, updated_at: now })
-      .eq("fund_id", input.fundId)
-      .eq("subject_type", input.subjectType)
-      .eq("subject_hash", key)
-      .in("status", ["PENDING", "READY_FOR_ONCHAIN"]);
-    throwIfError(error, null);
-  }
-
-  if (input.subjectType === "CLAIM") {
-    const { error } = await db
-      .from("claims")
-      .update({ status: "APPROVED", updated_at: now })
-      .eq("fund_id", input.fundId)
-      .eq("claim_hash", key);
-    throwIfError(error, null);
-    return;
-  }
-
-  {
-    const { error } = await db
-      .from("intents")
-      .update({ status: "APPROVED", updated_at: now })
-      .eq("fund_id", input.fundId)
-      .eq("intent_hash", key);
-    throwIfError(error, null);
-  }
-
-  const { error } = await db.from("execution_jobs").upsert(
-    {
-      fund_id: input.fundId,
-      intent_hash: key,
-      status: "READY",
-      attempt_count: 0,
-      next_run_at: now,
-      created_at: now,
-      updated_at: now
-    },
-    {
-      onConflict: "fund_id,intent_hash"
-    }
-  );
+  const { error } = await db.rpc("mark_subject_approved", {
+    p_subject_type: input.subjectType,
+    p_subject_hash: key,
+    p_fund_id: input.fundId,
+    p_tx_hash: txHash,
+  });
   throwIfError(error, null);
 }
 
