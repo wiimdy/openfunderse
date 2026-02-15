@@ -167,6 +167,9 @@ export default function Page() {
               Login
             </a>
           </div>
+          <div className="mt-2">
+            Bot write API requires <code>x-bot-id</code> plus signature headers (<code>x-bot-signature</code>, <code>x-bot-timestamp</code>, <code>x-bot-nonce</code>).
+          </div>
         </div>
       </div>
     </div>

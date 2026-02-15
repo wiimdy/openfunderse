@@ -62,10 +62,10 @@ Claim to intent flow (v0):
 
 ## Wave A runtime env (relayer client + signer)
 
-Relayer client:
+Relayer client (signature auth for relayer write APIs):
 - `RELAYER_URL`
 - `BOT_ID`
-- `BOT_API_KEY`
+- `STRATEGY_PRIVATE_KEY` (strategy role) or `PARTICIPANT_PRIVATE_KEY` (participant role)
 - `PARTICIPANT_ADDRESS` (required for claim submit; must match registered participant bot address)
 
 Signer:
@@ -80,8 +80,8 @@ Participant submit safety:
 - local dev only: `PARTICIPANT_ALLOW_HTTP_RELAYER=true`
 
 Participant optional scoped env:
-- `PARTICIPANT_BOT_ID`, `PARTICIPANT_BOT_API_KEY`, `PARTICIPANT_ADDRESS`
-- if omitted, participant flow uses `BOT_ID`, `BOT_API_KEY` with `PARTICIPANT_ADDRESS`
+- `PARTICIPANT_BOT_ID`, `PARTICIPANT_PRIVATE_KEY`, `PARTICIPANT_ADDRESS`
+- if omitted, participant flow uses `BOT_ID`, `PARTICIPANT_PRIVATE_KEY` with `PARTICIPANT_ADDRESS`
 
 Strategy signer env:
 - `STRATEGY_PRIVATE_KEY`

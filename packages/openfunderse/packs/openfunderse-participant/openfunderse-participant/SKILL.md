@@ -9,7 +9,6 @@ metadata:
         - RELAYER_URL
         - PARTICIPANT_PRIVATE_KEY
         - BOT_ID
-        - BOT_API_KEY
         - CHAIN_ID
         - PARTICIPANT_ADDRESS
       bins:
@@ -88,22 +87,28 @@ OpenClaw note:
 Note:
 - The scaffold includes a temporary public key placeholder by default.
 - Always run `bot-init` before funding or running production actions.
-- `bot-init` generates a random `BOT_API_KEY` when current value is missing or placeholder.
+- `bot-init` generates a new wallet (private key + address) and writes it into the role env file.
 
-## Relayer Bot Credential Model (Important)
+## Relayer Bot Authentication (Signature)
 
-This skill sends write requests to relayer with:
+This skill authenticates relayer write APIs with an EIP-191 message signature (no `BOT_API_KEY`).
+
+Message format:
+- `openfunderse:auth:<botId>:<timestamp>:<nonce>`
+
+Required headers:
 - `x-bot-id: BOT_ID`
-- `x-bot-api-key: BOT_API_KEY`
+- `x-bot-signature: <0x...>`
+- `x-bot-timestamp: <unix seconds>`
+- `x-bot-nonce: <uuid/random>`
 
-For production, relayer should validate these via **DB-backed credentials** (Supabase `bot_credentials`) instead of Vercel env `BOT_API_KEYS`.
+Relayer verifies this signature against Supabase `fund_bots.bot_address`.
 
-**Participant credential registration is NOT done by the participant bot.**
-It must be registered by the **strategy bot** when it registers the participant:
+Participant bot registration is done by the strategy bot:
 - Strategy calls `POST /api/v1/funds/{fundId}/bots/register`
-- Include `botId` + `botAddress` + `botApiKeySha256` (sha256 hex from participant `bot-init`) and optional `botScopes`
+- Relayer stores `botId` + `botAddress` in `fund_bots`
 
-If the participant key is not registered, relayer will reject participant write APIs with `401`.
+If the participant bot is not registered for the fund, relayer will reject participant write APIs with `401/403`.
 
 `propose_allocation` outputs canonical allocation claim:
 - `claimVersion: "v1"`

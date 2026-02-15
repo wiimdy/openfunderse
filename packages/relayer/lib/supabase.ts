@@ -450,6 +450,30 @@ export async function listFundBots(fundId: string) {
   }>;
 }
 
+export async function getBotsByBotId(botId: string) {
+  const db = supabase();
+  const { data, error } = await db
+    .from("fund_bots")
+    .select(
+      "fund_id,bot_id,role,bot_address,status,policy_uri,telegram_handle,registered_by,created_at,updated_at"
+    )
+    .eq("bot_id", botId)
+    .order("created_at", { ascending: true });
+  throwIfError(error, null);
+  return (data ?? []) as Array<{
+    fund_id: string;
+    bot_id: string;
+    role: string;
+    bot_address: string;
+    status: string;
+    policy_uri: string | null;
+    telegram_handle: string | null;
+    registered_by: string;
+    created_at: number;
+    updated_at: number;
+  }>;
+}
+
 export async function getFundBot(fundId: string, botId: string) {
   const db = supabase();
   const { data, error } = await db
@@ -475,50 +499,6 @@ export async function getFundBot(fundId: string, botId: string) {
         updated_at: number;
       }
     | null) ?? undefined;
-}
-
-export interface BotCredentialRow {
-  bot_id: string;
-  api_key: string;
-  scopes: string;
-  created_by: string;
-  created_at: number;
-  updated_at: number;
-}
-
-export async function upsertBotCredential(input: {
-  botId: string;
-  apiKey: string;
-  scopes: string;
-  createdBy: string;
-}) {
-  const db = supabase();
-  const now = nowMs();
-  const { error } = await db.from("bot_credentials").upsert(
-    {
-      bot_id: input.botId,
-      api_key: input.apiKey,
-      scopes: input.scopes,
-      created_by: input.createdBy,
-      created_at: now,
-      updated_at: now
-    },
-    {
-      onConflict: "bot_id"
-    }
-  );
-  throwIfError(error, null);
-}
-
-export async function getBotCredential(botId: string): Promise<BotCredentialRow | undefined> {
-  const db = supabase();
-  const { data, error } = await db
-    .from("bot_credentials")
-    .select("bot_id,api_key,scopes,created_by,created_at,updated_at")
-    .eq("bot_id", botId)
-    .maybeSingle();
-  throwIfError(error, null);
-  return (data as BotCredentialRow | null) ?? undefined;
 }
 
 export async function insertAttestation(input: {

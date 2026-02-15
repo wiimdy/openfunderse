@@ -46,13 +46,12 @@ Required env in relayer `.env`:
 - `INTENT_THRESHOLD_WEIGHT`
 - `VERIFIER_WEIGHT_SNAPSHOT`
 - `SUPABASE_URL`, `SUPABASE_ANON_KEY`
-- `BOT_API_KEYS`, `BOT_SCOPES` (optional legacy fallback)
 
 ## 2) Import into Postman
 1. Import collection: `Claw-Relayer-v0.postman_collection.json`
 2. Import environment: `Claw-Relayer-local.postman_environment.json`
 3. Select environment `Claw Relayer Local`
-4. Fill bot API keys and base URL if needed
+4. Fill bot signature header variables and base URL if needed
 5. Set `admin_auth_cookie` from browser login session
 
 ## 3) Generate valid signatures for intent attestation endpoint
@@ -97,6 +96,5 @@ And prints Postman environment values to copy:
 - If you only want quick negative-path testing, use the `bad signature` requests in the collection.
 
 ## Bot credentials note (recommended)
-- In production, prefer DB-backed bot credentials in Supabase `bot_credentials`.
-- Register the strategy bot credential during `POST /api/v1/funds/sync-by-strategy` by including `strategyBotApiKeySha256` (sha256 hex from bot-init).
-- Register participant bot credential during `POST /api/v1/funds/{fundId}/bots/register` by including `botApiKeySha256` (sha256 hex from that bot-init).
+- Bot write APIs are authenticated via EIP-191 signatures (no API keys).
+- Relayer verifies `x-bot-signature` against the bot address stored in Supabase `fund_bots.bot_address`.

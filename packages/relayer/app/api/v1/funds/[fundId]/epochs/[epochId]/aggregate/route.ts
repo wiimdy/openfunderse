@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireBotAuthAsync } from "@/lib/bot-auth";
+import { requireBotAuth } from "@/lib/bot-auth";
 import { requireFundBotRole } from "@/lib/fund-bot-authz";
 import { buildEpochStateRecord, type Hex } from "@claw/protocol-sdk";
 import {
@@ -12,6 +12,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+  getEpochStateByEpoch,
   getFundDeployment,
   listAllocationClaimsByEpoch,
   listStakeWeightsByFund,
@@ -37,7 +38,7 @@ export async function POST(
 ) {
   const { fundId, epochId } = await context.params;
 
-  const botAuth = await requireBotAuthAsync(_request, ["intents.propose"]);
+  const botAuth = await requireBotAuth(_request, ["intents.propose"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }
@@ -220,6 +221,22 @@ export async function POST(
     functionName: "isSnapshotFinalized",
     args: [epochState.epochStateHash]
   })) as boolean;
+
+  const existingEpochState = await getEpochStateByEpoch({ fundId, epochId: epoch });
+  if (alreadyPublished && existingEpochState) {
+    return NextResponse.json(
+      {
+        status: "ALREADY_AGGREGATED",
+        endpoint: "POST /api/v1/funds/{fundId}/epochs/{epochId}/aggregate",
+        fundId,
+        epochId: epoch.toString(),
+        epochStateHash: existingEpochState.epoch_state_hash,
+        snapshotBookAddress,
+        snapshotPublish: { alreadyPublished: true, txHash: null }
+      },
+      { status: 200 }
+    );
+  }
 
   let publishTxHash: Hex | null = null;
   if (!alreadyPublished) {
