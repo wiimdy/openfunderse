@@ -73,6 +73,29 @@ export interface EpochStateRow {
   updated_at: number;
 }
 
+export type EpochLifecycleStatus = "OPEN" | "CLOSED" | "AGGREGATED";
+
+export interface EpochLifecycleRow {
+  id: number;
+  fund_id: string;
+  epoch_id: string;
+  status: EpochLifecycleStatus;
+  opened_at: number;
+  closes_at: number;
+  closed_at: number | null;
+  claim_count: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface EventsOutboxRow {
+  id: number;
+  event_type: string;
+  fund_id: string;
+  payload: Record<string, unknown>;
+  created_at: number;
+}
+
 export interface StakeWeightRow {
   id: number;
   fund_id: string;
@@ -1662,4 +1685,204 @@ export async function listStakeWeightsByFund(
     participant,
     weight
   }));
+}
+
+export async function openEpoch(input: {
+  fundId: string;
+  epochId: string;
+  closesAt: number;
+}): Promise<EpochLifecycleRow> {
+  const db = supabase();
+  const now = nowMs();
+  const { data, error } = await db
+    .from("epoch_lifecycle")
+    .insert({
+      fund_id: input.fundId,
+      epoch_id: input.epochId,
+      status: "OPEN",
+      opened_at: now,
+      closes_at: input.closesAt,
+      closed_at: null,
+      claim_count: 0,
+      created_at: now,
+      updated_at: now
+    })
+    .select("*")
+    .single();
+  throwIfError(error, null);
+  return data as EpochLifecycleRow;
+}
+
+export async function getActiveEpoch(fundId: string): Promise<EpochLifecycleRow | undefined> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("epoch_lifecycle")
+    .select("*")
+    .eq("fund_id", fundId)
+    .eq("status", "OPEN")
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as EpochLifecycleRow | null) ?? undefined;
+}
+
+export async function closeEpoch(input: {
+  fundId: string;
+  epochId: string;
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const { data, error } = await db
+    .from("epoch_lifecycle")
+    .update({ status: "CLOSED", closed_at: now, updated_at: now })
+    .eq("fund_id", input.fundId)
+    .eq("epoch_id", input.epochId)
+    .eq("status", "OPEN")
+    .select("id");
+  throwIfError(error, null);
+  if (!data || data.length === 0) {
+    throw new Error(`closeEpoch: no OPEN epoch for fund=${input.fundId} epoch=${input.epochId}`);
+  }
+}
+
+export async function markEpochAggregated(input: {
+  fundId: string;
+  epochId: string;
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const { data, error } = await db
+    .from("epoch_lifecycle")
+    .update({ status: "AGGREGATED", updated_at: now })
+    .eq("fund_id", input.fundId)
+    .eq("epoch_id", input.epochId)
+    .eq("status", "CLOSED")
+    .select("id");
+  throwIfError(error, null);
+  if (!data || data.length === 0) {
+    throw new Error(
+      `markEpochAggregated: no CLOSED epoch for fund=${input.fundId} epoch=${input.epochId}`
+    );
+  }
+}
+
+export async function incrementEpochClaimCount(input: {
+  fundId: string;
+  epochId: string;
+}): Promise<number> {
+  const db = supabase();
+  const { data, error } = await db.rpc("increment_epoch_claim_count_atomic", {
+    p_fund_id: input.fundId,
+    p_epoch_id: input.epochId
+  });
+  throwIfError(error, null);
+  return Number((data as Array<{ claim_count: number }>)?.[0]?.claim_count ?? 0);
+}
+
+export async function extendEpoch(input: {
+  fundId: string;
+  epochId: string;
+  newClosesAt: number;
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const { error } = await db
+    .from("epoch_lifecycle")
+    .update({ closes_at: input.newClosesAt, updated_at: now })
+    .eq("fund_id", input.fundId)
+    .eq("epoch_id", input.epochId)
+    .eq("status", "OPEN");
+  throwIfError(error, null);
+}
+
+export async function listActionableFunds(input: {
+  nowMs: number;
+  limit?: number;
+}): Promise<
+  Array<{
+    fundId: string;
+    epochDurationMs: number;
+    epochMinClaims: number;
+    epochMaxClaims: number;
+    activeEpoch: EpochLifecycleRow | null;
+  }>
+> {
+  const db = supabase();
+  const limit = input.limit ?? 50;
+
+  const { data: funds, error: fundsError } = await db
+    .from("funds")
+    .select("fund_id,epoch_duration_ms,epoch_min_claims,epoch_max_claims")
+    .eq("auto_epoch_enabled", true)
+    .limit(limit);
+  throwIfError(fundsError, null);
+  if (!funds || funds.length === 0) return [];
+
+  const fundIds = (funds as Array<{ fund_id: string }>).map((f) => f.fund_id);
+  const { data: epochs, error: epochsError } = await db
+    .from("epoch_lifecycle")
+    .select("*")
+    .in("fund_id", fundIds)
+    .eq("status", "OPEN");
+  throwIfError(epochsError, null);
+
+  const epochMap = new Map<string, EpochLifecycleRow>();
+  for (const epoch of (epochs ?? []) as EpochLifecycleRow[]) {
+    epochMap.set(epoch.fund_id, epoch);
+  }
+
+  return (funds as Array<{
+    fund_id: string;
+    epoch_duration_ms: number;
+    epoch_min_claims: number;
+    epoch_max_claims: number;
+  }>).map((f) => ({
+    fundId: f.fund_id,
+    epochDurationMs: Number(f.epoch_duration_ms),
+    epochMinClaims: Number(f.epoch_min_claims),
+    epochMaxClaims: Number(f.epoch_max_claims),
+    activeEpoch: epochMap.get(f.fund_id) ?? null
+  }));
+}
+
+export async function insertOutboxEvent(input: {
+  eventType: string;
+  fundId: string;
+  payload: Record<string, unknown>;
+}): Promise<EventsOutboxRow> {
+  const db = supabase();
+  const now = nowMs();
+  const { data, error } = await db
+    .from("events_outbox")
+    .insert({
+      event_type: input.eventType,
+      fund_id: input.fundId,
+      payload: input.payload,
+      created_at: now
+    })
+    .select("*")
+    .single();
+  throwIfError(error, null);
+  return data as EventsOutboxRow;
+}
+
+export async function listOutboxEventsSince(input: {
+  fundId: string;
+  afterId: number;
+  eventTypes?: string[];
+  limit?: number;
+}): Promise<EventsOutboxRow[]> {
+  const db = supabase();
+  let query = db
+    .from("events_outbox")
+    .select("*")
+    .eq("fund_id", input.fundId)
+    .gt("id", input.afterId)
+    .order("id", { ascending: true })
+    .limit(input.limit ?? 100);
+  if (input.eventTypes && input.eventTypes.length > 0) {
+    query = query.in("event_type", input.eventTypes);
+  }
+  const { data, error } = await query;
+  throwIfError(error, null);
+  return (data ?? []) as EventsOutboxRow[];
 }

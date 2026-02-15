@@ -22,6 +22,9 @@
     "strategy:dry-run:intent": "tsx src/index.ts strategy-dry-run-intent",
     "clawbot:run": "tsx src/index.ts clawbot-run",
     "bot:smoke:e2e": "node scripts/clawbot-e2e-smoke.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
@@ -33,5 +36,9 @@
   "files": [
     "dist",
     "README.md"
-  ]
+  ],
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
+    "vitest": "^4.0.18"
+  }
 }

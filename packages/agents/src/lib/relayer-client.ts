@@ -11,6 +11,8 @@ import { EventSource } from 'eventsource';
 import { signAuthMessage, signBootstrapMessage } from './signer.js';
 import { validateStrategyRelayerUrl } from './strategy-safety.js';
 
+export type { Address, Hex } from '@claw/protocol-sdk';
+
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as Address;
 
 export interface ClaimQuery {
@@ -93,7 +95,9 @@ export interface SseSubscription {
   close: () => void;
 }
 
-type IntentEventType = 'intent:attested';
+export type EpochEventType = 'epoch:opened' | 'epoch:closed' | 'epoch:aggregated';
+export type IntentEventType = 'intent:proposed' | 'intent:attested' | 'intent:ready';
+export type RelayerEventType = EpochEventType | IntentEventType;
 
 interface RequestConfig {
   method: 'GET' | 'POST';
@@ -460,6 +464,28 @@ export class RelayerClient {
       ['intent:attested'],
       handlers
     );
+  }
+
+  subscribeEvents(
+    options: { fundId?: string; types?: RelayerEventType[] },
+    handlers: SseHandlers<RelayerEventType>
+  ): SseSubscription {
+    const query = new URLSearchParams();
+    if (options.fundId) query.set('fundId', options.fundId);
+    if (options.types?.length) query.set('types', options.types.join(','));
+    const qs = query.toString();
+    const path = `/api/v1/events/stream${qs ? `?${qs}` : ''}`;
+
+    const allTypes: RelayerEventType[] = options.types ?? [
+      'epoch:opened',
+      'epoch:closed',
+      'epoch:aggregated',
+      'intent:proposed',
+      'intent:attested',
+      'intent:ready'
+    ];
+
+    return this.subscribeToEvents<RelayerEventType>(path, allTypes, handlers);
   }
 
   private subscribeToEvents<TType extends string>(
