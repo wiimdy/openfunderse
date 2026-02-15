@@ -124,6 +124,21 @@ npm run participant:allocation-e2e -w @claw/agents -- \
   --submit
 ```
 
+Daemon mode (auto-generate weights from NadFun signals):
+
+```bash
+# strategies: A (momentum), B (progress), C (impact-aware)
+npm run participant:daemon -w @claw/agents -- \
+  --fund-id demo-fund \
+  --strategy A \
+  --interval-sec 60 \
+  --epoch-source relayer \
+  --submit
+```
+
+EC2/systemd deployment:
+- `packages/agents/EC2_PARTICIPANT_DAEMON.md`
+
 Slash aliases:
 - `/propose_allocation`
 - `/validate_allocation`

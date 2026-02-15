@@ -71,6 +71,7 @@ Telegram slash commands:
 /validate_allocation --claim-file <path>
 /submit_allocation --claim-file <path> --submit
 /allocation_e2e --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--submit]
+/participant_daemon --fund-id <id> --strategy <A|B|C> [--interval-sec <n>] [--epoch-source <relayer|fixed>] [--epoch-id <n>] [--submit]
 ```
 
 Notes:
@@ -121,6 +122,18 @@ No crawl/evidence/sourceRef schema is used.
 Vector mapping rule:
 - `targetWeights[i]` maps to strategy `riskPolicy.allowlistTokens[i]`.
 - Participants must submit weights in the same token order used by the strategy allowlist.
+
+## Daemon mode (auto-claim)
+
+For MVP, the participant runtime supports an always-on daemon that:
+1) reads NadFun testnet signals (quote/progress/buy logs),
+2) computes `targetWeights[]` using a fixed allowlist order,
+3) submits `AllocationClaimV1` to the relayer on a timer.
+
+Use `PARTICIPANT_STRATEGY` via the command flag:
+- `A`: momentum (buy pressure)
+- `B`: graduation proximity (progress)
+- `C`: impact-aware (quote-based)
 
 ## Submission safety gates
 

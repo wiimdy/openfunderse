@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenFunderse participant daemon (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/openfunderse
+EnvironmentFile=/home/ubuntu/openfunderse/env/participant-%i.env
+Restart=always
+RestartSec=3
+
+# Use built dist runtime for stability (no tsx in production).
+ExecStart=/usr/bin/node /home/ubuntu/openfunderse/packages/agents/dist/index.js participant-daemon --fund-id ${FUND_ID} --strategy ${PARTICIPANT_STRATEGY} --interval-sec ${INTERVAL_SEC} --epoch-source ${EPOCH_SOURCE} --room-id ${ROOM_ID} --horizon-sec ${HORIZON_SEC} --submit
+
+[Install]
+WantedBy=multi-user.target
