@@ -129,6 +129,10 @@ Slash aliases:
 - `/validate_allocation`
 - `/submit_allocation`
 - `/allocation_e2e`
+- `/deposit`
+- `/withdraw`
+- `/redeem`
+- `/vault_info`
 
 Default participant safety behavior:
 - `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` and no `--submit` => `decision: "READY"` (no relayer transmission)

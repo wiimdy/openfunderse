@@ -71,6 +71,10 @@ Telegram slash commands:
 /validate_allocation --claim-file <path>
 /submit_allocation --claim-file <path> --submit
 /allocation_e2e --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--submit]
+/deposit --amount <wei> [--vault-address <0x...>] [--native] [--submit]
+/withdraw --amount <wei> [--vault-address <0x...>] [--native] [--submit]
+/redeem --shares <wei> [--vault-address <0x...>] [--submit]
+/vault_info [--vault-address <0x...>] [--account <0x...>]
 ```
 
 Notes:

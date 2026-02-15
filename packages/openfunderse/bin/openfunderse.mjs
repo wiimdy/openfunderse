@@ -67,6 +67,10 @@ const BOTFATHER_PARTICIPANT_COMMANDS = [
   "validate_allocation - Validate allocation claim",
   "submit_allocation - Submit allocation claim",
   "allocation_e2e - Run allocation end-to-end",
+  "deposit - Deposit native or ERC-20 into vault",
+  "withdraw - Withdraw assets from vault",
+  "redeem - Redeem vault shares for assets",
+  "vault_info - Show vault status and user PnL",
 ];
 
 function botFatherCommandLinesForProfile(profile) {
