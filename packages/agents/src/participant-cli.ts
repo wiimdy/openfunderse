@@ -195,95 +195,25 @@ const readObservationFromFile = async (
   throw new Error('unsupported claim file format');
 };
 
-const runParticipantProposeAllocation = async (parsed: ParsedCli): Promise<void> => {
-  const fundId = requiredOption(parsed, 'fund-id');
+const parseEpochId = (parsed: ParsedCli): number => {
   const epochId = Number(requiredOption(parsed, 'epoch-id'));
   if (!Number.isFinite(epochId)) {
     throw new Error('--epoch-id must be a number');
   }
-
-  const output = await proposeAllocation({
-    taskType: 'propose_allocation',
-    fundId,
-    roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
-    epochId: Math.trunc(epochId),
-    allocation: {
-      participant: parsed.options.get('participant'),
-      targetWeights: parseTargetWeights(requiredOption(parsed, 'target-weights')),
-      horizonSec: toNumberOption(parsed, 'horizon-sec', 3600),
-      nonce: parsed.options.has('nonce')
-        ? toNumberOption(parsed, 'nonce', Math.trunc(Date.now() / 1000))
-        : undefined
-    }
-  });
-
-  console.log(jsonStringify(output));
-  const outFile = parsed.options.get('out-file');
-  if (outFile) {
-    await writeJsonFile(outFile, output);
-  }
-  if (output.status !== 'OK') {
-    process.exitCode = 2;
-  }
+  return Math.trunc(epochId);
 };
 
-const runParticipantValidateAllocation = async (parsed: ParsedCli): Promise<void> => {
-  const claimFile = requiredOption(parsed, 'claim-file');
-  const bundle = await readObservationFromFile(claimFile);
-  const output = await validateAllocationOrIntent({
-    taskType: 'validate_allocation_or_intent',
-    fundId: bundle.fundId,
-    roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
-    epochId: bundle.epochId,
-    subjectType: 'CLAIM',
-    subjectHash: bundle.observation.claimHash,
-    subjectPayload: observationToClaimPayload(bundle.observation),
-    validationPolicy: {
-      reproducible: true,
-      maxDataAgeSeconds: toNumberOption(parsed, 'max-data-age-seconds', 300)
-    }
-  });
-
-  console.log(jsonStringify(output));
-  const outFile = parsed.options.get('out-file');
-  if (outFile) {
-    await writeJsonFile(outFile, output);
-  }
-  if (output.verdict !== 'PASS') {
-    process.exitCode = 2;
-  }
-};
-
-const runParticipantSubmitAllocation = async (parsed: ParsedCli): Promise<void> => {
-  const claimFile = requiredOption(parsed, 'claim-file');
-  const bundle = await readObservationFromFile(claimFile);
-  const submitRequested = parsed.flags.has('submit');
-  const output = await submitAllocation({
-    fundId: bundle.fundId,
-    epochId: bundle.epochId,
-    observation: bundle.observation,
-    clientOptions: buildParticipantClientOptions(),
-    submit: submitRequested
-  });
-  console.log(jsonStringify(output));
-  if (output.status !== 'OK') {
-    process.exitCode = 2;
-  }
-};
-
-const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
+const proposeAllocationFromParsed = async (
+  parsed: ParsedCli
+): Promise<{ fundId: string; epochId: number; mine: Awaited<ReturnType<typeof proposeAllocation>> }> => {
   const fundId = requiredOption(parsed, 'fund-id');
-  const epochId = Number(requiredOption(parsed, 'epoch-id'));
-  const submitRequested = parsed.flags.has('submit');
-  if (!Number.isFinite(epochId)) {
-    throw new Error('--epoch-id must be a number');
-  }
+  const epochId = parseEpochId(parsed);
 
   const mine = await proposeAllocation({
     taskType: 'propose_allocation',
     fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
-    epochId: Math.trunc(epochId),
+    epochId,
     allocation: {
       participant: parsed.options.get('participant'),
       targetWeights: parseTargetWeights(requiredOption(parsed, 'target-weights')),
@@ -293,50 +223,175 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
         : undefined
     }
   });
-  if (mine.status !== 'OK' || !mine.observation) {
-    console.log(jsonStringify({ step: 'mine', result: mine }));
-    process.exitCode = 2;
-    return;
-  }
 
-  const verify = await validateAllocationOrIntent({
-    taskType: 'validate_allocation_or_intent',
-    fundId,
-    roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
-    epochId: Math.trunc(epochId),
-    subjectType: 'CLAIM',
-    subjectHash: mine.observation.claimHash,
-    subjectPayload: observationToClaimPayload(mine.observation),
-    validationPolicy: {
-      reproducible: true,
-      maxDataAgeSeconds: toNumberOption(parsed, 'max-data-age-seconds', 300)
+  return { fundId, epochId, mine };
+};
+
+type ParticipantAllocationMode = 'MINE_AND_SUBMIT' | 'SUBMIT_FROM_FILE';
+
+const runParticipantAllocation = async (
+  parsed: ParsedCli,
+  config?: { forceVerify?: boolean; stepName?: string }
+): Promise<void> => {
+  const submitRequested = parsed.flags.has('submit');
+  const verifyRequested = Boolean(config?.forceVerify) || parsed.flags.has('verify');
+  const stepName = config?.stepName ?? 'participant-allocation';
+
+  const claimFile = parsed.options.get('claim-file');
+  const mode: ParticipantAllocationMode = claimFile ? 'SUBMIT_FROM_FILE' : 'MINE_AND_SUBMIT';
+
+  let mine:
+    | Awaited<ReturnType<typeof proposeAllocation>>
+    | undefined;
+  let verify:
+    | Awaited<ReturnType<typeof validateAllocationOrIntent>>
+    | undefined;
+  let submit:
+    | Awaited<ReturnType<typeof submitAllocation>>
+    | undefined;
+
+  let fundId = '';
+  let epochId = 0;
+  let claimHash: string | undefined;
+
+  if (mode === 'SUBMIT_FROM_FILE') {
+    const bundle = await readObservationFromFile(claimFile as string);
+    fundId = bundle.fundId;
+    epochId = bundle.epochId;
+    claimHash = bundle.observation.claimHash;
+
+    if (verifyRequested) {
+      verify = await validateAllocationOrIntent({
+        taskType: 'validate_allocation_or_intent',
+        fundId,
+        roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
+        epochId,
+        subjectType: 'CLAIM',
+        subjectHash: bundle.observation.claimHash,
+        subjectPayload: observationToClaimPayload(bundle.observation),
+        validationPolicy: {
+          reproducible: true,
+          maxDataAgeSeconds: toNumberOption(parsed, 'max-data-age-seconds', 300)
+        }
+      });
+      if (verify.verdict !== 'PASS') {
+        const result = {
+          step: stepName,
+          mode,
+          fundId,
+          epochId,
+          claimHash,
+          observation: bundle.observation,
+          verify
+        };
+        console.log(jsonStringify(result));
+        const outFile = parsed.options.get('out-file');
+        if (outFile) await writeJsonFile(outFile, result);
+        const reportFile = parsed.options.get('report-file');
+        if (reportFile) await writeJsonFile(reportFile, result);
+        process.exitCode = 2;
+        return;
+      }
     }
-  });
-  if (verify.verdict !== 'PASS') {
-    console.log(jsonStringify({ step: 'verify', result: verify }));
+
+    submit = await submitAllocation({
+      fundId,
+      epochId,
+      observation: bundle.observation,
+      clientOptions: buildParticipantClientOptions(),
+      submit: submitRequested
+    });
+
+    const result = {
+      step: stepName,
+      mode,
+      fundId,
+      epochId,
+      claimHash: submit.claimHash ?? claimHash,
+      observation: bundle.observation,
+      verify,
+      submit
+    };
+
+    console.log(jsonStringify(result));
+    const outFile = parsed.options.get('out-file');
+    if (outFile) await writeJsonFile(outFile, result);
+    const reportFile = parsed.options.get('report-file');
+    if (reportFile) await writeJsonFile(reportFile, result);
+    if (submit.status !== 'OK') {
+      process.exitCode = 2;
+    }
+    return;
+  }
+
+  const proposed = await proposeAllocationFromParsed(parsed);
+  fundId = proposed.fundId;
+  epochId = proposed.epochId;
+  mine = proposed.mine;
+
+  if (mine.status !== 'OK' || !mine.observation) {
+    const result = { step: stepName, mode, fundId, epochId, mine };
+    console.log(jsonStringify(result));
+    const outFile = parsed.options.get('out-file');
+    if (outFile) await writeJsonFile(outFile, result);
+    const reportFile = parsed.options.get('report-file');
+    if (reportFile) await writeJsonFile(reportFile, result);
     process.exitCode = 2;
     return;
   }
 
-  const submit = await submitAllocation({
+  claimHash = mine.observation.claimHash;
+
+  if (verifyRequested) {
+    verify = await validateAllocationOrIntent({
+      taskType: 'validate_allocation_or_intent',
+      fundId,
+      roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
+      epochId,
+      subjectType: 'CLAIM',
+      subjectHash: mine.observation.claimHash,
+      subjectPayload: observationToClaimPayload(mine.observation),
+      validationPolicy: {
+        reproducible: true,
+        maxDataAgeSeconds: toNumberOption(parsed, 'max-data-age-seconds', 300)
+      }
+    });
+    if (verify.verdict !== 'PASS') {
+      const result = {
+        step: stepName,
+        mode,
+        fundId,
+        epochId,
+        claimHash,
+        observation: mine.observation,
+        mine,
+        verify
+      };
+      console.log(jsonStringify(result));
+      const outFile = parsed.options.get('out-file');
+      if (outFile) await writeJsonFile(outFile, result);
+      const reportFile = parsed.options.get('report-file');
+      if (reportFile) await writeJsonFile(reportFile, result);
+      process.exitCode = 2;
+      return;
+    }
+  }
+
+  submit = await submitAllocation({
     fundId,
-    epochId: Math.trunc(epochId),
+    epochId,
     observation: mine.observation,
     clientOptions: buildParticipantClientOptions(),
     submit: submitRequested
   });
-  if (submit.status !== 'OK' || !submit.claimHash) {
-    console.log(jsonStringify({ step: 'submit', result: submit }));
-    process.exitCode = 2;
-    return;
-  }
 
-  const report = {
-    step: 'participant-allocation-e2e',
-    mode: submit.decision === 'SUBMITTED' ? 'SUBMITTED' : 'READY',
+  const result = {
+    step: stepName,
+    mode,
     fundId,
-    epochId: Math.trunc(epochId),
-    claimHash: submit.claimHash,
+    epochId,
+    claimHash: submit.claimHash ?? claimHash,
+    observation: mine.observation,
     mine,
     verify,
     submit,
@@ -350,11 +405,13 @@ const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
           }
   };
 
-  console.log(jsonStringify(report));
-
+  console.log(jsonStringify(result));
+  const outFile = parsed.options.get('out-file');
+  if (outFile) await writeJsonFile(outFile, result);
   const reportFile = parsed.options.get('report-file');
-  if (reportFile) {
-    await writeJsonFile(reportFile, report);
+  if (reportFile) await writeJsonFile(reportFile, result);
+  if (submit.status !== 'OK') {
+    process.exitCode = 2;
   }
 };
 
@@ -462,20 +519,17 @@ const printUsage = (): void => {
   console.log(`
 [agents] participant commands
 
-participant-propose-allocation
+participant-allocation
+  # mine (+ optional verify) (+ optional submit)
   --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
-  [--participant <0x...>] [--horizon-sec <n>] [--nonce <n>] [--room-id <id>] [--out-file <path>]
+  [--participant <0x...>] [--horizon-sec <n>] [--nonce <n>] [--room-id <id>]
+  [--verify] [--max-data-age-seconds <n>] [--submit]
+  [--out-file <path>] [--report-file <path>]
 
-participant-validate-allocation
+  # submit from file (optionally verify)
   --claim-file <path>
-  [--max-data-age-seconds <n>] [--out-file <path>]
-
-participant-submit-allocation
-  --claim-file <path> [--submit]
-
-participant-allocation-e2e
-  --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
-  [--participant <0x...>] [--horizon-sec <n>] [--report-file <path>] [--submit]
+  [--room-id <id>] [--verify] [--max-data-age-seconds <n>] [--submit]
+  [--out-file <path>] [--report-file <path>]
 
 participant-daemon
   --fund-id <id> --strategy <A|B|C>
@@ -497,20 +551,8 @@ export const runParticipantCli = async (argv: string[]): Promise<boolean> => {
     return true;
   }
 
-  if (command === 'participant-propose-allocation') {
-    await runParticipantProposeAllocation(parsed);
-    return true;
-  }
-  if (command === 'participant-validate-allocation') {
-    await runParticipantValidateAllocation(parsed);
-    return true;
-  }
-  if (command === 'participant-submit-allocation') {
-    await runParticipantSubmitAllocation(parsed);
-    return true;
-  }
-  if (command === 'participant-allocation-e2e') {
-    await runParticipantE2E(parsed);
+  if (command === 'participant-allocation') {
+    await runParticipantAllocation(parsed);
     return true;
   }
   if (command === 'participant-daemon') {

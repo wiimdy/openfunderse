@@ -53,23 +53,30 @@ const stripOption = (args: string[], key: string): string[] => {
   return result;
 };
 
-const mapCommand = (role: string, action: string): string => {
+const mapCommand = (role: string, action: string): { command: string; extraArgs: string[] } => {
   if (role === 'strategy') {
-    if (action === 'daemon') return 'daemon';
-    if (action === 'create_fund_onchain') return 'strategy-create-fund';
-    if (action === 'propose_intent') return 'strategy-propose';
-    if (action === 'dry_run_intent_execution') return 'strategy-dry-run-intent';
-    if (action === 'attest_intent_onchain') return 'strategy-attest-onchain';
-    if (action === 'execute_intent_onchain') return 'strategy-execute-ready';
+    if (action === 'daemon') return { command: 'daemon', extraArgs: [] };
+    if (action === 'create_fund_onchain') return { command: 'strategy-create-fund', extraArgs: [] };
+    if (action === 'propose_intent') return { command: 'strategy-propose', extraArgs: [] };
+    if (action === 'dry_run_intent_execution') return { command: 'strategy-dry-run-intent', extraArgs: [] };
+    if (action === 'attest_intent_onchain') return { command: 'strategy-attest-onchain', extraArgs: [] };
+    if (action === 'execute_intent_onchain') return { command: 'strategy-execute-ready', extraArgs: [] };
   }
 
   if (role === 'participant') {
-    if (action === 'daemon') return 'daemon';
-    if (action === 'propose_allocation') return 'participant-propose-allocation';
-    if (action === 'validate_allocation') return 'participant-validate-allocation';
-    if (action === 'validate_allocation_or_intent') return 'participant-validate-allocation';
-    if (action === 'submit_allocation') return 'participant-submit-allocation';
-    if (action === 'allocation_e2e') return 'participant-allocation-e2e';
+    if (action === 'daemon') return { command: 'daemon', extraArgs: [] };
+
+    // Unified action.
+    if (action === 'allocation') return { command: 'participant-allocation', extraArgs: [] };
+
+    // Backward-compatible actions (deprecated).
+    if (action === 'propose_allocation') return { command: 'participant-allocation', extraArgs: [] };
+    if (action === 'validate_allocation') return { command: 'participant-allocation', extraArgs: ['--verify'] };
+    if (action === 'validate_allocation_or_intent') {
+      return { command: 'participant-allocation', extraArgs: ['--verify'] };
+    }
+    if (action === 'submit_allocation') return { command: 'participant-allocation', extraArgs: ['--submit'] };
+    if (action === 'allocation_e2e') return { command: 'participant-allocation', extraArgs: ['--verify'] };
   }
 
   throw new Error(`unsupported clawbot action: role=${role}, action=${action}`);
@@ -83,11 +90,11 @@ clawbot-run --role <strategy|participant> --action <action> [action options...]
 
 Telegram slash aliases:
   /propose_intent, /dry_run_intent, /attest_intent, /execute_intent, /create_fund, /daemon
-  /propose_allocation, /validate_allocation, /submit_allocation, /allocation_e2e
+  /allocation, /participant_daemon
 
 Examples:
   clawbot-run --role strategy --action propose_intent --fund-id demo-fund --intent-file ./intent.json --execution-route-file ./route.json
-  clawbot-run --role participant --action propose_allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000
+  clawbot-run --role participant --action allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000 --verify
   clawbot-run --role strategy --action daemon --fund-id demo-fund
   clawbot-run --role participant --action daemon --fund-id demo-fund
 `);
@@ -112,13 +119,13 @@ export const runClawbotCli = async (argv: string[]): Promise<boolean> => {
 
   const mapped = mapCommand(role, action);
   const forwarded = stripOption(stripOption(argv.slice(1), 'role'), 'action');
-  const delegatedArgv = [mapped, ...forwarded];
+  const delegatedArgv = [mapped.command, ...mapped.extraArgs, ...forwarded];
 
-  if (mapped === 'strategy-propose') {
+  if (mapped.command === 'strategy-propose') {
     resolveStrategySubmitGate(parsed.flags.has('submit'));
   }
 
-  if (mapped === 'daemon') {
+  if (mapped.command === 'daemon') {
     const fundId = parsed.options.get('fund-id') ?? '';
     if (!fundId) throw new Error('missing required option --fund-id for daemon mode');
 
@@ -146,7 +153,7 @@ export const runClawbotCli = async (argv: string[]): Promise<boolean> => {
     return true;
   }
 
-  if (mapped.startsWith('strategy-')) {
+  if (mapped.command.startsWith('strategy-')) {
     await runStrategyCli(delegatedArgv);
     return true;
   }

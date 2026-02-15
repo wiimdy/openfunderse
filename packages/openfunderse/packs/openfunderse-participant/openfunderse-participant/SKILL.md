@@ -67,15 +67,13 @@ This step is not required for normal OpenClaw skill execution.
 Telegram slash commands:
 
 ```text
-/propose_allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
-/validate_allocation --claim-file <path>
-/submit_allocation --claim-file <path> --submit
-/allocation_e2e --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--submit]
+/allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--verify] [--submit]
+/allocation --claim-file <path> [--verify] [--submit]
 /participant_daemon --fund-id <id> --strategy <A|B|C> [--interval-sec <n>] [--epoch-source <relayer|fixed>] [--epoch-id <n>] [--submit]
 ```
 
 Notes:
-- Slash parser accepts underscores, so `/submit_allocation` equals `/submit-allocation`.
+- Slash parser accepts underscores (for example: `/participant_daemon` equals `/participant-daemon`).
 - `key=value` style is also accepted (`fund_id=demo-fund`).
 - On first install, register these commands in Telegram via `@BotFather` -> `/setcommands`.
 
@@ -137,7 +135,7 @@ Use `PARTICIPANT_STRATEGY` via the command flag:
 
 ## Submission safety gates
 
-`submit_allocation` is guarded by default:
+`allocation --submit` is guarded by default:
 1. `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` requires explicit `submit=true`.
 2. `PARTICIPANT_AUTO_SUBMIT=true` must be enabled for network transmission.
 3. `RELAYER_URL` host is checked by `PARTICIPANT_TRUSTED_RELAYER_HOSTS` when set.

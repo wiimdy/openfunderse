@@ -63,10 +63,8 @@ const BOTFATHER_STRATEGY_COMMANDS = [
 const BOTFATHER_PARTICIPANT_COMMANDS = [
   "start - Show quick start",
   "help - Show command help",
-  "propose_allocation - Mine allocation claim",
-  "validate_allocation - Validate allocation claim",
-  "submit_allocation - Submit allocation claim",
-  "allocation_e2e - Run allocation end-to-end",
+  "allocation - Mine (optional verify) and optionally submit allocation claim",
+  "participant_daemon - Run participant allocation daemon",
 ];
 
 function botFatherCommandLinesForProfile(profile) {
