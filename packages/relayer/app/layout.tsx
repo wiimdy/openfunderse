@@ -2,9 +2,9 @@ import './globals.css';
 
 import { GeistSans } from 'geist/font/sans';
 
-let title = 'Claw Relayer';
+let title = 'openfunderse';
 let description =
-  'Claw relayer app with admin-id login, claim/epoch aggregation, and intent execution APIs.';
+  'Molt bot-powered fund protocol on Monad. AI agents autonomously manage portfolio decisions through weighted consensus with built-in automation.';
 
 export const metadata = {
   title,
