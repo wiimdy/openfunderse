@@ -1,17 +1,16 @@
 'use client';
 
-import Image from 'next/image';
 import { useMemo, useState } from 'react';
 
 type Mode = 'strategy' | 'participant';
 
 const COMMANDS: Record<Mode, { install: string; init: string }> = {
   strategy: {
-    install: 'npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime',
+    install: 'npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime',
     init: 'npx @wiimdy/openfunderse@latest bot-init --skill-name strategy --yes',
   },
   participant: {
-    install: 'npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime',
+    install: 'npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime',
     init: 'npx @wiimdy/openfunderse@latest bot-init --skill-name participant --yes',
   },
 };
@@ -20,6 +19,7 @@ const STEPS: Record<Mode, { label: string; href?: string }[]> = {
   strategy: [
     { label: 'Install skill pack and runtime' },
     { label: 'Initialize bot wallet with bot-init' },
+    { label: 'Add bot to your Telegram chatroom' },
     { label: 'Configure fund parameters and deploy' },
     { label: 'Register participant bots' },
   ],
@@ -27,6 +27,7 @@ const STEPS: Record<Mode, { label: string; href?: string }[]> = {
     { label: 'Join fund via Telegram', href: 'https://t.me/openfunderse' },
     { label: 'Install skill pack and runtime' },
     { label: 'Initialize bot wallet with bot-init' },
+    { label: 'Add bot to your Telegram chatroom' },
     { label: 'Connect wallet and deposit funds' },
   ],
 };
@@ -58,15 +59,18 @@ export default function Page() {
     <main className="relative min-h-screen bg-[#fbfbfd] selection:bg-gray-900 selection:text-white">
       <div className="mx-auto w-full max-w-[980px] px-6 pb-24">
 
-        <header className="pt-10 text-center">
-          <Image
+        <nav className="flex items-center gap-2.5 pt-5 pb-6">
+          <img
             src="/logo-icon.png"
-            alt="OpenFunderse"
-            width={64}
-            height={64}
-            className="mx-auto mb-5"
-            priority
+            alt=""
+            className="h-9 w-auto"
           />
+          <span className="text-lg font-bold tracking-tight text-gray-900">
+            Open<span className="text-violet-500">Funderse</span>
+          </span>
+        </nav>
+
+        <header className="text-center">
           <h1 className="mx-auto mt-4 max-w-2xl text-[clamp(2.4rem,5vw,3.5rem)] font-bold leading-[1.08] tracking-[-0.03em] text-gray-900">
             Agent-driven fund
             <br />
@@ -121,15 +125,15 @@ export default function Page() {
             ))}
           </div>
 
-          <div className="mt-6 overflow-hidden rounded-xl border border-gray-100 bg-[#1d1d1f]">
+          <div className="relative mt-6 overflow-hidden rounded-xl border border-gray-100 bg-[#1d1d1f]">
             <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-4 py-3">
               <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
               <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
               <span className="h-3 w-3 rounded-full bg-[#28c840]" />
             </div>
             <div className="space-y-2 px-5 py-4">
-              <div className="flex items-start gap-3">
-                <div className="flex-1 space-y-2 overflow-x-auto">
+              <div>
+                <div className="space-y-2 overflow-x-auto">
                   <p className="whitespace-nowrap font-mono text-sm leading-relaxed text-gray-300">
                     <span className="text-gray-600">1.</span> <span className="text-gray-500">$</span> {commands.install}
                   </p>
@@ -140,35 +144,42 @@ export default function Page() {
                 <button
                   type="button"
                   onClick={onCopy}
-                  className="shrink-0 rounded-md px-3 py-1.5 text-sm font-medium text-gray-500 transition-colors hover:bg-white/10 hover:text-gray-300"
+                  className="absolute right-3 top-3 rounded-md p-1.5 text-gray-500 transition-colors hover:bg-white/10 hover:text-gray-300"
+                  aria-label="Copy commands"
                 >
-                  {copied ? 'Copied!' : 'Copy'}
+                  {copied ? (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                  )}
                 </button>
               </div>
             </div>
           </div>
 
-          <ol className="mt-8 space-y-4">
-            {steps.map((step, i) => (
-              <li key={i} className="flex items-center gap-4">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-100 text-sm font-semibold text-gray-400">
-                  {i + 1}
-                </span>
-                {step.href ? (
-                  <a
-                    href={step.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-base text-gray-700 underline decoration-gray-200 underline-offset-4 transition-colors hover:decoration-gray-900"
-                  >
-                    {step.label}
-                  </a>
-                ) : (
-                  <span className="text-base text-gray-700">{step.label}</span>
-                )}
-              </li>
-            ))}
-          </ol>
+          <div className="mt-6 rounded-xl border border-violet-100 bg-violet-50/30 px-6 py-5">
+            <ol className="space-y-3">
+              {steps.map((step, i) => (
+                <li key={i} className="flex items-center gap-3.5">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-50 text-[13px] font-semibold text-gray-400">
+                    {i + 1}
+                  </span>
+                  {step.href ? (
+                    <a
+                      href={step.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[15px] text-gray-700 underline decoration-gray-200 underline-offset-4 transition-colors hover:decoration-gray-900"
+                    >
+                      {step.label}
+                    </a>
+                  ) : (
+                    <span className="text-[15px] text-gray-700">{step.label}</span>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </div>
         </section>
 
         <section className="mx-auto mt-16 max-w-3xl">
@@ -198,7 +209,7 @@ export default function Page() {
 
       <footer className="w-full border-t border-gray-100 bg-[#fbfbfd]">
         <div className="mx-auto flex max-w-[980px] items-center justify-between px-6 py-5">
-          <span className="text-[12px] text-gray-300">openfunderse</span>
+          <span className="text-[12px] text-gray-300">OpenFunderse</span>
           <nav className="flex items-center gap-5 text-[12px] text-gray-400">
             <a
               href="https://x.com/openfunderse"
