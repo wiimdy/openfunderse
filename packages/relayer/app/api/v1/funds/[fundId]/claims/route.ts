@@ -7,6 +7,7 @@ import {
 } from "@claw/protocol-sdk";
 import {
   getFund,
+  getEpochStateByEpoch,
   insertAllocationClaim,
   listAllocationClaimsByFund
 } from "@/lib/supabase";
@@ -93,6 +94,21 @@ export async function POST(
         receivedParticipant: claim.participant
       },
       { status: 403 }
+    );
+  }
+
+  const existingEpoch = await getEpochStateByEpoch({
+    fundId,
+    epochId: claim.epochId
+  });
+  if (existingEpoch) {
+    return NextResponse.json(
+      {
+        error: "CONFLICT",
+        message: `epoch ${claim.epochId} is already aggregated; claims are no longer accepted`,
+        epochId: claim.epochId.toString()
+      },
+      { status: 409 }
     );
   }
 
