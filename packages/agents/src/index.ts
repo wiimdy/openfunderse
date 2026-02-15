@@ -27,18 +27,18 @@ export type {
 } from './lib/signer.js';
 
 export {
-  mineClaim,
-  submitMinedClaim,
-  verifyClaim
+  proposeAllocation,
+  submitAllocation,
+  validateAllocationOrIntent
 } from './skills/participant/index.js';
 export type {
-  MineClaimInput,
-  MineClaimOutput,
-  MineClaimObservation,
-  SubmitMinedClaimInput,
-  SubmitMinedClaimOutput,
-  VerifyClaimInput,
-  VerifyClaimOutput
+  ProposeAllocationInput,
+  ProposeAllocationOutput,
+  ProposeAllocationObservation,
+  SubmitAllocationInput,
+  SubmitAllocationOutput,
+  ValidateAllocationOrIntentInput,
+  ValidateAllocationOrIntentOutput
 } from './skills/participant/index.js';
 
 export { proposeIntent, proposeIntentAndSubmit } from './skills/strategy/index.js';
