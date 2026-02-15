@@ -6,6 +6,7 @@ import {
   type Hex
 } from "@claw/protocol-sdk";
 import { relayerEvents } from "@/lib/event-emitter";
+import { publishEvent } from "@/lib/event-publisher";
 import { incCounter } from "@/lib/metrics";
 import {
   getSubjectStateByFund,
@@ -78,6 +79,9 @@ async function maybeFinalizeIntent(
   try {
     await markIntentReadyForOnchain({
       fundId,
+      intentHash
+    });
+    await publishEvent("intent:ready", fundId, {
       intentHash
     });
     return {

@@ -7,9 +7,11 @@ import {
 } from "@claw/protocol-sdk";
 import {
   getFund,
+  getActiveEpoch,
   getEpochStateByEpoch,
   insertAllocationClaim,
-  listAllocationClaimsByFund
+  listAllocationClaimsByFund,
+  incrementEpochClaimCount
 } from "@/lib/supabase";
 import { parseFundAllowlistTokens, validateClaimDimensions } from "@/lib/claim-validation";
 
@@ -114,19 +116,46 @@ export async function POST(
     );
   }
 
-  const existingEpoch = await getEpochStateByEpoch({
-    fundId,
-    epochId: claim.epochId
-  });
-  if (existingEpoch) {
-    return NextResponse.json(
-      {
-        error: "CONFLICT",
-        message: `epoch ${claim.epochId} is already aggregated; claims are no longer accepted`,
-        epochId: claim.epochId.toString()
-      },
-      { status: 409 }
-    );
+  let assignedEpochId = claim.epochId;
+  if (assignedEpochId === BigInt("0")) {
+    const active = await getActiveEpoch(fundId);
+    if (!active) {
+      return NextResponse.json(
+        {
+          error: "BAD_REQUEST",
+          message: "no active epoch for fund; cannot accept claims right now"
+        },
+        { status: 400 }
+      );
+    }
+    assignedEpochId = BigInt(active.epoch_id);
+    claim = { ...claim, epochId: assignedEpochId };
+  } else {
+    const active = await getActiveEpoch(fundId);
+    if (!active || BigInt(active.epoch_id) !== assignedEpochId) {
+      const existingEpoch = await getEpochStateByEpoch({
+        fundId,
+        epochId: assignedEpochId
+      });
+      if (existingEpoch) {
+        return NextResponse.json(
+          {
+            error: "CONFLICT",
+            message: `epoch ${assignedEpochId} is already aggregated; claims are no longer accepted`,
+            epochId: assignedEpochId.toString()
+          },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json(
+        {
+          error: "BAD_REQUEST",
+          message: `epoch ${assignedEpochId} is not the currently active epoch`,
+          epochId: assignedEpochId.toString()
+        },
+        { status: 400 }
+      );
+    }
   }
 
   let record;
@@ -159,6 +188,15 @@ export async function POST(
         claimHash: record.claimHash
       },
       { status: 409 }
+    );
+  }
+
+  try {
+    await incrementEpochClaimCount({ fundId, epochId: String(assignedEpochId) });
+  } catch (countError) {
+    console.warn(
+      `[claims] failed to increment claim count for epoch ${assignedEpochId}:`,
+      countError instanceof Error ? countError.message : countError
     );
   }
 
