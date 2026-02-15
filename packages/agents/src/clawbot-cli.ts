@@ -54,11 +54,11 @@ const stripOption = (args: string[], key: string): string[] => {
 
 const mapCommand = (role: string, action: string): string => {
   if (role === 'strategy') {
-    if (action === 'create_fund_onchain') return 'strategy-create-fund';
+    if (action === 'create_fund' || action === 'create_fund_onchain') return 'strategy-create-fund';
     if (action === 'propose_intent') return 'strategy-propose';
-    if (action === 'dry_run_intent_execution') return 'strategy-dry-run-intent';
-    if (action === 'attest_intent_onchain') return 'strategy-attest-onchain';
-    if (action === 'execute_intent_onchain') return 'strategy-execute-ready';
+    if (action === 'dry_run_intent' || action === 'dry_run_intent_execution') return 'strategy-dry-run-intent';
+    if (action === 'attest_intent' || action === 'attest_intent_onchain') return 'strategy-attest-onchain';
+    if (action === 'execute_intent' || action === 'execute_intent_onchain') return 'strategy-execute-ready';
   }
 
   if (role === 'participant') {

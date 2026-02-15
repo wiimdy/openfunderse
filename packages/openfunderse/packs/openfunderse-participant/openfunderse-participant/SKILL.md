@@ -77,6 +77,21 @@ Telegram slash commands:
 /vault_info [--vault-address <0x...>] [--account <0x...>]
 ```
 
+BotFather `/setcommands` (copy-paste ready):
+
+```text
+start - Show quick start
+help - Show command help
+propose_allocation - Mine allocation claim with target weights
+validate_allocation - Verify allocation claim hash
+submit_allocation - Submit signed claim to relayer
+allocation_e2e - Mine, verify, and submit in one shot
+deposit - Deposit native MON or ERC-20 into vault
+withdraw - Withdraw assets from vault (native or ERC-20)
+redeem - Burn vault shares and receive assets
+vault_info - Show vault status and user PnL
+```
+
 Notes:
 - Slash parser accepts underscores, so `/submit_allocation` equals `/submit-allocation`.
 - `key=value` style is also accepted (`fund_id=demo-fund`).
