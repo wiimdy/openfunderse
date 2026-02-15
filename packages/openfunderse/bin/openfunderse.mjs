@@ -46,6 +46,7 @@ const PARTICIPANT_ENV_TEMPLATE = `# OpenFunderse participant env scaffold
 RELAYER_URL=https://your-relayer.example.com
 BOT_ID=bot-participant-1
 CHAIN_ID=10143
+RPC_URL=https://testnet-rpc.monad.xyz
 PARTICIPANT_PRIVATE_KEY=\${TEMP_PRIVATE_KEY}
 PARTICIPANT_ADDRESS=0x0000000000000000000000000000000000000000
 `;
@@ -63,12 +64,13 @@ const BOTFATHER_STRATEGY_COMMANDS = [
 const BOTFATHER_PARTICIPANT_COMMANDS = [
   "start - Show quick start",
   "help - Show command help",
-  "propose_allocation - Mine allocation claim with target weights",
-  "submit_allocation - Validate and submit claim to relayer",
+  "allocation - Mine (optional verify) and optionally submit allocation claim",
+  "join - Register this bot as a participant for the fund mapped to the room id",
   "deposit - Deposit native MON or ERC-20 into vault",
   "withdraw - Withdraw assets from vault (native or ERC-20)",
   "redeem - Burn vault shares and receive assets",
   "vault_info - Show vault status and user PnL",
+  "participant_daemon - Run participant allocation daemon",
 ];
 
 function botFatherCommandLinesForProfile(profile) {
