@@ -170,6 +170,10 @@ export async function POST(request: Request) {
   let verifierThresholdWeight: bigint;
   let intentThresholdWeight: bigint;
   let allowlistTokens: string[] | undefined;
+  let autoEpochEnabled = true;
+  let epochDurationMs: number | undefined;
+  let epochMinClaims: number | undefined;
+  let epochMaxClaims: number | undefined;
   try {
     fundId = asString(body.fundId);
     fundName = asString(body.fundName);
@@ -200,6 +204,29 @@ export async function POST(request: Request) {
           .map((t) => String(t).trim())
           .filter((t) => /^0x[a-fA-F0-9]{40}$/.test(t))
       : undefined;
+
+    // Epoch config: auto_epoch_enabled defaults to true for new funds
+    autoEpochEnabled = body.autoEpochEnabled !== undefined
+      ? Boolean(body.autoEpochEnabled)
+      : true;
+    if (body.epochDurationMs !== undefined) {
+      epochDurationMs = Number(body.epochDurationMs);
+      if (!Number.isFinite(epochDurationMs) || epochDurationMs < 10_000) {
+        throw new Error("epochDurationMs must be at least 10000 (10 seconds)");
+      }
+    }
+    if (body.epochMinClaims !== undefined) {
+      epochMinClaims = Number(body.epochMinClaims);
+      if (!Number.isFinite(epochMinClaims) || epochMinClaims < 1) {
+        throw new Error("epochMinClaims must be at least 1");
+      }
+    }
+    if (body.epochMaxClaims !== undefined) {
+      epochMaxClaims = Number(body.epochMaxClaims);
+      if (!Number.isFinite(epochMaxClaims) || epochMaxClaims < 1) {
+        throw new Error("epochMaxClaims must be at least 1");
+      }
+    }
 
     verifierThresholdWeight =
       parseOptionalBigIntField(body.verifierThresholdWeight, "verifierThresholdWeight") ??
@@ -404,6 +431,10 @@ export async function POST(request: Request) {
     strategyPolicyUri: body.strategyPolicyUri ? String(body.strategyPolicyUri) : null,
     telegramRoomId: body.telegramRoomId ? String(body.telegramRoomId) : null,
     allowlistTokens,
+    autoEpochEnabled,
+    epochDurationMs,
+    epochMinClaims,
+    epochMaxClaims,
     createdBy: botAuth.ok ? botAuth.botId : strategyBotId
   });
 

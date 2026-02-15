@@ -248,6 +248,10 @@ export async function upsertFund(input: {
   visibility?: "PUBLIC" | "HIDDEN";
   verificationNote?: string | null;
   allowlistTokens?: string[];
+  autoEpochEnabled?: boolean;
+  epochDurationMs?: number;
+  epochMinClaims?: number;
+  epochMaxClaims?: number;
   createdBy: string;
 }) {
   const db = supabase();
@@ -278,6 +282,18 @@ export async function upsertFund(input: {
     payload.allowlist_tokens_json = JSON.stringify(
       input.allowlistTokens.map((t) => t.trim().toLowerCase())
     );
+  }
+  if (input.autoEpochEnabled !== undefined) {
+    payload.auto_epoch_enabled = input.autoEpochEnabled;
+  }
+  if (input.epochDurationMs !== undefined) {
+    payload.epoch_duration_ms = input.epochDurationMs;
+  }
+  if (input.epochMinClaims !== undefined) {
+    payload.epoch_min_claims = input.epochMinClaims;
+  }
+  if (input.epochMaxClaims !== undefined) {
+    payload.epoch_max_claims = input.epochMaxClaims;
   }
 
   const { error } = await db.from("funds").upsert(
