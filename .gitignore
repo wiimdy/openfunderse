@@ -11,8 +11,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
-!packages/openfunderse/.env.strategy.example
-!packages/openfunderse/.env.participant.example
 
 # Node
 node_modules/

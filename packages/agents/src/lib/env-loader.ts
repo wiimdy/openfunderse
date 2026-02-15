@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 type EnvProfile = 'strategy' | 'participant' | 'all';
@@ -85,10 +86,75 @@ const candidateFilesForProfile = (profile: EnvProfile): string[] => {
   return ['.env'];
 };
 
+const resolveOpenclawConfigPath = (): string => {
+  const explicitPath = (
+    process.env.OPENCLAW_CONFIG_PATH ??
+    process.env.OPENCLAW_CONFIG_FILE
+  )?.trim();
+  if (explicitPath) {
+    return path.resolve(explicitPath);
+  }
+
+  return path.join(os.homedir(), '.openclaw', 'openclaw.json');
+};
+
+const parseOpenclawEnvVars = (
+  configPath: string
+): Map<string, string> => {
+  const entries = new Map<string, string>();
+  if (!existsSync(configPath)) {
+    return entries;
+  }
+
+  try {
+    const raw = readFileSync(configPath, 'utf8');
+    const parsed = JSON.parse(raw) as {
+      env?: {
+        vars?: Record<string, unknown>;
+      };
+    };
+    const vars = parsed?.env?.vars;
+    if (!vars || typeof vars !== 'object' || Array.isArray(vars)) {
+      return entries;
+    }
+
+    for (const [key, rawValue] of Object.entries(vars)) {
+      if (!key || typeof key !== 'string') {
+        continue;
+      }
+      if (rawValue === null || rawValue === undefined) {
+        continue;
+      }
+      if (typeof rawValue === 'object') {
+        continue;
+      }
+      entries.set(key, String(rawValue));
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[agents] warning: failed to read OpenClaw env config (${configPath}): ${message}`
+    );
+  }
+
+  return entries;
+};
+
 export const loadDefaultEnvForArgv = (argv: string[]): void => {
   const profile = inferProfile(argv);
   const cwd = process.cwd();
   const preservedKeys = new Set(Object.keys(process.env));
+  const openclawConfigPath = resolveOpenclawConfigPath();
+  const openclawEntries = parseOpenclawEnvVars(openclawConfigPath);
+
+  // OpenClaw config should win over local .env files.
+  for (const [key, value] of openclawEntries) {
+    if (preservedKeys.has(key)) {
+      continue;
+    }
+    process.env[key] = value;
+    preservedKeys.add(key);
+  }
 
   for (const fileName of candidateFilesForProfile(profile)) {
     const filePath = path.join(cwd, fileName);

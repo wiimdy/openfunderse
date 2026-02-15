@@ -13,7 +13,7 @@ import { privateKeyToAccount } from "viem/accounts";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 const FUND_FACTORY_ABI = parseAbi([
-  "function createFund((address fundOwner,address strategyAgent,address snapshotBook,address asset,string vaultName,string vaultSymbol,uint256 intentThresholdWeight,address nadfunLens,address[] initialVerifiers,uint256[] initialVerifierWeights,address[] initialAllowedTokens,address[] initialAllowedAdapters) cfg) returns (uint256 fundId, address intentBook, address core, address vault)",
+  "function createFund((address fundOwner,address strategyAgent,address asset,string vaultName,string vaultSymbol,uint256 intentThresholdWeight,address nadfunLens,address[] initialVerifiers,uint256[] initialVerifierWeights,address[] initialAllowedTokens,address[] initialAllowedAdapters) cfg) returns (uint256 fundId, address intentBook, address core, address vault)",
   "event FundDeployed(uint256 indexed fundId, address indexed fundOwner, address indexed strategyAgent, address intentBook, address core, address vault, address snapshotBook, address asset)"
 ]);
 
@@ -115,7 +115,6 @@ async function main() {
     "STRATEGY_AGENT",
     envOr("STRATEGY_AGENT", ZERO_ADDRESS)
   );
-  const snapshotBook = parseAddress("SNAPSHOT_BOOK", env("SNAPSHOT_BOOK"));
   const asset = parseAddress("ASSET", env("ASSET"));
   const vaultName = env("VAULT_NAME");
   const vaultSymbol = env("VAULT_SYMBOL");
@@ -146,7 +145,6 @@ async function main() {
   const deployConfig = {
     fundOwner,
     strategyAgent,
-    snapshotBook,
     asset,
     vaultName,
     vaultSymbol,
@@ -198,22 +196,25 @@ async function main() {
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
   const event = extractEvent(receipt.logs);
+  if (!event) {
+    throw new Error("FundDeployed event not found in tx receipt");
+  }
   console.log("[factory-create-fund] receipt summary");
   console.log(
     stringify({
       status: receipt.status,
       blockNumber: receipt.blockNumber,
       txHash,
-      fundId: event?.fundId ?? simFundId,
-      fundOwner: event?.fundOwner ?? fundOwner,
+      fundId: event.fundId ?? simFundId,
+      fundOwner: event.fundOwner ?? fundOwner,
       strategyAgent:
-        event?.strategyAgent ??
+        event.strategyAgent ??
         (strategyAgent === ZERO_ADDRESS ? fundOwner : strategyAgent),
-      intentBook: event?.intentBook ?? simIntentBook,
-      core: event?.core ?? simCore,
-      vault: event?.vault ?? simVault,
-      snapshotBook: event?.snapshotBook ?? snapshotBook,
-      asset: event?.asset ?? asset
+      intentBook: event.intentBook ?? simIntentBook,
+      core: event.core ?? simCore,
+      vault: event.vault ?? simVault,
+      snapshotBook: event.snapshotBook,
+      asset: event.asset ?? asset
     })
   );
 }

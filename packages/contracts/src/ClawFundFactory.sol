@@ -6,15 +6,15 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {IntentBook} from "./IntentBook.sol";
 import {ClawCore} from "./ClawCore.sol";
 import {ClawVault4626} from "./ClawVault4626.sol";
+import {SnapshotBook} from "./SnapshotBook.sol";
 
 /// @title ClawFundFactory
-/// @notice Admin-facing factory for spinning up isolated fund stacks in one transaction.
+/// @notice Permissionless factory for spinning up isolated fund stacks in one transaction.
 /// @dev Each created fund gets its own IntentBook, ClawCore, and ClawVault4626 proxy.
 contract ClawFundFactory is Ownable {
     struct DeployConfig {
         address fundOwner;
         address strategyAgent;
-        address snapshotBook;
         address asset;
         string vaultName;
         string vaultSymbol;
@@ -41,6 +41,7 @@ contract ClawFundFactory is Ownable {
         IntentBook intentBook;
         ClawCore core;
         ClawVault4626 vault;
+        SnapshotBook snapshotBook;
     }
 
     address public immutable intentBookImplementation;
@@ -50,9 +51,7 @@ contract ClawFundFactory is Ownable {
     uint256 public fundCount;
 
     mapping(uint256 => FundDeployment) public funds;
-    mapping(address => bool) public isFactoryOperator;
 
-    event FactoryOperatorUpdated(address indexed operator, bool allowed);
     event FundDeployed(
         uint256 indexed fundId,
         address indexed fundOwner,
@@ -64,16 +63,10 @@ contract ClawFundFactory is Ownable {
         address asset
     );
 
-    error NotFactoryOperator();
     error InvalidAddress();
     error InvalidThreshold();
     error InvalidArrayLength();
     error InvalidVerifierConfig();
-
-    modifier onlyFactoryOperator() {
-        if (msg.sender != owner() && !isFactoryOperator[msg.sender]) revert NotFactoryOperator();
-        _;
-    }
 
     constructor(address initialOwner) Ownable(initialOwner) {
         intentBookImplementation = address(new IntentBook());
@@ -81,18 +74,11 @@ contract ClawFundFactory is Ownable {
         vaultImplementation = address(new ClawVault4626());
     }
 
-    function setFactoryOperator(address operator, bool allowed) external onlyOwner {
-        if (operator == address(0)) revert InvalidAddress();
-        isFactoryOperator[operator] = allowed;
-        emit FactoryOperatorUpdated(operator, allowed);
-    }
-
     function createFund(DeployConfig calldata cfg)
         external
-        onlyFactoryOperator
         returns (uint256 fundId, address intentBook, address core, address vault)
     {
-        if (cfg.fundOwner == address(0) || cfg.snapshotBook == address(0) || cfg.asset == address(0)) {
+        if (cfg.fundOwner == address(0) || cfg.asset == address(0)) {
             revert InvalidAddress();
         }
         if (cfg.intentThresholdWeight == 0) revert InvalidThreshold();
@@ -123,7 +109,7 @@ contract ClawFundFactory is Ownable {
         funds[fundId] = FundDeployment({
             fundOwner: cfg.fundOwner,
             strategyAgent: strategy,
-            snapshotBook: cfg.snapshotBook,
+            snapshotBook: address(deployed.snapshotBook),
             asset: cfg.asset,
             intentBook: intentBook,
             core: core,
@@ -131,20 +117,22 @@ contract ClawFundFactory is Ownable {
             createdAt: uint64(block.timestamp)
         });
 
-        emit FundDeployed(fundId, cfg.fundOwner, strategy, intentBook, core, vault, cfg.snapshotBook, cfg.asset);
+        emit FundDeployed(fundId, cfg.fundOwner, strategy, intentBook, core, vault, address(deployed.snapshotBook), cfg.asset);
     }
 
     function _deployFundContracts(DeployConfig calldata cfg, address strategy)
         internal
         returns (DeployedContracts memory deployed)
     {
+        deployed.snapshotBook = new SnapshotBook();
+
         deployed.intentBook = IntentBook(
             address(
                 new ERC1967Proxy(
                     intentBookImplementation,
                     abi.encodeCall(
                         IntentBook.initialize,
-                        (address(this), strategy, cfg.snapshotBook, cfg.intentThresholdWeight)
+                        (address(this), strategy, address(deployed.snapshotBook), cfg.intentThresholdWeight)
                     )
                 )
             )

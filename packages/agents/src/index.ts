@@ -2,6 +2,7 @@ import { runParticipantCli } from './participant-cli.js';
 import { runStrategyCli } from './strategy-cli.js';
 import { runClawbotCli } from './clawbot-cli.js';
 import { loadDefaultEnvForArgv } from './lib/env-loader.js';
+import { normalizeChatCommandArgv } from './lib/chat-command-normalizer.js';
 
 export { createRelayerClient, RelayerClient } from './lib/relayer-client.js';
 export type {
@@ -51,7 +52,7 @@ export type {
   RiskChecks
 } from './skills/strategy/index.js';
 
-const argv = process.argv.slice(2);
+const argv = normalizeChatCommandArgv(process.argv.slice(2));
 loadDefaultEnvForArgv(argv);
 
 console.log('[agents] boot');

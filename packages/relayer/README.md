@@ -135,7 +135,6 @@ Bootstrap API payload example:
   "deployConfig": {
     "fundOwner": "0x2222222222222222222222222222222222222222",
     "strategyAgent": "0x3333333333333333333333333333333333333333",
-    "snapshotBook": "0x4444444444444444444444444444444444444444",
     "asset": "0x5555555555555555555555555555555555555555",
     "vaultName": "Fund Vault Share",
     "vaultSymbol": "FVS",

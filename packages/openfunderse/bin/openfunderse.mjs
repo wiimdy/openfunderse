@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, cp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -31,6 +32,8 @@ RPC_URL=https://testnet-rpc.monad.xyz
 
 # NadFun / protocol addresses
 INTENT_BOOK_ADDRESS=0x0000000000000000000000000000000000000000
+CLAW_FUND_FACTORY_ADDRESS=0x0000000000000000000000000000000000000000
+CLAW_CORE_ADDRESS=0x0000000000000000000000000000000000000000
 NADFUN_EXECUTION_ADAPTER_ADDRESS=0x0000000000000000000000000000000000000000
 VAULT_ADDRESS=0x0000000000000000000000000000000000000000
 NADFUN_LENS_ADDRESS=0x0000000000000000000000000000000000000000
@@ -47,8 +50,18 @@ STRATEGY_ADDRESS=0x0000000000000000000000000000000000000000
 # Safety defaults
 STRATEGY_REQUIRE_EXPLICIT_SUBMIT=true
 STRATEGY_AUTO_SUBMIT=false
-# STRATEGY_TRUSTED_RELAYER_HOSTS=openfunderse-relayer.example.com
-# STRATEGY_ALLOW_HTTP_RELAYER=true
+STRATEGY_TRUSTED_RELAYER_HOSTS=your-relayer.example.com
+STRATEGY_ALLOW_HTTP_RELAYER=false
+
+# Strategy policy defaults
+STRATEGY_MAX_IMPACT_BPS=60
+STRATEGY_SELL_TAKE_PROFIT_BPS=2000
+STRATEGY_SELL_STOP_LOSS_BPS=600
+STRATEGY_SELL_MAX_HOLD_SECONDS=5400
+STRATEGY_DEADLINE_MIN_SECONDS=600
+STRATEGY_DEADLINE_BASE_SECONDS=900
+STRATEGY_DEADLINE_MAX_SECONDS=3600
+STRATEGY_DEADLINE_PER_CLAIM_SECONDS=20
 `;
 
 const PARTICIPANT_ENV_TEMPLATE = `# OpenFunderse participant env scaffold
@@ -65,13 +78,59 @@ PARTICIPANT_AUTO_SUBMIT=false
 # PARTICIPANT_ALLOW_HTTP_RELAYER=true
 `;
 
+const BOTFATHER_STRATEGY_COMMANDS = [
+  "start - Show quick start",
+  "help - Show command help",
+  "propose_intent - Propose a strategy intent",
+  "dry_run_intent - Dry-run core execution",
+  "attest_intent - Attest intent onchain",
+  "execute_intent - Execute ready intent onchain",
+  "create_fund - Create/sync fund"
+];
+
+const BOTFATHER_PARTICIPANT_COMMANDS = [
+  "start - Show quick start",
+  "help - Show command help",
+  "propose_allocation - Mine allocation claim",
+  "validate_allocation - Validate allocation claim",
+  "submit_allocation - Submit allocation claim",
+  "allocation_e2e - Run allocation end-to-end"
+];
+
+function botFatherCommandLinesForProfile(profile) {
+  if (profile === "strategy") {
+    return BOTFATHER_STRATEGY_COMMANDS;
+  }
+  if (profile === "participant") {
+    return BOTFATHER_PARTICIPANT_COMMANDS;
+  }
+  const merged = new Set([
+    ...BOTFATHER_STRATEGY_COMMANDS,
+    ...BOTFATHER_PARTICIPANT_COMMANDS
+  ]);
+  return [...merged];
+}
+
+function printTelegramBotSetupGuide(profile) {
+  const lines = botFatherCommandLinesForProfile(profile);
+  console.log("Telegram setup (recommended on first skill install):");
+  console.log("1) Open @BotFather and run /setcommands");
+  console.log("2) Select your bot and command scope (Default or Group)");
+  console.log("3) Paste this command block:");
+  console.log("-----");
+  for (const line of lines) {
+    console.log(line);
+  }
+  console.log("-----");
+}
+
 function printUsage() {
   console.log(`openfunderse
 
 Usage:
   openfunderse list
   openfunderse bot-init [--role <strategy|participant>] [--skill-name <name>] [--env-path <path>] [--wallet-dir <dir>] [--wallet-name <name>] [--force] [--yes]
-                       [--no-sync-openclaw-env]
+                       [--no-sync-openclaw-env] [--no-restart-openclaw-gateway]
   openfunderse install <pack-name> [--dest <skills-dir>] [--codex-home <dir>] [--force] [--with-runtime]
                      [--no-init-env] [--env-path <path>] [--env-profile <strategy|participant|all>]
                      [--no-sync-openclaw-env]
@@ -108,6 +167,7 @@ function parseArgs(argv) {
     walletDir: "",
     walletName: "",
     syncOpenclawEnv: true,
+    restartOpenclawGateway: true,
     yes: false
   };
   const positionals = [];
@@ -146,6 +206,14 @@ function parseArgs(argv) {
     }
     if (token === "--no-sync-openclaw-env") {
       options.syncOpenclawEnv = false;
+      continue;
+    }
+    if (token === "--restart-openclaw-gateway") {
+      options.restartOpenclawGateway = true;
+      continue;
+    }
+    if (token === "--no-restart-openclaw-gateway") {
+      options.restartOpenclawGateway = false;
       continue;
     }
     if (token === "--init-env") {
@@ -378,6 +446,7 @@ async function buildEnvScaffold(profile, runtimeDir, runtimePackage) {
 
 async function writeEnvScaffold(options) {
   const runtimeDir = options.runtimeDir ? path.resolve(options.runtimeDir) : process.cwd();
+  const codexHome = options.codexHome ? path.resolve(options.codexHome) : defaultCodexHome();
   const runtimePackage = options.runtimePackage || DEFAULT_RUNTIME_PACKAGE;
   const rawProfile =
     typeof options.envProfile === "string" && options.envProfile.trim().length > 0
@@ -386,7 +455,7 @@ async function writeEnvScaffold(options) {
   const profile = normalizeEnvProfile(rawProfile);
   const envTarget = options.envFile
     ? path.resolve(options.envFile)
-    : path.join(runtimeDir, defaultEnvFileNameForProfile(profile));
+    : path.join(codexHome, defaultEnvFileNameForProfile(profile));
 
   const alreadyExists = existsSync(envTarget);
   if (alreadyExists && !options.force) {
@@ -412,8 +481,28 @@ async function writeEnvScaffold(options) {
   };
 }
 
-function defaultEnvPathForRole(role) {
-  return path.join(process.cwd(), `.env.${role}`);
+function defaultEnvPathForRole(role, codexHome) {
+  return path.join(path.resolve(codexHome), `.env.${role}`);
+}
+
+function resolveExistingBotInitEnvPath(role, options, codexHome) {
+  if (options.envFile && options.envFile.trim().length > 0) {
+    return path.resolve(options.envFile);
+  }
+
+  const roleFileName = `.env.${role}`;
+  const candidates = [
+    path.join(process.cwd(), roleFileName),
+    defaultEnvPathForRole(role, codexHome)
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return candidates[0];
 }
 
 function readAssignedEnvValue(content, key) {
@@ -490,8 +579,22 @@ async function syncOpenclawEnvVarsFromFile(envFile, codexHome) {
       ? { ...envSection.vars }
       : {};
 
+  const changedKeys = [];
   for (const [key, value] of Object.entries(assignments)) {
+    if (varsSection[key] === undefined || String(varsSection[key]) !== value) {
+      changedKeys.push(key);
+    }
     varsSection[key] = value;
+  }
+
+  if (changedKeys.length === 0) {
+    return {
+      synced: false,
+      reason: "no-changes",
+      configPath,
+      envFile,
+      writtenKeys: []
+    };
   }
 
   envSection.vars = varsSection;
@@ -503,7 +606,7 @@ async function syncOpenclawEnvVarsFromFile(envFile, codexHome) {
     reason: "ok",
     configPath,
     envFile,
-    writtenKeys: keys
+    writtenKeys: changedKeys
   };
 }
 
@@ -544,6 +647,14 @@ function shellQuote(input) {
   return `'${input.replace(/'/g, `'\\''`)}'`;
 }
 
+function sha256Hex(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function generateBotApiKeySecret() {
+  return `ofs_${randomBytes(24).toString("hex")}`;
+}
+
 async function confirmBotInit({ role, envFile, privateKeyKey, isRotation, assumeYes }) {
   const mode = isRotation ? "wallet rotation" : "new wallet bootstrap";
   console.log("WARNING: bot-init will generate a new wallet and update your env private key.");
@@ -573,6 +684,42 @@ async function confirmBotInit({ role, envFile, privateKeyKey, isRotation, assume
   } finally {
     rl.close();
   }
+}
+
+async function restartOpenclawGateway(configPath) {
+  return new Promise((resolve) => {
+    const cmd = "openclaw";
+    const args = ["gateway", "restart"];
+    const child = spawn(cmd, args, {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        // If OpenClaw supports config path overrides, make sure we restart the same instance we just mutated.
+        OPENCLAW_CONFIG_PATH: configPath
+      }
+    });
+
+    child.on("error", (error) => {
+      resolve({
+        restarted: false,
+        reason: "spawn-error",
+        cmd,
+        args,
+        error
+      });
+    });
+
+    child.on("exit", (code, signal) => {
+      resolve({
+        restarted: code === 0,
+        reason: code === 0 ? "ok" : "nonzero-exit",
+        cmd,
+        args,
+        exitCode: code ?? 1,
+        signal
+      });
+    });
+  });
 }
 
 function generateMonadWalletWithViem() {
@@ -659,16 +806,14 @@ function assertPrivateKeyRotationAllowed(envContent, role, force) {
 
 async function runBotInit(options) {
   const role = resolveBotInitRole(options);
-  const envFile = options.envFile ? path.resolve(options.envFile) : defaultEnvPathForRole(role);
-  const runtimeDir = options.runtimeDir ? path.resolve(options.runtimeDir) : process.cwd();
-  const runtimePackage = options.runtimePackage || DEFAULT_RUNTIME_PACKAGE;
-
-  let envContent;
-  if (existsSync(envFile)) {
-    envContent = await readFile(envFile, "utf8");
-  } else {
-    envContent = await buildEnvScaffold(role, runtimeDir, runtimePackage);
+  const codexHome = options.codexHome ? path.resolve(options.codexHome) : defaultCodexHome();
+  const envFile = resolveExistingBotInitEnvPath(role, options, codexHome);
+  if (!existsSync(envFile)) {
+    throw new Error(
+      `bot-init requires an existing env file: ${envFile}. create ${path.basename(envFile)} first or pass --env-path <file>.`
+    );
   }
+  const envContent = await readFile(envFile, "utf8");
 
   const privateKeyKey = role === "strategy" ? "STRATEGY_PRIVATE_KEY" : "PARTICIPANT_PRIVATE_KEY";
   const existingPrivateKey = readAssignedEnvValue(envContent, privateKeyKey);
@@ -686,14 +831,36 @@ async function runBotInit(options) {
   const wallet = generateMonadWalletWithViem();
   const walletFiles = await persistWallet(role, wallet, options);
   const updates = roleEnvUpdates(role, wallet);
-  const nextEnvContent = upsertEnvValues(envContent, updates);
+  let nextEnvContent = upsertEnvValues(envContent, updates);
+  let envValues = parseEnvAssignments(nextEnvContent);
+  const botId = (envValues.BOT_ID || "").trim();
+  let botApiKey = (envValues.BOT_API_KEY || "").trim();
+  let generatedBotApiKey = "";
+  let botApiKeyHash = "";
+  let botApiKeyHashedEntry = "";
+
+  if (!botApiKey || isPlaceholderEnvValue(botApiKey)) {
+    generatedBotApiKey = generateBotApiKeySecret();
+    nextEnvContent = upsertEnvValues(nextEnvContent, {
+      BOT_API_KEY: generatedBotApiKey
+    });
+    envValues = parseEnvAssignments(nextEnvContent);
+    botApiKey = (envValues.BOT_API_KEY || "").trim();
+  }
+
+  if (botId && botApiKey && !isPlaceholderEnvValue(botApiKey)) {
+    botApiKeyHash = sha256Hex(botApiKey);
+    botApiKeyHashedEntry = `${botId}:sha256:${botApiKeyHash}`;
+    nextEnvContent = upsertEnvValues(nextEnvContent, {
+      BOT_API_KEY_SHA256: botApiKeyHash
+    });
+  }
 
   await mkdir(path.dirname(envFile), { recursive: true });
   await writeFile(envFile, nextEnvContent);
   await chmod(envFile, 0o600);
   let syncMeta = null;
   if (options.syncOpenclawEnv) {
-    const codexHome = options.codexHome ? path.resolve(options.codexHome) : defaultCodexHome();
     syncMeta = await syncOpenclawEnvVarsFromFile(envFile, codexHome);
   }
   const sourceCommand = `set -a; source ${shellQuote(envFile)}; set +a`;
@@ -714,8 +881,32 @@ async function runBotInit(options) {
   }
   console.log(`Wallet backup (keep secret): ${walletFiles.walletPath}`);
   console.log(`Private key backup (keep secret): ${walletFiles.privateKeyPath}`);
-  console.log(`Load env now: ${sourceCommand}`);
-}
+  if (generatedBotApiKey) {
+    console.log("Generated random BOT_API_KEY and updated env file.");
+  }
+	  if (botApiKeyHashedEntry) {
+	    console.log(`Bot API key SHA-256: ${botApiKeyHash}`);
+	    console.log(`Relayer BOT_API_KEYS hashed entry: ${botApiKeyHashedEntry}`);
+	  }
+	  if (syncMeta?.synced && options.restartOpenclawGateway) {
+	    console.log("Restarting OpenClaw gateway to apply env changes...");
+	    const restartMeta = await restartOpenclawGateway(syncMeta.configPath);
+	    if (restartMeta.restarted) {
+	      console.log("OpenClaw gateway restarted.");
+	    } else if (restartMeta.reason === "spawn-error") {
+	      const message =
+	        restartMeta.error instanceof Error ? restartMeta.error.message : String(restartMeta.error);
+	      console.log(`WARNING: failed to run 'openclaw gateway restart' (${message}).`);
+	      console.log("Run it manually if your gateway still uses stale env vars.");
+	    } else {
+	      console.log(
+	        `WARNING: 'openclaw gateway restart' failed (exit code ${restartMeta.exitCode}).`
+	      );
+	      console.log("Run it manually if your gateway still uses stale env vars.");
+	    }
+	  }
+	  console.log(`Load env now: ${sourceCommand}`);
+	}
 
 async function loadManifest(packDir) {
   const candidates = [
@@ -875,10 +1066,10 @@ async function installPack(packName, options) {
   }
 
   let envScaffoldMeta = null;
+  let resolvedEnvProfile = options.envProfileExplicit
+    ? options.envProfile
+    : defaultEnvProfileForPack(packName);
   if (options.initEnv) {
-    const resolvedEnvProfile = options.envProfileExplicit
-      ? options.envProfile
-      : defaultEnvProfileForPack(packName);
     const envOptions = {
       ...options,
       envProfile: resolvedEnvProfile,
@@ -922,6 +1113,10 @@ async function installPack(packName, options) {
       );
     }
   }
+  if (envScaffoldMeta?.profile) {
+    resolvedEnvProfile = envScaffoldMeta.profile;
+  }
+  printTelegramBotSetupGuide(resolvedEnvProfile);
   console.log("Restart Codex to pick up new skills.");
 }
 

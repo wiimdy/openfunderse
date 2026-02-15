@@ -23,21 +23,23 @@ metadata:
 
 Participant role proposes and validates `AllocationClaimV1` only.
 
-## Quick Start (ClawHub Users)
+## Quick Start
 
-1) Install the skill:
+1) Install (pick one). You do **not** need to run both:
+
+Manual (direct installer; run in a Node project dir, or `npm init -y` first):
+
+```bash
+npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
+```
+
+ClawHub:
 
 ```bash
 npx clawhub@latest install openfunderse-participant
 ```
 
-2) Install runtime + generate env scaffold:
-
-```bash
-npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
-```
-
-3) Rotate bootstrap key and write a fresh participant wallet to env:
+2) Rotate the temporary bootstrap key and write a fresh participant wallet to env:
 
 ```bash
 npx @wiimdy/openfunderse@latest bot-init \
@@ -45,17 +47,48 @@ npx @wiimdy/openfunderse@latest bot-init \
   --yes
 ```
 
-4) Load env for the current shell:
+`bot-init` updates an existing `.env.participant`.  
+If the env file is missing, run install first (without `--no-init-env`) or pass `--env-path`.
+
+### Environment Source of Truth (Hard Rule)
+
+- In OpenClaw runtime on Ubuntu, treat `/home/ubuntu/.openclaw/openclaw.json` (`env.vars`) as the canonical env source.
+- Do not require manual `.env` sourcing for normal skill execution.
+- If `.env*` and `openclaw.json` disagree, use `openclaw.json` values.
+- When user asks env setup, direct them to update `openclaw.json` first.
+
+3) Optional local shell export (debug only):
 
 ```bash
-set -a; source .env.participant; set +a
+set -a; source ~/.openclaw/workspace/.env.participant; set +a
 ```
+
+This step is not required for normal OpenClaw skill execution.
+
+Telegram slash commands:
+
+```text
+/propose_allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
+/validate_allocation --claim-file <path>
+/submit_allocation --claim-file <path> --submit
+/allocation_e2e --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--submit]
+```
+
+Notes:
+- Slash parser accepts underscores, so `/submit_allocation` equals `/submit-allocation`.
+- `key=value` style is also accepted (`fund_id=demo-fund`).
+- On first install, register these commands in Telegram via `@BotFather` -> `/setcommands`.
 
 OpenClaw note:
 - `install` / `bot-init` sync env keys into `~/.openclaw/openclaw.json` (`env.vars`) by default.
-- Use `--no-sync-openclaw-env` if you want file-only behavior.
+- `bot-init` also runs `openclaw gateway restart` after a successful env sync, so the gateway picks up updates.
+- Use `--no-sync-openclaw-env` for file-only behavior, or `--no-restart-openclaw-gateway` to skip the restart.
+- If env still looks stale: run `openclaw gateway restart` and verify values in `/home/ubuntu/.openclaw/openclaw.json`.
 
-## Claim model
+Note:
+- The scaffold includes a temporary public key placeholder by default.
+- Always run `bot-init` before funding or running production actions.
+- `bot-init` generates a random `BOT_API_KEY` when current value is missing or placeholder.
 
 `propose_allocation` outputs canonical allocation claim:
 - `claimVersion: "v1"`
@@ -126,9 +159,17 @@ If gate is closed, return `decision=READY` (no submit).
 
 ## Verification rules
 
-1. Claim must include required `AllocationClaimV1` fields.
-2. `fundId/epochId` must match request scope.
-3. Recompute canonical hash using SDK and compare with `subjectHash`.
-4. Missing required fields -> `NEED_MORE_EVIDENCE`.
-5. Scope/hash mismatch -> `FAIL`.
-6. Deterministic match -> `PASS`.
+## Rules
+
+1. **Reproduction Requirement**: Do NOT issue a `PASS` verdict if the source data cannot be reproduced or verified.
+2. **Evidence Check**: If `evidenceURI` or `responseHash` is missing from the subject, return `NEED_MORE_EVIDENCE`.
+3. **Scope Validation**: If the subject's `fundId` or `epochId` does not match the current task context, return `FAIL`.
+4. **Key Hygiene**: Use only dedicated participant/verifier keys. Never use custody/admin keys for attest operations.
+5. **Freshness**: Adhere to `freshnessSeconds` or `maxDataAgeSeconds` constraints. If data is stale, the verdict should reflect this.
+6. **Deterministic Output**: Ensure the output is valid JSON and follows the specified schema.
+7. **Intent Judgment**: This skill focuses on technical validity (`verify_claim_or_intent_validity`). Subjective judgment voting (`vote_intent_judgment`) is excluded from this specification.
+8. **Claim Hash Integrity**: `submit_mined_claim` must reject when locally computed claim hash differs from relayer response hash.
+9. **Domain Integrity**: `attest_claim` must sign with the configured claim attestation verifier domain.
+10. **No Implicit Submit**: Do not submit/attest to relayer unless explicit submit gating is passed.
+11. **Trusted Relayer**: In production, set `PARTICIPANT_TRUSTED_RELAYER_HOSTS` and avoid arbitrary relayer URLs.
+12. **Env Source Priority**: Resolve runtime env from `/home/ubuntu/.openclaw/openclaw.json` (`env.vars`) before local `.env*` files.

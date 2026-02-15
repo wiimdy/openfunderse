@@ -3,10 +3,25 @@ import { requireBotAuth } from "@/lib/bot-auth";
 import { requireFundBotRole } from "@/lib/fund-bot-authz";
 import { buildEpochStateRecord, type Hex } from "@claw/protocol-sdk";
 import {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  http,
+  parseAbi,
+  type Address
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+import {
+  getFundDeployment,
   listAllocationClaimsByEpoch,
   listStakeWeightsByFund,
   upsertEpochState
 } from "@/lib/supabase";
+
+const SNAPSHOT_BOOK_ABI = parseAbi([
+  "function publishSnapshot(bytes32 snapshotRoot)",
+  "function isSnapshotFinalized(bytes32 snapshotHash) view returns (bool)"
+]);
 
 function parseBigints(values: unknown[]): bigint[] {
   return values.map((value) => BigInt(String(value)));
@@ -145,6 +160,131 @@ export async function POST(
     claimHashes
   });
 
+  const deployment = await getFundDeployment(fundId);
+  if (!deployment) {
+    return NextResponse.json(
+      {
+        error: "BAD_REQUEST",
+        message: "fund is not deployed yet (missing onchain deployment metadata)"
+      },
+      { status: 400 }
+    );
+  }
+
+  const snapshotBookAddress = deployment.snapshot_book_address as Address;
+  if (!/^0x[a-fA-F0-9]{40}$/.test(snapshotBookAddress)) {
+    return NextResponse.json(
+      {
+        error: "BAD_REQUEST",
+        message: "invalid snapshotBook address in deployment",
+        snapshotBookAddress
+      },
+      { status: 400 }
+    );
+  }
+
+  const chainIdRaw = process.env.CHAIN_ID ?? "";
+  const rpcUrl = process.env.RPC_URL ?? "";
+  const chainIdNum = Number(chainIdRaw);
+  if (!Number.isFinite(chainIdNum) || chainIdNum <= 0) {
+    return NextResponse.json(
+      { error: "CONFIG_ERROR", message: "CHAIN_ID must be a positive number" },
+      { status: 500 }
+    );
+  }
+  if (!rpcUrl) {
+    return NextResponse.json(
+      { error: "CONFIG_ERROR", message: "RPC_URL is required" },
+      { status: 500 }
+    );
+  }
+
+  const chain = defineChain({
+    id: Math.trunc(chainIdNum),
+    name: `claw-${Math.trunc(chainIdNum)}`,
+    nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
+    rpcUrls: {
+      default: { http: [rpcUrl] },
+      public: { http: [rpcUrl] }
+    }
+  });
+
+  const publicClient = createPublicClient({
+    chain,
+    transport: http(rpcUrl)
+  });
+
+  const alreadyPublished = (await publicClient.readContract({
+    address: snapshotBookAddress,
+    abi: SNAPSHOT_BOOK_ABI,
+    functionName: "isSnapshotFinalized",
+    args: [epochState.epochStateHash]
+  })) as boolean;
+
+  let publishTxHash: Hex | null = null;
+  if (!alreadyPublished) {
+    const signerKey =
+      process.env.SNAPSHOT_PUBLISHER_PRIVATE_KEY ??
+      process.env.RELAYER_SIGNER_PRIVATE_KEY ??
+      process.env.EXECUTOR_PRIVATE_KEY;
+    if (!signerKey || !/^0x[0-9a-fA-F]{64}$/.test(signerKey)) {
+      return NextResponse.json(
+        {
+          error: "CONFIG_ERROR",
+          message:
+            "missing required key to publish snapshot (set SNAPSHOT_PUBLISHER_PRIVATE_KEY or RELAYER_SIGNER_PRIVATE_KEY or EXECUTOR_PRIVATE_KEY)"
+        },
+        { status: 500 }
+      );
+    }
+
+    const account = privateKeyToAccount(signerKey as Hex);
+    const walletClient = createWalletClient({
+      account,
+      chain,
+      transport: http(rpcUrl)
+    });
+
+    const simulation = await publicClient.simulateContract({
+      account,
+      address: snapshotBookAddress,
+      abi: SNAPSHOT_BOOK_ABI,
+      functionName: "publishSnapshot",
+      args: [epochState.epochStateHash]
+    });
+    publishTxHash = await walletClient.writeContract(simulation.request);
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash: publishTxHash
+    });
+    if (receipt.status !== "success") {
+      return NextResponse.json(
+        {
+          error: "ONCHAIN_ERROR",
+          message: `publishSnapshot reverted: ${publishTxHash}`,
+          txHash: publishTxHash
+        },
+        { status: 500 }
+      );
+    }
+
+    const finalizedAfter = (await publicClient.readContract({
+      address: snapshotBookAddress,
+      abi: SNAPSHOT_BOOK_ABI,
+      functionName: "isSnapshotFinalized",
+      args: [epochState.epochStateHash]
+    })) as boolean;
+    if (!finalizedAfter) {
+      return NextResponse.json(
+        {
+          error: "ONCHAIN_ERROR",
+          message: "snapshot root publish succeeded but read-back check failed",
+          txHash: publishTxHash
+        },
+        { status: 500 }
+      );
+    }
+  }
+
   await upsertEpochState({
     fundId,
     epochId: epoch,
@@ -160,6 +300,11 @@ export async function POST(
       fundId,
       epochId: epoch.toString(),
       epochStateHash: epochState.epochStateHash,
+      snapshotBookAddress,
+      snapshotPublish: {
+        alreadyPublished,
+        txHash: publishTxHash
+      },
       claimScale: claimScale.toString(),
       participantCount: participants.length,
       claimCount: claimHashes.length,

@@ -85,6 +85,10 @@ const printUsage = (): void => {
 
 clawbot-run --role <strategy|participant> --action <action> [action options...]
 
+Telegram slash aliases:
+  /propose_intent, /dry_run_intent, /attest_intent, /execute_intent, /create_fund
+  /propose_allocation, /validate_allocation, /submit_allocation, /allocation_e2e
+
 Examples:
   clawbot-run --role strategy --action propose_intent --fund-id demo-fund --intent-file ./intent.json --execution-route-file ./route.json
   clawbot-run --role participant --action propose_allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000
@@ -94,11 +98,11 @@ Examples:
 export const runClawbotCli = async (argv: string[]): Promise<boolean> => {
   const parsed = parseCli(argv);
   const command = parsed.command ?? '';
-  if (command !== 'clawbot-run') {
+  if (command !== 'clawbot-run' && command !== 'clawbot-help') {
     return false;
   }
 
-  if (parsed.flags.has('help')) {
+  if (command === 'clawbot-help' || parsed.flags.has('help')) {
     printUsage();
     return true;
   }
