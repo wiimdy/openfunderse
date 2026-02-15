@@ -11,6 +11,7 @@ import {
 } from "viem";
 import { requireBotAuth } from "@/lib/bot-auth";
 import { loadChainReadConfig, loadReadOnlyRuntimeConfig } from "@/lib/config";
+import { resolveFundAllowlistTokens } from "@/lib/fund-defaults";
 import {
   getFund,
   getFundDeployment,
@@ -308,6 +309,12 @@ export async function POST(request: Request) {
       { status: 409 }
     );
   }
+
+  // Default allowlist on first sync only (or if the fund has no allowlist set yet).
+  allowlistTokens = resolveFundAllowlistTokens({
+    requestedAllowlistTokens: allowlistTokens,
+    existingAllowlistTokensJson: existingFund?.allowlist_tokens_json
+  });
 
   const existingByFund = await getFundDeployment(fundId);
   const existingByTx = await getFundDeploymentByTxHash(txHash);
