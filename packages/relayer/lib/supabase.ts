@@ -595,25 +595,14 @@ export async function incrementSubjectAttestedWeight(
   const db = supabase();
   const key = subjectHash.toLowerCase();
 
-  const { data: current, error: currentError } = await db
-    .from("subject_state")
-    .select("attested_weight")
-    .eq("subject_type", subjectType)
-    .eq("subject_hash", key)
-    .maybeSingle();
-  throwIfError(currentError, null);
-
-  const prev = current ? BigInt(current.attested_weight) : BigInt(0);
-  const next = prev + delta;
-
-  const { error } = await db
-    .from("subject_state")
-    .update({ attested_weight: next.toString(), updated_at: nowMs() })
-    .eq("subject_type", subjectType)
-    .eq("subject_hash", key);
+  const { data, error } = await db.rpc("increment_attested_weight", {
+    p_subject_type: subjectType,
+    p_subject_hash: key,
+    p_delta: delta.toString(),
+  });
   throwIfError(error, null);
 
-  return next;
+  return BigInt(data as string);
 }
 
 export async function getSubjectState(subjectType: SubjectType, subjectHash: string) {
@@ -672,76 +661,15 @@ export async function markSubjectApproved(input: {
   txHash?: string | null;
 }): Promise<void> {
   const db = supabase();
-  const now = nowMs();
   const key = input.subjectHash.toLowerCase();
-  let txHash = input.txHash ? input.txHash.toLowerCase() : null;
+  const txHash = input.txHash ? input.txHash.toLowerCase() : null;
 
-  if (txHash === null) {
-    const { data: existing, error: existingError } = await db
-      .from("subject_state")
-      .select("tx_hash")
-      .eq("fund_id", input.fundId)
-      .eq("subject_type", input.subjectType)
-      .eq("subject_hash", key)
-      .maybeSingle();
-    throwIfError(existingError, null);
-    txHash = existing?.tx_hash ? String(existing.tx_hash).toLowerCase() : null;
-  }
-
-  {
-    const { error } = await db
-      .from("subject_state")
-      .update({ status: "APPROVED", tx_hash: txHash, updated_at: now })
-      .eq("fund_id", input.fundId)
-      .eq("subject_type", input.subjectType)
-      .eq("subject_hash", key);
-    throwIfError(error, null);
-  }
-
-  {
-    const { error } = await db
-      .from("attestations")
-      .update({ status: "APPROVED", tx_hash: txHash, updated_at: now })
-      .eq("fund_id", input.fundId)
-      .eq("subject_type", input.subjectType)
-      .eq("subject_hash", key)
-      .in("status", ["PENDING", "READY_FOR_ONCHAIN"]);
-    throwIfError(error, null);
-  }
-
-  if (input.subjectType === "CLAIM") {
-    const { error } = await db
-      .from("claims")
-      .update({ status: "APPROVED", updated_at: now })
-      .eq("fund_id", input.fundId)
-      .eq("claim_hash", key);
-    throwIfError(error, null);
-    return;
-  }
-
-  {
-    const { error } = await db
-      .from("intents")
-      .update({ status: "APPROVED", updated_at: now })
-      .eq("fund_id", input.fundId)
-      .eq("intent_hash", key);
-    throwIfError(error, null);
-  }
-
-  const { error } = await db.from("execution_jobs").upsert(
-    {
-      fund_id: input.fundId,
-      intent_hash: key,
-      status: "READY",
-      attempt_count: 0,
-      next_run_at: now,
-      created_at: now,
-      updated_at: now
-    },
-    {
-      onConflict: "fund_id,intent_hash"
-    }
-  );
+  const { error } = await db.rpc("mark_subject_approved", {
+    p_subject_type: input.subjectType,
+    p_subject_hash: key,
+    p_fund_id: input.fundId,
+    p_tx_hash: txHash,
+  });
   throwIfError(error, null);
 }
 
