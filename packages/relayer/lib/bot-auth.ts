@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { getBotCredential } from "@/lib/supabase";
 
 const SHA256_PREFIX = "sha256:";
 const SHA256_HEX_REGEX = /^[0-9a-f]{64}$/;
@@ -37,6 +38,16 @@ function parseScopes(value: string | undefined): Record<string, Set<string>> {
   }
 
   return out;
+}
+
+function parseScopeSet(value: string | undefined): Set<string> {
+  if (!value) return new Set();
+  return new Set(
+    value
+      .split("|")
+      .map((scope) => scope.trim())
+      .filter(Boolean)
+  );
 }
 
 function unauthorized(message: string) {
@@ -79,6 +90,13 @@ export function requireBotAuth(
   request: Request,
   requiredScopes: string[] = []
 ) {
+  throw new Error("requireBotAuth must be awaited; use requireBotAuthAsync()");
+}
+
+export async function requireBotAuthAsync(
+  request: Request,
+  requiredScopes: string[] = []
+) {
   const botId = request.headers.get("x-bot-id")?.trim() ?? "";
   const providedKey = request.headers.get("x-bot-api-key")?.trim() ?? "";
 
@@ -89,8 +107,27 @@ export function requireBotAuth(
     };
   }
 
-  const keys = parseEntries(process.env.BOT_API_KEYS);
-  const expectedKey = keys[botId];
+  // Prefer DB-backed credentials (registered during fund/bot registration).
+  // Fall back to env BOT_API_KEYS/BOT_SCOPES for legacy deployments.
+  let expectedKey = "";
+  let scopes = new Set<string>();
+
+  try {
+    const row = await getBotCredential(botId);
+    if (row?.api_key) {
+      expectedKey = row.api_key;
+      scopes = parseScopeSet(row.scopes);
+    }
+  } catch {
+    // ignore DB errors and fall back to env-based auth
+  }
+
+  if (!expectedKey) {
+    const keys = parseEntries(process.env.BOT_API_KEYS);
+    expectedKey = keys[botId] ?? "";
+    const scopeMap = parseScopes(process.env.BOT_SCOPES);
+    scopes = scopeMap[botId] ?? new Set<string>();
+  }
 
   if (!expectedKey || !verifyBotApiKey(expectedKey, providedKey)) {
     return {
@@ -98,9 +135,6 @@ export function requireBotAuth(
       response: unauthorized("Invalid bot credentials.")
     };
   }
-
-  const scopeMap = parseScopes(process.env.BOT_SCOPES);
-  const scopes = scopeMap[botId] ?? new Set<string>();
 
   for (const scope of requiredScopes) {
     if (!scopes.has(scope)) {

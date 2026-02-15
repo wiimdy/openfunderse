@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { requireBotAuth } from "@/lib/bot-auth";
+import { requireBotAuthAsync } from "@/lib/bot-auth";
 import { getFund, listFundBots, upsertFundBot } from "@/lib/supabase";
+import { upsertBotCredential } from "@/lib/supabase";
 
 const ALLOWED_ROLES = new Set(["participant"]);
 
@@ -9,7 +10,7 @@ export async function POST(
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
-  const botAuth = requireBotAuth(request, ["bots.register"]);
+  const botAuth = await requireBotAuthAsync(request, ["bots.register"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }
@@ -24,6 +25,9 @@ export async function POST(
   const role = String(body.role ?? "").trim().toLowerCase();
   const botId = String(body.botId ?? "").trim();
   const botAddress = String(body.botAddress ?? "").trim();
+  const botApiKey = String(body.botApiKey ?? "").trim();
+  const botApiKeySha256 = String(body.botApiKeySha256 ?? "").trim().toLowerCase();
+  const botScopes = String(body.botScopes ?? "").trim();
 
   if (!ALLOWED_ROLES.has(role)) {
     return NextResponse.json(
@@ -78,6 +82,18 @@ export async function POST(
     registeredBy: botAuth.botId
   });
 
+  // Optional: register participant bot credentials in DB so relayer auth doesn't depend on deploy-time env.
+  // Prefer sending botApiKeySha256 from `bot-init` output.
+  if (botApiKeySha256 || botApiKey) {
+    const apiKeyValue = botApiKeySha256 ? `sha256:${botApiKeySha256}` : botApiKey;
+    await upsertBotCredential({
+      botId,
+      apiKey: apiKeyValue,
+      scopes: botScopes,
+      createdBy: botAuth.botId
+    });
+  }
+
   return NextResponse.json(
     {
       status: "OK",
@@ -102,7 +118,7 @@ export async function GET(
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
-  const botAuth = requireBotAuth(request, ["bots.register"]);
+  const botAuth = await requireBotAuthAsync(request, ["bots.register"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }

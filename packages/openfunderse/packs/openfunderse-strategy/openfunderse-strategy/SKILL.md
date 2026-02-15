@@ -113,6 +113,28 @@ Note:
 - Always run `bot-init` before funding or running production actions.
 - `bot-init` generates a random `BOT_API_KEY` when current value is missing or placeholder.
 
+## Relayer Bot Credential Model (Important)
+
+This skill calls relayer write APIs with:
+- `x-bot-id: BOT_ID`
+- `x-bot-api-key: BOT_API_KEY`
+
+For production, relayer should validate these via **DB-backed credentials** (Supabase `bot_credentials`) instead of Vercel env `BOT_API_KEYS`.
+
+### Strategy bootstrap (first registration)
+
+The strategy bot key becomes “known to relayer” when the fund is synced:
+- Call `POST /api/v1/funds/sync-by-strategy`
+- Include `strategyBotId`, `strategyBotAddress`, and **`strategyBotApiKeySha256`** (sha256 hex from `bot-init`)
+
+If relayer does not yet know your bot key, `sync-by-strategy` supports a signature-based bootstrap flow (route-level docs). After this, repeat calls can use normal `x-bot-id` / `x-bot-api-key` auth.
+
+### Participant registration (recommended)
+
+When registering participant bots:
+- Call `POST /api/v1/funds/{fundId}/bots/register`
+- Include `botApiKeySha256` (sha256 hex from that participant bot's `bot-init`) so relayer can authenticate participant submissions.
+
 ## Credential Scope
 
 - `STRATEGY_PRIVATE_KEY` is the **strategy signer key (EOA)** used for onchain strategy operations.
@@ -263,6 +285,19 @@ When using `proposeIntentAndSubmit` with explicit submit gates satisfied, a `PRO
 2. Strategy signer (EOA) `IntentBook.proposeIntent(...)`
 
 This keeps offchain canonical intent and onchain intent registration aligned in the same skill timing.
+
+### Relayer + Onchain Execution Workflow
+For end-to-end execution, strategy/relayer interaction follows:
+1. (Optional snapshot source) relayer `GET /api/v1/funds/{fundId}/epochs/latest` for `snapshotHash`, `claimCount`, `aggregateWeights`.
+2. Propose intent offchain: `POST /api/v1/funds/{fundId}/intents/propose`.
+3. Register onchain intent: `IntentBook.proposeIntent(...)`.
+4. Fetch threshold attestations: `GET /api/v1/funds/{fundId}/intents/{intentHash}/onchain-bundle`.
+5. Submit onchain attestations: `IntentBook.attestIntent(...)`, then ack relayer `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-attested`.
+6. Poll executable jobs: `GET /api/v1/funds/{fundId}/intents/ready-execution`.
+7. Dry-run/execute via core: `ClawCore.dryRunIntentExecution(...)` then `ClawCore.executeIntent(...)`.
+8. Ack execution result to relayer:
+   - success: `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-executed`
+   - failure/retry: `POST /api/v1/funds/{fundId}/intents/{intentHash}/onchain-failed`
 
 ### HOLD Decision
 Returned when no trade is proposed due to risk constraints or market conditions.

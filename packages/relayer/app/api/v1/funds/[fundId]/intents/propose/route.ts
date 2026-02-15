@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireBotAuth } from "@/lib/bot-auth";
+import { requireBotAuthAsync } from "@/lib/bot-auth";
 import { requireFundBotRole } from "@/lib/fund-bot-authz";
 import {
   buildIntentAllowlistHashFromRoute,
@@ -25,7 +25,7 @@ export async function POST(
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
-  const botAuth = requireBotAuth(request, ["intents.propose"]);
+  const botAuth = await requireBotAuthAsync(request, ["intents.propose"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }

@@ -35,6 +35,18 @@ create table if not exists fund_bots (
   unique (fund_id, bot_id)
 );
 
+-- Bot credentials (API keys + scopes).
+-- Keys are stored as either plaintext (legacy) or "sha256:<64-hex>".
+create table if not exists bot_credentials (
+  id bigserial primary key,
+  bot_id text not null unique,
+  api_key text not null,
+  scopes text not null default '',
+  created_by text not null,
+  created_at bigint not null,
+  updated_at bigint not null
+);
+
 create table if not exists fund_deployments (
   id bigserial primary key,
   fund_id text not null unique,

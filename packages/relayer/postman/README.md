@@ -45,7 +45,8 @@ Required env in relayer `.env`:
 - `CLAIM_THRESHOLD_WEIGHT`
 - `INTENT_THRESHOLD_WEIGHT`
 - `VERIFIER_WEIGHT_SNAPSHOT`
-- `BOT_API_KEYS`, `BOT_SCOPES`
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`
+- `BOT_API_KEYS`, `BOT_SCOPES` (optional legacy fallback)
 
 ## 2) Import into Postman
 1. Import collection: `Claw-Relayer-v0.postman_collection.json`
@@ -75,7 +76,7 @@ And prints Postman environment values to copy:
 1. Sign in at `/login` and set `admin_auth_cookie` in Postman
 2. `POST /api/v1/funds` (admin creates fund metadata only)
    - includes `strategyBotId` + `strategyBotAddress` (single strategy bot for fund)
-3. `POST /api/v1/funds/bootstrap` (admin deploys onchain fund stack + persists deployment metadata)
+3. `POST /api/v1/funds/bootstrap` (admin deploys onchain fund stack + persists deployment metadata) (legacy)
 4. `POST /api/v1/funds/{fundId}/bots/register` (strategy bot registers participant bot)
 5. `GET /api/v1/funds/{fundId}/bots/register` (strategy bot verifies registry)
 6. `POST /api/v1/funds/{fundId}/claims` (participant submits canonical claim payload)
@@ -94,3 +95,8 @@ And prints Postman environment values to copy:
 - `POST /intents/propose` does not accept direct `allowlistHash`; relayer computes it from `executionRoute` only.
 - Collection now includes `funds/bootstrap`, `executions`, `cron/execute-intents`, and SSE endpoint (`events/intents`).
 - If you only want quick negative-path testing, use the `bad signature` requests in the collection.
+
+## Bot credentials note (recommended)
+- In production, prefer DB-backed bot credentials in Supabase `bot_credentials`.
+- Register the strategy bot credential during `POST /api/v1/funds/sync-by-strategy` by including `strategyBotApiKeySha256` (sha256 hex from bot-init).
+- Register participant bot credential during `POST /api/v1/funds/{fundId}/bots/register` by including `botApiKeySha256` (sha256 hex from that bot-init).
