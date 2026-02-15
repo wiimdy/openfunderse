@@ -30,14 +30,8 @@ Use this flow for all non-trivial changes:
 14. Confirm code quality is high enough to merge.
 15. Validate end-user flow is intact.
 
-Detailed execution guide:
-- `docs/IMPLEMENTATION_REVIEW_PLAYBOOK.md`
-
 Open-source requirement for submissions:
 - Use an OSI-approved license (MIT, Apache-2.0, GPL, BSD, or equivalent permissive license).
-
-## Decision Records (ADR)
-For protocol/architecture changes, add an ADR under `docs/decisions/`.
 
 ## Branches
 - Use short, descriptive branch names.

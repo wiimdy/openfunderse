@@ -271,9 +271,5 @@ Canonical pack files are maintained at:
 
 `packages/agents` keeps runtime code only (`src/*`, `dist/*`).
 
-Prompt references from docs:
-- `docs/jupyter-notebook/openclaw-agent-prompt-book.ipynb`
-- `docs/prompts/kr/base_system.md`
-- `docs/prompts/kr/participant_moltbot.md`
-- `docs/prompts/kr/strategy_moltbot.md`
-- `docs/prompts/kr/relayer_next_server.md`
+Prompt references:
+- See skill packs in `packages/openfunderse/packs/`
