@@ -45,7 +45,6 @@ interface CoreDryRunResult {
 interface FundDeployConfigInput {
   fundOwner: Address;
   strategyAgent: Address;
-  snapshotBook: Address;
   asset: Address;
   vaultName: string;
   vaultSymbol: string;
@@ -79,7 +78,7 @@ const CORE_ABI = parseAbi([
 ]);
 
 const FUND_FACTORY_ABI = parseAbi([
-  'function createFund((address fundOwner,address strategyAgent,address snapshotBook,address asset,string vaultName,string vaultSymbol,uint256 intentThresholdWeight,address nadfunLens,address[] initialVerifiers,uint256[] initialVerifierWeights,address[] initialAllowedTokens,address[] initialAllowedAdapters) cfg) returns (uint256 fundId, address intentBook, address core, address vault)',
+  'function createFund((address fundOwner,address strategyAgent,address asset,string vaultName,string vaultSymbol,uint256 intentThresholdWeight,address nadfunLens,address[] initialVerifiers,uint256[] initialVerifierWeights,address[] initialAllowedTokens,address[] initialAllowedAdapters) cfg) returns (uint256 fundId, address intentBook, address core, address vault)',
   'event FundDeployed(uint256 indexed fundId, address indexed fundOwner, address indexed strategyAgent, address intentBook, address core, address vault, address snapshotBook, address asset)'
 ]);
 
@@ -309,7 +308,6 @@ const parseDeployConfig = (
   }
   const value = parsed as Record<string, unknown>;
   const fundOwner = parseAddress(String(value.fundOwner ?? ''), 'deployConfig.fundOwner');
-  const snapshotBook = parseAddress(String(value.snapshotBook ?? ''), 'deployConfig.snapshotBook');
   const asset = parseAddress(String(value.asset ?? ''), 'deployConfig.asset');
   const vaultName = String(value.vaultName ?? '').trim();
   const vaultSymbol = String(value.vaultSymbol ?? '').trim();
@@ -343,7 +341,6 @@ const parseDeployConfig = (
       strategyAddressFallback,
       'deployConfig.strategyAgent'
     ),
-    snapshotBook,
     asset,
     vaultName,
     vaultSymbol,

@@ -87,8 +87,97 @@ export function snapshotHashFromUnordered(epochId: bigint, claimHashes: Hex[]): 
   return snapshotHash(epochId, orderedClaimHashes);
 }
 
-export const epochStateHash = snapshotHash;
-export const epochStateHashFromUnordered = snapshotHashFromUnordered;
+const MERKLE_NODE_PAIR = parseAbiParameters("bytes32 a, bytes32 b");
+
+function merkleHashPair(a: Hex, b: Hex): Hex {
+  const left = a.toLowerCase() < b.toLowerCase() ? a : b;
+  const right = left === a ? b : a;
+  return keccak256(encodeAbiParameters(MERKLE_NODE_PAIR, [left, right]));
+}
+
+/**
+ * Deterministic Merkle root for strictly-sorted bytes32 leaves using commutative keccak256.
+ * - Leaves must be strictly sorted ascending with no duplicates.
+ * - If a layer has an odd number of nodes, the last node is duplicated.
+ */
+export function merkleRoot(orderedLeaves: Hex[]): Hex {
+  if (orderedLeaves.length === 0) {
+    throw new Error("leaves must not be empty");
+  }
+  assertStrictlySortedHex(orderedLeaves, "orderedLeaves");
+
+  let layer = [...orderedLeaves];
+  while (layer.length > 1) {
+    const next: Hex[] = [];
+    for (let i = 0; i < layer.length; i += 2) {
+      const left = layer[i];
+      const right = i + 1 < layer.length ? layer[i + 1] : layer[i];
+      next.push(merkleHashPair(left, right));
+    }
+    layer = next;
+  }
+  return layer[0];
+}
+
+export function merkleRootFromUnorderedLeaves(leaves: Hex[]): Hex {
+  const ordered = uniqueSortedBytes32Hex(leaves);
+  return merkleRoot(ordered);
+}
+
+/**
+ * Epoch state hash used as the onchain/offchain snapshot root.
+ * Compatible with {SnapshotBook} + {IntentBook} snapshot gating.
+ */
+export function epochStateHash(epochId: bigint, orderedClaimHashes: Hex[]): Hex {
+  assertUint64(epochId, "epochId");
+  return merkleRoot(orderedClaimHashes);
+}
+
+export function epochStateHashFromUnordered(epochId: bigint, claimHashes: Hex[]): Hex {
+  assertUint64(epochId, "epochId");
+  const ordered = canonicalOrderedClaimHashes(claimHashes);
+  return merkleRoot(ordered);
+}
+
+export function merkleProof(orderedLeaves: Hex[], leaf: Hex): Hex[] {
+  assertStrictlySortedHex(orderedLeaves, "orderedLeaves");
+  if (orderedLeaves.length === 0) {
+    throw new Error("orderedLeaves must not be empty");
+  }
+
+  const normalizedLeaf = leaf.toLowerCase() as Hex;
+  const index0 = orderedLeaves.findIndex((entry) => entry.toLowerCase() === normalizedLeaf);
+  if (index0 < 0) {
+    throw new Error("leaf not found in orderedLeaves");
+  }
+
+  const proof: Hex[] = [];
+  let index = index0;
+  let layer = [...orderedLeaves];
+
+  while (layer.length > 1) {
+    const siblingIndex = index ^ 1; // toggle last bit
+    const sibling = siblingIndex < layer.length ? layer[siblingIndex] : layer[index];
+    proof.push(sibling);
+
+    const next: Hex[] = [];
+    for (let i = 0; i < layer.length; i += 2) {
+      const left = layer[i];
+      const right = i + 1 < layer.length ? layer[i + 1] : layer[i];
+      next.push(merkleHashPair(left, right));
+    }
+
+    layer = next;
+    index = Math.floor(index / 2);
+  }
+
+  return proof;
+}
+
+export function merkleProofFromUnorderedLeaves(leaves: Hex[], leaf: Hex): Hex[] {
+  const ordered = uniqueSortedBytes32Hex(leaves);
+  return merkleProof(ordered, leaf);
+}
 
 export function reasonHash(reason: string): Hex {
   return keccak256(toHex(reason.normalize("NFC").trim()));

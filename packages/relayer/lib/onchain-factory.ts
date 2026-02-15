@@ -14,14 +14,13 @@ import { loadFactoryRuntimeConfig } from "@/lib/config";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 
 const FUND_FACTORY_ABI = parseAbi([
-  "function createFund((address fundOwner,address strategyAgent,address snapshotBook,address asset,string vaultName,string vaultSymbol,uint256 intentThresholdWeight,address nadfunLens,address[] initialVerifiers,uint256[] initialVerifierWeights,address[] initialAllowedTokens,address[] initialAllowedAdapters) cfg) returns (uint256 fundId, address intentBook, address core, address vault)",
+  "function createFund((address fundOwner,address strategyAgent,address asset,string vaultName,string vaultSymbol,uint256 intentThresholdWeight,address nadfunLens,address[] initialVerifiers,uint256[] initialVerifierWeights,address[] initialAllowedTokens,address[] initialAllowedAdapters) cfg) returns (uint256 fundId, address intentBook, address core, address vault)",
   "event FundDeployed(uint256 indexed fundId, address indexed fundOwner, address indexed strategyAgent, address intentBook, address core, address vault, address snapshotBook, address asset)"
 ]);
 
 export interface DeployConfigInput {
   fundOwner: Address;
   strategyAgent: Address;
-  snapshotBook: Address;
   asset: Address;
   vaultName: string;
   vaultSymbol: string;
@@ -186,6 +185,9 @@ export async function createFundOnchain(
     throw new Error(`createFund tx reverted: ${txHash}`);
   }
   const event = extractFundDeployedLog(receipt.logs, factoryAddress);
+  if (!event) {
+    throw new Error("FundDeployed event not found in createFund tx receipt");
+  }
 
   const resolvedStrategyAgent =
     deployConfig.strategyAgent === ZERO_ADDRESS ? deployConfig.fundOwner : deployConfig.strategyAgent;
@@ -195,14 +197,14 @@ export async function createFundOnchain(
     factoryAddress,
     txHash,
     blockNumber: receipt.blockNumber,
-    fundId: event?.fundId ?? simFundId,
-    intentBookAddress: event?.intentBookAddress ?? simIntentBookAddress,
-    clawCoreAddress: event?.clawCoreAddress ?? simClawCoreAddress,
-    clawVaultAddress: event?.clawVaultAddress ?? simClawVaultAddress,
-    fundOwner: event?.fundOwner ?? deployConfig.fundOwner,
-    strategyAgent: event?.strategyAgent ?? resolvedStrategyAgent,
-    snapshotBookAddress: event?.snapshotBookAddress ?? deployConfig.snapshotBook,
-    assetAddress: event?.assetAddress ?? deployConfig.asset,
+    fundId: event.fundId ?? simFundId,
+    intentBookAddress: event.intentBookAddress ?? simIntentBookAddress,
+    clawCoreAddress: event.clawCoreAddress ?? simClawCoreAddress,
+    clawVaultAddress: event.clawVaultAddress ?? simClawVaultAddress,
+    fundOwner: event.fundOwner ?? deployConfig.fundOwner,
+    strategyAgent: event.strategyAgent ?? resolvedStrategyAgent,
+    snapshotBookAddress: event.snapshotBookAddress,
+    assetAddress: event.assetAddress ?? deployConfig.asset,
     deployerAddress: account.address
   };
 }

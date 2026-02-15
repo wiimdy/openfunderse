@@ -6,11 +6,10 @@ import {ClawFundFactory} from "../src/ClawFundFactory.sol";
 import {IntentBook} from "../src/IntentBook.sol";
 import {ClawCore} from "../src/ClawCore.sol";
 import {ClawVault4626} from "../src/ClawVault4626.sol";
-import {MockSnapshotBook} from "../src/mocks/MockSnapshotBook.sol";
+import {SnapshotBook} from "../src/SnapshotBook.sol";
 
 contract ClawFundFactoryTest is Test {
     address internal factoryOwner = makeAddr("factoryOwner");
-    address internal operator = makeAddr("operator");
     address internal stranger = makeAddr("stranger");
     address internal fundOwner = makeAddr("fundOwner");
     address internal strategy = makeAddr("strategy");
@@ -22,14 +21,9 @@ contract ClawFundFactoryTest is Test {
     address internal adapter1 = makeAddr("adapter1");
 
     ClawFundFactory internal factory;
-    MockSnapshotBook internal snapshots;
 
     function setUp() external {
         factory = new ClawFundFactory(factoryOwner);
-        snapshots = new MockSnapshotBook();
-
-        vm.prank(factoryOwner);
-        factory.setFactoryOperator(operator, true);
     }
 
     function testCreateFundDeploysAndConfiguresStack() external {
@@ -52,7 +46,6 @@ contract ClawFundFactoryTest is Test {
         allowedAdapters[0] = adapter1;
         cfg.initialAllowedAdapters = allowedAdapters;
 
-        vm.prank(operator);
         (uint256 fundId, address intentBookAddr, address coreAddr, address vaultAddr) = factory.createFund(cfg);
 
         assertEq(fundId, 1);
@@ -61,10 +54,11 @@ contract ClawFundFactoryTest is Test {
         IntentBook book = IntentBook(intentBookAddr);
         ClawCore core = ClawCore(coreAddr);
         ClawVault4626 vault = ClawVault4626(payable(vaultAddr));
+        SnapshotBook snapshotBook = SnapshotBook(address(book.snapshotBook()));
 
         assertEq(book.owner(), fundOwner);
         assertEq(book.strategyAgent(), strategy);
-        assertEq(address(book.snapshotBook()), address(snapshots));
+        assertTrue(address(book.snapshotBook()) != address(0));
         assertEq(book.defaultThresholdWeight(), 5);
         assertTrue(book.isVerifier(verifier1));
         assertTrue(book.isVerifier(verifier2));
@@ -85,10 +79,15 @@ contract ClawFundFactoryTest is Test {
         assertTrue(vault.isTokenAllowed(token1));
         assertTrue(vault.isAdapterAllowed(adapter1));
 
+        bytes32 snapshotRoot = keccak256("epoch-1");
+        assertFalse(snapshotBook.isSnapshotFinalized(snapshotRoot));
+        snapshotBook.publishSnapshot(snapshotRoot);
+        assertTrue(snapshotBook.isSnapshotFinalized(snapshotRoot));
+
         ClawFundFactory.FundDeployment memory stored = factory.getFund(fundId);
         assertEq(stored.fundOwner, fundOwner);
         assertEq(stored.strategyAgent, strategy);
-        assertEq(stored.snapshotBook, address(snapshots));
+        assertEq(stored.snapshotBook, address(snapshotBook));
         assertEq(stored.asset, asset);
         assertEq(stored.intentBook, intentBookAddr);
         assertEq(stored.core, coreAddr);
@@ -100,19 +99,18 @@ contract ClawFundFactoryTest is Test {
         ClawFundFactory.DeployConfig memory cfg = _baseConfig();
         cfg.strategyAgent = address(0);
 
-        vm.prank(operator);
         (, address intentBookAddr,,) = factory.createFund(cfg);
 
         IntentBook book = IntentBook(intentBookAddr);
         assertEq(book.strategyAgent(), fundOwner);
     }
 
-    function testCreateFundRevertsWhenCallerIsNotOperator() external {
+    function testCreateFundAllowsAnyCaller() external {
         ClawFundFactory.DeployConfig memory cfg = _baseConfig();
 
         vm.prank(stranger);
-        vm.expectRevert(ClawFundFactory.NotFactoryOperator.selector);
-        factory.createFund(cfg);
+        (uint256 fundId,,,) = factory.createFund(cfg);
+        assertEq(fundId, 1);
     }
 
     function testCreateFundRevertsWhenVerifierArrayLengthMismatch() external {
@@ -120,25 +118,14 @@ contract ClawFundFactoryTest is Test {
         cfg.initialVerifiers = new address[](2);
         cfg.initialVerifierWeights = new uint256[](1);
 
-        vm.prank(operator);
+        vm.prank(stranger);
         vm.expectRevert(ClawFundFactory.InvalidArrayLength.selector);
         factory.createFund(cfg);
-    }
-
-    function testOnlyOwnerCanManageOperators() external {
-        vm.prank(stranger);
-        vm.expectRevert();
-        factory.setFactoryOperator(stranger, true);
-
-        vm.prank(factoryOwner);
-        factory.setFactoryOperator(stranger, true);
-        assertTrue(factory.isFactoryOperator(stranger));
     }
 
     function _baseConfig() internal view returns (ClawFundFactory.DeployConfig memory cfg) {
         cfg.fundOwner = fundOwner;
         cfg.strategyAgent = strategy;
-        cfg.snapshotBook = address(snapshots);
         cfg.asset = asset;
         cfg.vaultName = "Fund Vault Share";
         cfg.vaultSymbol = "FVS";

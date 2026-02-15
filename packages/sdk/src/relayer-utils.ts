@@ -4,7 +4,7 @@ import {
   allocationClaimHash,
   intentExecutionAllowlistHash,
   intentHash,
-  snapshotHashFromUnordered
+  epochStateHashFromUnordered
 } from "./hash.js";
 import type {
   AllocationClaimV1,
@@ -122,7 +122,7 @@ export function buildEpochStateRecord(input: {
     throw new Error("claimHashes must not be empty");
   }
 
-  const hash = snapshotHashFromUnordered(input.epochId, input.claimHashes);
+  const hash = epochStateHashFromUnordered(input.epochId, input.claimHashes);
   return {
     epochId: input.epochId,
     epochStateHash: hash
