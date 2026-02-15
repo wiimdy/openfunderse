@@ -12,7 +12,8 @@
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
     "factory:create-fund": "node scripts/factory-create-fund.mjs",
-    "smoke:all-apis": "node scripts/smoke-all-apis.mjs"
+    "smoke:all-apis": "node scripts/smoke-all-apis.mjs",
+    "test": "npx tsx --test test/**/*.test.ts"
   },
   "dependencies": {
     "@claw/protocol-sdk": "file:../sdk",
