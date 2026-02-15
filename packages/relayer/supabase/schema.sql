@@ -19,6 +19,7 @@ create table if not exists funds (
 alter table if exists funds add column if not exists is_verified boolean not null default false;
 alter table if exists funds add column if not exists visibility text not null default 'HIDDEN';
 alter table if exists funds add column if not exists verification_note text;
+alter table if exists funds add column if not exists allowlist_tokens_json text;
 
 create table if not exists fund_bots (
   id bigserial primary key,

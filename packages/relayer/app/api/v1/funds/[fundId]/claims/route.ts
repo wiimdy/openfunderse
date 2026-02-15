@@ -11,6 +11,7 @@ import {
   insertAllocationClaim,
   listAllocationClaimsByFund
 } from "@/lib/supabase";
+import { parseFundAllowlistTokens, validateClaimDimensions } from "@/lib/claim-validation";
 
 export async function POST(
   request: Request,
@@ -94,6 +95,22 @@ export async function POST(
         receivedParticipant: claim.participant
       },
       { status: 403 }
+    );
+  }
+
+  const dimCheck = validateClaimDimensions({
+    targetWeightsLength: claim.targetWeights.length,
+    fundAllowlistTokens: parseFundAllowlistTokens(fund!)
+  });
+  if (!dimCheck.ok) {
+    return NextResponse.json(
+      {
+        error: "BAD_REQUEST",
+        message: dimCheck.message,
+        code: dimCheck.code,
+        ...dimCheck.detail
+      },
+      { status: 400 }
     );
   }
 

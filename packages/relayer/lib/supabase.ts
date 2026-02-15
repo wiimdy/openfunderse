@@ -113,6 +113,7 @@ export interface FundRow {
   is_verified: boolean;
   visibility: string;
   verification_note: string | null;
+  allowlist_tokens_json?: string | null;
   created_by: string;
   created_at: number;
   updated_at: number;
@@ -223,6 +224,7 @@ export async function upsertFund(input: {
   isVerified?: boolean;
   visibility?: "PUBLIC" | "HIDDEN";
   verificationNote?: string | null;
+  allowlistTokens?: string[];
   createdBy: string;
 }) {
   const db = supabase();
@@ -249,6 +251,11 @@ export async function upsertFund(input: {
   if (input.verificationNote !== undefined) {
     payload.verification_note = input.verificationNote;
   }
+  if (input.allowlistTokens !== undefined) {
+    payload.allowlist_tokens_json = JSON.stringify(
+      input.allowlistTokens.map((t) => t.trim().toLowerCase())
+    );
+  }
 
   const { error } = await db.from("funds").upsert(
     payload,
@@ -264,7 +271,7 @@ export async function getFund(fundId: string) {
   const { data, error } = await db
     .from("funds")
     .select(
-      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,is_verified,visibility,verification_note,created_by,created_at,updated_at"
+      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,is_verified,visibility,verification_note,created_by,created_at,updated_at,allowlist_tokens_json"
     )
     .eq("fund_id", fundId)
     .maybeSingle();
@@ -282,7 +289,7 @@ export async function listPublicFunds(input?: {
   const { data, error } = await db
     .from("funds")
     .select(
-      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,is_verified,visibility,verification_note,created_by,created_at,updated_at"
+      "fund_id,fund_name,strategy_bot_id,strategy_bot_address,verifier_threshold_weight,intent_threshold_weight,strategy_policy_uri,telegram_room_id,is_verified,visibility,verification_note,created_by,created_at,updated_at,allowlist_tokens_json"
     )
     .eq("is_verified", true)
     .eq("visibility", "PUBLIC")
@@ -448,6 +455,20 @@ export async function listFundBots(fundId: string) {
     created_at: number;
     updated_at: number;
   }>;
+}
+
+export async function listActiveFundParticipants(
+  fundId: string
+): Promise<Array<{ bot_address: string; bot_id: string }>> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("fund_bots")
+    .select("bot_address,bot_id")
+    .eq("fund_id", fundId)
+    .eq("role", "participant")
+    .eq("status", "ACTIVE");
+  throwIfError(error, null);
+  return (data ?? []) as Array<{ bot_address: string; bot_id: string }>;
 }
 
 export async function getBotsByBotId(botId: string) {
@@ -1595,6 +1616,28 @@ export async function getEpochStateByEpoch(input: {
     .maybeSingle();
   throwIfError(error, null);
   return (data as EpochStateRow | null) ?? undefined;
+}
+
+export async function upsertStakeWeight(input: {
+  fundId: string;
+  participant: string;
+  weight: bigint;
+  epochId?: string;
+}): Promise<void> {
+  const db = supabase();
+  const now = nowMs();
+  const { error } = await db.from("stake_weights").upsert(
+    {
+      fund_id: input.fundId,
+      participant: input.participant.toLowerCase(),
+      weight: input.weight.toString(),
+      epoch_id: input.epochId ?? "__global__",
+      created_at: now,
+      updated_at: now
+    },
+    { onConflict: "fund_id,participant,epoch_id" }
+  );
+  throwIfError(error, null);
 }
 
 export async function listStakeWeightsByFund(

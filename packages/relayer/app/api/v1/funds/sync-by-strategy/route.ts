@@ -169,6 +169,7 @@ export async function POST(request: Request) {
   let bootstrapAuth: { signature: string; nonce: string; expiresAt: string } | null;
   let verifierThresholdWeight: bigint;
   let intentThresholdWeight: bigint;
+  let allowlistTokens: string[] | undefined;
   try {
     fundId = asString(body.fundId);
     fundName = asString(body.fundName);
@@ -193,6 +194,12 @@ export async function POST(request: Request) {
     if (!strategyBotId) {
       throw new Error("strategyBotId is required");
     }
+
+    allowlistTokens = Array.isArray(body.allowlistTokens)
+      ? (body.allowlistTokens as unknown[])
+          .map((t) => String(t).trim())
+          .filter((t) => /^0x[a-fA-F0-9]{40}$/.test(t))
+      : undefined;
 
     verifierThresholdWeight =
       parseOptionalBigIntField(body.verifierThresholdWeight, "verifierThresholdWeight") ??
@@ -396,6 +403,7 @@ export async function POST(request: Request) {
     intentThresholdWeight,
     strategyPolicyUri: body.strategyPolicyUri ? String(body.strategyPolicyUri) : null,
     telegramRoomId: body.telegramRoomId ? String(body.telegramRoomId) : null,
+    allowlistTokens,
     createdBy: botAuth.ok ? botAuth.botId : strategyBotId
   });
 
@@ -420,7 +428,8 @@ export async function POST(request: Request) {
         strategyBotId,
         strategyBotAddress,
         verifierThresholdWeight: verifierThresholdWeight.toString(),
-        intentThresholdWeight: intentThresholdWeight.toString()
+        intentThresholdWeight: intentThresholdWeight.toString(),
+        allowlistTokens: allowlistTokens ?? []
       },
       onchainDeployment: {
         chainId: chainConfig.chainId.toString(),
