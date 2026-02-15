@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireBotAuthAsync } from "@/lib/bot-auth";
+import { requireBotAuth } from "@/lib/bot-auth";
 import { requireFundBotRole } from "@/lib/fund-bot-authz";
 import { buildEpochStateRecord, type Hex } from "@claw/protocol-sdk";
 import {
@@ -38,7 +38,7 @@ export async function POST(
 ) {
   const { fundId, epochId } = await context.params;
 
-  const botAuth = await requireBotAuthAsync(_request, ["intents.propose"]);
+  const botAuth = await requireBotAuth(_request, ["intents.propose"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }

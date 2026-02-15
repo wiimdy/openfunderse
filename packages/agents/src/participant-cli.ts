@@ -96,42 +96,42 @@ const readJsonFile = async <T>(filePath: string): Promise<T> => {
 
 const buildClientOptionsForPrefix = (prefix: string): RelayerClientOptions | undefined => {
   const botId = process.env[`${prefix}_BOT_ID`];
-  const botApiKey = process.env[`${prefix}_BOT_API_KEY`];
+  const privateKey = process.env[`${prefix}_PRIVATE_KEY`];
   const botAddress =
     process.env[`${prefix}_ADDRESS`] ?? process.env[`${prefix}_BOT_ADDRESS`];
 
-  if (!botId && !botApiKey && !botAddress) {
+  if (!botId && !privateKey && !botAddress) {
     return undefined;
   }
-  if (!botId || !botApiKey) {
+  if (!botId || !privateKey) {
     throw new Error(
-      `${prefix}_BOT_ID and ${prefix}_BOT_API_KEY must be set together`
+      `${prefix}_BOT_ID and ${prefix}_PRIVATE_KEY must be set together`
     );
   }
 
   return {
     botId,
-    botApiKey,
+    privateKey: privateKey as `0x${string}`,
     botAddress: botAddress as `0x${string}` | undefined
   };
 };
 
 const buildDefaultBotClientOptions = (): RelayerClientOptions | undefined => {
   const botId = process.env.BOT_ID;
-  const botApiKey = process.env.BOT_API_KEY;
+  const privateKey = process.env.PARTICIPANT_PRIVATE_KEY;
   const botAddress =
     process.env.PARTICIPANT_ADDRESS ?? process.env.PARTICIPANT_BOT_ADDRESS;
 
-  if (!botId && !botApiKey && !botAddress) {
+  if (!botId && !privateKey && !botAddress) {
     return undefined;
   }
-  if (!botId || !botApiKey) {
-    throw new Error('BOT_ID and BOT_API_KEY must be set together');
+  if (!botId || !privateKey) {
+    throw new Error('BOT_ID and PARTICIPANT_PRIVATE_KEY must be set together');
   }
 
   return {
     botId,
-    botApiKey,
+    privateKey: privateKey as `0x${string}`,
     botAddress: botAddress as `0x${string}` | undefined
   };
 };

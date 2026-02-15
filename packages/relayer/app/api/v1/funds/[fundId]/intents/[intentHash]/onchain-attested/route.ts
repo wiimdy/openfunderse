@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireBotAuthAsync } from "@/lib/bot-auth";
+import { requireBotAuth } from "@/lib/bot-auth";
 import { requireFundBotRole } from "@/lib/fund-bot-authz";
 import { getSubjectStateByFund, markSubjectApproved } from "@/lib/supabase";
 
@@ -17,7 +17,7 @@ export async function POST(
   context: { params: Promise<{ fundId: string; intentHash: string }> }
 ) {
   const { fundId, intentHash } = await context.params;
-  const botAuth = await requireBotAuthAsync(request, ["intents.propose"]);
+  const botAuth = await requireBotAuth(request, ["intents.propose"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }

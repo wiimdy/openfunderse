@@ -122,7 +122,11 @@ async function main() {
     const canNetwork =
       Boolean(process.env.RELAYER_URL) &&
       Boolean(process.env.BOT_ID) &&
-      Boolean(process.env.BOT_API_KEY) &&
+      Boolean(
+        process.env.BOT_PRIVATE_KEY ||
+          process.env.PARTICIPANT_PRIVATE_KEY ||
+          process.env.STRATEGY_PRIVATE_KEY
+      ) &&
       Boolean(process.env.FUND_ID);
 
     if (canNetwork) {
@@ -146,7 +150,7 @@ async function main() {
       ]);
     } else {
       console.log(
-        '\n[smoke] 5) strategy propose_intent skipped (need RELAYER_URL,BOT_ID,BOT_API_KEY,FUND_ID)'
+        '\n[smoke] 5) strategy propose_intent skipped (need RELAYER_URL,BOT_ID,BOT_PRIVATE_KEY|PARTICIPANT_PRIVATE_KEY|STRATEGY_PRIVATE_KEY,FUND_ID)'
       );
     }
 

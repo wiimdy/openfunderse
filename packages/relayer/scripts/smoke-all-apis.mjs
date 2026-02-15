@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from "node:crypto";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   intentAttestationTypedData
@@ -13,7 +14,8 @@ const adminPassword = process.env.ADMIN_LOGIN_PASSWORD;
 const fundId = process.env.FUND_ID ?? "demo-fund";
 const fundName = process.env.FUND_NAME ?? "OpenClaw Demo Fund";
 const strategyBotId = process.env.STRATEGY_BOT_ID ?? "bot-strategy-1";
-const strategyBotApiKey = process.env.STRATEGY_BOT_API_KEY ?? "replace_me";
+const strategyPrivateKey =
+  process.env.STRATEGY_PRIVATE_KEY ?? process.env.STRATEGY_BOT_PRIVATE_KEY;
 const strategyBotAddress =
   process.env.STRATEGY_BOT_ADDRESS ??
   "0x00000000000000000000000000000000000000a1";
@@ -22,10 +24,6 @@ const participantBotId =
   process.env.PARTICIPANT_BOT_ID ??
   process.env.BOT_ID ??
   "bot-participant-1";
-const participantBotApiKey =
-  process.env.PARTICIPANT_BOT_API_KEY ??
-  process.env.BOT_API_KEY ??
-  "replace_me";
 const participantPrivateKey =
   process.env.PARTICIPANT_PRIVATE_KEY ??
   process.env.BOT_PRIVATE_KEY ??
@@ -35,7 +33,6 @@ const participantBotAddressFromEnv =
   process.env.PARTICIPANT_ADDRESS;
 
 const participant2BotId = process.env.PARTICIPANT2_BOT_ID ?? "bot-participant-2";
-const participant2BotApiKey = process.env.PARTICIPANT2_BOT_API_KEY;
 const participant2PrivateKey = process.env.PARTICIPANT2_PRIVATE_KEY;
 const participant2BotAddressFromEnv =
   process.env.PARTICIPANT2_BOT_ADDRESS ?? process.env.PARTICIPANT2_ADDRESS;
@@ -86,6 +83,10 @@ if (!participantPrivateKey) {
   console.error("BOT_PRIVATE_KEY (or PARTICIPANT_PRIVATE_KEY / VERIFIER_PRIVATE_KEY) is required");
   process.exit(1);
 }
+if (!strategyPrivateKey) {
+  console.error("STRATEGY_PRIVATE_KEY (or STRATEGY_BOT_PRIVATE_KEY) is required");
+  process.exit(1);
+}
 if (!intentBookAddress || !chainId) {
   console.error(
     "INTENT_BOOK_ADDRESS and CHAIN_ID are required"
@@ -102,7 +103,7 @@ if (participantAddress.toLowerCase() !== participantAccount.address.toLowerCase(
   process.exit(1);
 }
 
-const participant2Enabled = Boolean(participant2PrivateKey && participant2BotApiKey);
+const participant2Enabled = Boolean(participant2PrivateKey);
 let participant2Account = null;
 let participant2Address = null;
 if (participant2Enabled) {
@@ -155,6 +156,20 @@ function assertStatus(res, allowed, step) {
   if (!allowed.includes(res.status)) {
     throw new Error(`${step} failed: status=${res.status}`);
   }
+}
+
+async function signAuthHeaders(privateKey, botId) {
+  const account = privateKeyToAccount(privateKey);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = crypto.randomUUID();
+  const message = `openfunderse:auth:${botId}:${timestamp}:${nonce}`;
+  const signature = await account.signMessage({ message });
+  return {
+    "x-bot-id": botId,
+    "x-bot-signature": signature,
+    "x-bot-timestamp": timestamp,
+    "x-bot-nonce": nonce
+  };
 }
 
 async function call(step, { method, path, headers = {}, body = null }) {
@@ -262,8 +277,7 @@ async function main() {
 
   const strategyHeaders = {
     "Content-Type": "application/json",
-    "x-bot-id": strategyBotId,
-    "x-bot-api-key": strategyBotApiKey
+    ...(await signAuthHeaders(strategyPrivateKey, strategyBotId))
   };
 
   const registerParticipant = await call("POST /bots/register participant", {
@@ -283,10 +297,7 @@ async function main() {
   const listBots = await call("GET /bots/register", {
     method: "GET",
     path: `/api/v1/funds/${fundId}/bots/register`,
-    headers: {
-      "x-bot-id": strategyBotId,
-      "x-bot-api-key": strategyBotApiKey
-    }
+    headers: await signAuthHeaders(strategyPrivateKey, strategyBotId)
   });
   assertStatus(listBots.response, [200], "list bots");
 
@@ -295,8 +306,7 @@ async function main() {
     path: `/api/v1/funds/${fundId}/claims`,
     headers: {
       "Content-Type": "application/json",
-      "x-bot-id": participantBotId,
-      "x-bot-api-key": participantBotApiKey
+      ...(await signAuthHeaders(participantPrivateKey, participantBotId))
     },
     body: JSON.stringify({
       claim: {
@@ -318,7 +328,10 @@ async function main() {
     const registerParticipant2 = await call("POST /bots/register participant-2", {
       method: "POST",
       path: `/api/v1/funds/${fundId}/bots/register`,
-      headers: strategyHeaders,
+      headers: {
+        "Content-Type": "application/json",
+        ...(await signAuthHeaders(strategyPrivateKey, strategyBotId))
+      },
       body: JSON.stringify({
         role: "participant",
         botId: participant2BotId,
@@ -332,8 +345,7 @@ async function main() {
       path: `/api/v1/funds/${fundId}/claims`,
       headers: {
         "Content-Type": "application/json",
-        "x-bot-id": participant2BotId,
-        "x-bot-api-key": participant2BotApiKey
+        ...(await signAuthHeaders(participant2PrivateKey, participant2BotId))
       },
       body: JSON.stringify({
         claim: {
@@ -353,7 +365,7 @@ async function main() {
   } else {
     console.log("\n=== NOTE ===");
     console.log(
-      "PARTICIPANT2_PRIVATE_KEY/PARTICIPANT2_BOT_API_KEY not set; running single-participant claim demo."
+      "PARTICIPANT2_PRIVATE_KEY not set; running single-participant claim demo."
     );
   }
 
@@ -368,8 +380,7 @@ async function main() {
     path: `/api/v1/funds/${fundId}/epochs/${epochId.toString()}/aggregate`,
     headers: {
       "Content-Type": "application/json",
-      "x-bot-id": strategyBotId,
-      "x-bot-api-key": strategyBotApiKey
+      ...(await signAuthHeaders(strategyPrivateKey, strategyBotId))
     }
   });
   assertStatus(aggregateEpoch.response, [200], "aggregate epoch");
@@ -394,7 +405,10 @@ async function main() {
   const proposeIntent = await call("POST /intents/propose", {
     method: "POST",
     path: `/api/v1/funds/${fundId}/intents/propose`,
-    headers: strategyHeaders,
+    headers: {
+      "Content-Type": "application/json",
+      ...(await signAuthHeaders(strategyPrivateKey, strategyBotId))
+    },
     body: JSON.stringify({
       intent: {
         intentVersion: "v1",
@@ -445,8 +459,7 @@ async function main() {
     path: `/api/v1/funds/${fundId}/intents/attestations/batch`,
     headers: {
       "Content-Type": "application/json",
-      "x-bot-id": participantBotId,
-      "x-bot-api-key": participantBotApiKey
+      ...(await signAuthHeaders(participantPrivateKey, participantBotId))
     },
     body: JSON.stringify({
       attestations: [

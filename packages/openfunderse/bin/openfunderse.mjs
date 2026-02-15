@@ -26,7 +26,6 @@ const STRATEGY_ENV_TEMPLATE = `# OpenFunderse strategy env scaffold
 
 RELAYER_URL=https://your-relayer.example.com
 BOT_ID=bot-strategy-1
-BOT_API_KEY=replace_me
 CHAIN_ID=10143
 RPC_URL=https://testnet-rpc.monad.xyz
 
@@ -67,7 +66,6 @@ STRATEGY_DEADLINE_PER_CLAIM_SECONDS=20
 const PARTICIPANT_ENV_TEMPLATE = `# OpenFunderse participant env scaffold
 RELAYER_URL=https://your-relayer.example.com
 BOT_ID=bot-participant-1
-BOT_API_KEY=replace_me
 CHAIN_ID=10143
 # Temporary bootstrap key (public and unsafe). Replace via bot-init before real usage.
 PARTICIPANT_PRIVATE_KEY=${TEMP_PRIVATE_KEY}
@@ -833,29 +831,6 @@ async function runBotInit(options) {
   const updates = roleEnvUpdates(role, wallet);
   let nextEnvContent = upsertEnvValues(envContent, updates);
   let envValues = parseEnvAssignments(nextEnvContent);
-  const botId = (envValues.BOT_ID || "").trim();
-  let botApiKey = (envValues.BOT_API_KEY || "").trim();
-  let generatedBotApiKey = "";
-  let botApiKeyHash = "";
-  let botApiKeyHashedEntry = "";
-
-  if (!botApiKey || isPlaceholderEnvValue(botApiKey)) {
-    generatedBotApiKey = generateBotApiKeySecret();
-    nextEnvContent = upsertEnvValues(nextEnvContent, {
-      BOT_API_KEY: generatedBotApiKey
-    });
-    envValues = parseEnvAssignments(nextEnvContent);
-    botApiKey = (envValues.BOT_API_KEY || "").trim();
-  }
-
-  if (botId && botApiKey && !isPlaceholderEnvValue(botApiKey)) {
-    botApiKeyHash = sha256Hex(botApiKey);
-    botApiKeyHashedEntry = `${botId}:sha256:${botApiKeyHash}`;
-    nextEnvContent = upsertEnvValues(nextEnvContent, {
-      BOT_API_KEY_SHA256: botApiKeyHash
-    });
-  }
-
   await mkdir(path.dirname(envFile), { recursive: true });
   await writeFile(envFile, nextEnvContent);
   await chmod(envFile, 0o600);
@@ -881,14 +856,7 @@ async function runBotInit(options) {
   }
   console.log(`Wallet backup (keep secret): ${walletFiles.walletPath}`);
   console.log(`Private key backup (keep secret): ${walletFiles.privateKeyPath}`);
-  if (generatedBotApiKey) {
-    console.log("Generated random BOT_API_KEY and updated env file.");
-  }
-	  if (botApiKeyHashedEntry) {
-	    console.log(`Bot API key SHA-256: ${botApiKeyHash}`);
-	    console.log(`Relayer credential registration value (botApiKeySha256): ${botApiKeyHashedEntry.replace(/^.*:sha256:/, "")}`);
-	    console.log("Note: Prefer DB-backed relayer auth. Register this sha256 via /api/v1/funds/sync-by-strategy (strategy) or /api/v1/funds/{fundId}/bots/register (participants).");
-	  }
+
 	  if (syncMeta?.synced && options.restartOpenclawGateway) {
 	    console.log("Restarting OpenClaw gateway to apply env changes...");
 	    const restartMeta = await restartOpenclawGateway(syncMeta.configPath);

@@ -35,17 +35,17 @@ create table if not exists fund_bots (
   unique (fund_id, bot_id)
 );
 
--- Bot credentials (API keys + scopes).
--- Keys are stored as either plaintext (legacy) or "sha256:<64-hex>".
-create table if not exists bot_credentials (
-  id bigserial primary key,
-  bot_id text not null unique,
-  api_key text not null,
-  scopes text not null default '',
-  created_by text not null,
-  created_at bigint not null,
-  updated_at bigint not null
-);
+-- DEPRECATED: bot_credentials table removed. Bot auth is now signature-based
+-- (EIP-191) using bot_address in fund_bots table. Kept commented for reference.
+-- create table if not exists bot_credentials (
+--   id bigserial primary key,
+--   bot_id text not null unique,
+--   api_key text not null,
+--   scopes text not null default '',
+--   created_by text not null,
+--   created_at bigint not null,
+--   updated_at bigint not null
+-- );
 
 create table if not exists fund_deployments (
   id bigserial primary key,

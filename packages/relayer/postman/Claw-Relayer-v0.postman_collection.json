@@ -91,8 +91,16 @@
                 "value": "{{strategy_bot_id}}"
               },
               {
-                "key": "x-bot-api-key",
-                "value": "{{strategy_bot_api_key}}"
+                "key": "x-bot-signature",
+                "value": "{{strategy_bot_signature}}"
+              },
+              {
+                "key": "x-bot-timestamp",
+                "value": "{{strategy_bot_timestamp}}"
+              },
+              {
+                "key": "x-bot-nonce",
+                "value": "{{strategy_bot_nonce}}"
               }
             ],
             "url": {
@@ -110,7 +118,7 @@
             "description": "Strategy bot syncs already-deployed ClawFundFactory tx into relayer projection.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"fundId\": \"{{fund_id}}\",\n  \"fundName\": \"OpenClaw Demo Fund\",\n  \"strategyBotId\": \"{{strategy_bot_id}}\",\n  \"strategyBotAddress\": \"{{strategy_bot_address}}\",\n  \"txHash\": \"{{strategy_deploy_tx_hash}}\",\n  \"verifierThresholdWeight\": \"{{verifier_threshold_weight}}\",\n  \"intentThresholdWeight\": \"{{intent_threshold_weight}}\"\n}"
+              "raw": "{\n  \"fundId\": \"{{fund_id}}\",\n  \"fundName\": \"OpenClaw Demo Fund\",\n  \"strategyBotId\": \"{{strategy_bot_id}}\",\n  \"strategyBotAddress\": \"{{strategy_bot_address}}\",\n  \"txHash\": \"{{strategy_deploy_tx_hash}}\",\n  \"verifierThresholdWeight\": \"{{verifier_threshold_weight}}\",\n  \"intentThresholdWeight\": \"{{intent_threshold_weight}}\",\n  \"auth\": {\n    \"signature\": \"{{strategy_bootstrap_signature}}\",\n    \"nonce\": \"{{strategy_bootstrap_nonce}}\",\n    \"expiresAt\": \"{{strategy_bootstrap_expires_at}}\"\n  }\n}"
             }
           }
         }
@@ -133,8 +141,16 @@
                 "value": "{{strategy_bot_id}}"
               },
               {
-                "key": "x-bot-api-key",
-                "value": "{{strategy_bot_api_key}}"
+                "key": "x-bot-signature",
+                "value": "{{strategy_bot_signature}}"
+              },
+              {
+                "key": "x-bot-timestamp",
+                "value": "{{strategy_bot_timestamp}}"
+              },
+              {
+                "key": "x-bot-nonce",
+                "value": "{{strategy_bot_nonce}}"
               }
             ],
             "body": {
@@ -168,8 +184,16 @@
                 "value": "{{strategy_bot_id}}"
               },
               {
-                "key": "x-bot-api-key",
-                "value": "{{strategy_bot_api_key}}"
+                "key": "x-bot-signature",
+                "value": "{{strategy_bot_signature}}"
+              },
+              {
+                "key": "x-bot-timestamp",
+                "value": "{{strategy_bot_timestamp}}"
+              },
+              {
+                "key": "x-bot-nonce",
+                "value": "{{strategy_bot_nonce}}"
               }
             ],
             "url": {
@@ -203,8 +227,16 @@
                 "value": "{{participant_bot_id}}"
               },
               {
-                "key": "x-bot-api-key",
-                "value": "{{participant_bot_api_key}}"
+                "key": "x-bot-signature",
+                "value": "{{participant_bot_signature}}"
+              },
+              {
+                "key": "x-bot-timestamp",
+                "value": "{{participant_bot_timestamp}}"
+              },
+              {
+                "key": "x-bot-nonce",
+                "value": "{{participant_bot_nonce}}"
               }
             ],
             "body": {
@@ -262,8 +294,16 @@
                 "value": "{{strategy_bot_id}}"
               },
               {
-                "key": "x-bot-api-key",
-                "value": "{{strategy_bot_api_key}}"
+                "key": "x-bot-signature",
+                "value": "{{strategy_bot_signature}}"
+              },
+              {
+                "key": "x-bot-timestamp",
+                "value": "{{strategy_bot_timestamp}}"
+              },
+              {
+                "key": "x-bot-nonce",
+                "value": "{{strategy_bot_nonce}}"
               }
             ],
             "url": {
@@ -303,8 +343,16 @@
                 "value": "{{strategy_bot_id}}"
               },
               {
-                "key": "x-bot-api-key",
-                "value": "{{strategy_bot_api_key}}"
+                "key": "x-bot-signature",
+                "value": "{{strategy_bot_signature}}"
+              },
+              {
+                "key": "x-bot-timestamp",
+                "value": "{{strategy_bot_timestamp}}"
+              },
+              {
+                "key": "x-bot-nonce",
+                "value": "{{strategy_bot_nonce}}"
               }
             ],
             "body": {
@@ -342,8 +390,16 @@
                 "value": "{{participant_bot_id}}"
               },
               {
-                "key": "x-bot-api-key",
-                "value": "{{participant_bot_api_key}}"
+                "key": "x-bot-signature",
+                "value": "{{participant_bot_signature}}"
+              },
+              {
+                "key": "x-bot-timestamp",
+                "value": "{{participant_bot_timestamp}}"
+              },
+              {
+                "key": "x-bot-nonce",
+                "value": "{{participant_bot_nonce}}"
               }
             ],
             "body": {
@@ -382,8 +438,16 @@
                 "value": "{{participant_bot_id}}"
               },
               {
-                "key": "x-bot-api-key",
-                "value": "{{participant_bot_api_key}}"
+                "key": "x-bot-signature",
+                "value": "{{participant_bot_signature}}"
+              },
+              {
+                "key": "x-bot-timestamp",
+                "value": "{{participant_bot_timestamp}}"
+              },
+              {
+                "key": "x-bot-nonce",
+                "value": "{{participant_bot_nonce}}"
               }
             ],
             "body": {

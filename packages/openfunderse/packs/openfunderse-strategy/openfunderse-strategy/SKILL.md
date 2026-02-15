@@ -10,7 +10,6 @@ metadata:
       env:
         - RELAYER_URL
         - BOT_ID
-        - BOT_API_KEY
         - STRATEGY_ADDRESS
         - CHAIN_ID
         - RPC_URL
@@ -111,29 +110,36 @@ OpenClaw note:
 Note:
 - The scaffold includes a temporary public key placeholder by default.
 - Always run `bot-init` before funding or running production actions.
-- `bot-init` generates a random `BOT_API_KEY` when current value is missing or placeholder.
+- `bot-init` generates a new wallet (private key + address) and writes it into the role env file.
 
-## Relayer Bot Credential Model (Important)
+## Relayer Bot Authentication (Signature)
 
-This skill calls relayer write APIs with:
+This skill authenticates relayer write APIs with an EIP-191 message signature (no `BOT_API_KEY`).
+
+Message format:
+- `openfunderse:auth:<botId>:<timestamp>:<nonce>`
+
+Required headers:
 - `x-bot-id: BOT_ID`
-- `x-bot-api-key: BOT_API_KEY`
+- `x-bot-signature: <0x...>`
+- `x-bot-timestamp: <unix seconds>`
+- `x-bot-nonce: <uuid/random>`
 
-For production, relayer should validate these via **DB-backed credentials** (Supabase `bot_credentials`) instead of Vercel env `BOT_API_KEYS`.
+Relayer verifies this signature against Supabase `fund_bots.bot_address`.
+
+Role-derived scopes:
+- strategy: `intents.propose`, `bots.register`, `funds.bootstrap`
+- participant: `claims.submit`, `intents.attest`
 
 ### Strategy bootstrap (first registration)
 
-The strategy bot key becomes “known to relayer” when the fund is synced:
-- Call `POST /api/v1/funds/sync-by-strategy`
-- Include `strategyBotId`, `strategyBotAddress`, and **`strategyBotApiKeySha256`** (sha256 hex from `bot-init`)
+`POST /api/v1/funds/sync-by-strategy` supports a one-time bootstrap when the strategy bot is not yet registered.
+Include `auth` in the JSON body (signed by `strategyBotAddress`) with:
+- `signature`
+- `nonce`
+- `expiresAt`
 
-If relayer does not yet know your bot key, `sync-by-strategy` supports a signature-based bootstrap flow (route-level docs). After this, repeat calls can use normal `x-bot-id` / `x-bot-api-key` auth.
-
-### Participant registration (recommended)
-
-When registering participant bots:
-- Call `POST /api/v1/funds/{fundId}/bots/register`
-- Include `botApiKeySha256` (sha256 hex from that participant bot's `bot-init`) so relayer can authenticate participant submissions.
+After a successful sync, subsequent calls can use normal signature headers.
 
 ## Credential Scope
 

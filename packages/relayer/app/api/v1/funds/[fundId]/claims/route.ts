@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireBotAuthAsync } from "@/lib/bot-auth";
+import { requireBotAuth } from "@/lib/bot-auth";
 import { isSameAddress, requireFundBotRole } from "@/lib/fund-bot-authz";
 import {
   buildCanonicalAllocationClaimRecord,
@@ -17,7 +17,7 @@ export async function POST(
   context: { params: Promise<{ fundId: string }> }
 ) {
   const { fundId } = await context.params;
-  const botAuth = await requireBotAuthAsync(request, ["claims.submit"]);
+  const botAuth = await requireBotAuth(request, ["claims.submit"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }

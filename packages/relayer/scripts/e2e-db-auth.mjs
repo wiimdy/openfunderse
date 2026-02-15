@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 /**
  * End-to-end smoke to validate:
- * - Supabase schema is applied (incl. bot_credentials)
- * - DB-backed bot auth works (no BOT_API_KEYS/BOT_SCOPES needed)
+ * - DB-backed signature auth works without API-key env fallback
  * - Onchain fund deploy -> relayer sync-by-strategy bootstrap -> bot register -> claim -> aggregate -> intent -> attestation
  *
  * This is intentionally a smoke test: it does NOT execute trades onchain.
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import crypto from "node:crypto";
 import {
   createPublicClient,
   createWalletClient,
@@ -36,14 +35,6 @@ function envOr(name, fallback) {
   return value && value.length > 0 ? value : fallback;
 }
 
-function sha256Hex(value) {
-  return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function randomApiKey(label) {
-  return `${label}_${randomBytes(16).toString("hex")}`;
-}
-
 function parseAddress(name, value) {
   if (!/^0x[a-fA-F0-9]{40}$/.test(value)) {
     throw new Error(`${name} must be a valid 20-byte hex address`);
@@ -65,6 +56,20 @@ function assertStatus(step, res, allowed) {
   if (!allowed.includes(res.status)) {
     throw new Error(`${step} failed: status=${res.status}`);
   }
+}
+
+async function signAuthHeaders(privateKey, botId) {
+  const account = privateKeyToAccount(privateKey);
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const nonce = crypto.randomUUID();
+  const message = `openfunderse:auth:${botId}:${timestamp}:${nonce}`;
+  const signature = await account.signMessage({ message });
+  return {
+    "x-bot-id": botId,
+    "x-bot-signature": signature,
+    "x-bot-timestamp": timestamp,
+    "x-bot-nonce": nonce
+  };
 }
 
 async function fetchJson(step, baseUrl, path, { method, headers, body }) {
@@ -125,16 +130,11 @@ async function main() {
   const strategyBotAddress = strategyAccount.address;
 
   // Participant only signs; doesn't need funds.
-  const participantKey = envOr("PARTICIPANT_PRIVATE_KEY", `0x${randomBytes(32).toString("hex")}`);
+  const participantKey = envOr("PARTICIPANT_PRIVATE_KEY", `0x${crypto.randomBytes(32).toString("hex")}`);
   const participantAccount = privateKeyToAccount(participantKey);
 
   const strategyBotId = envOr("STRATEGY_BOT_ID", "bot-strategy-1");
   const participantBotId = envOr("PARTICIPANT_BOT_ID", "bot-participant-1");
-
-  const strategyBotApiKey = envOr("STRATEGY_BOT_API_KEY", randomApiKey("strategy"));
-  const participantBotApiKey = envOr("PARTICIPANT_BOT_API_KEY", randomApiKey("participant"));
-  const strategyBotApiKeySha256 = sha256Hex(strategyBotApiKey);
-  const participantBotApiKeySha256 = sha256Hex(participantBotApiKey);
 
   const fundId = envOr("FUND_ID", `fund-e2e-${Date.now()}`);
   const fundName = envOr("FUND_NAME", "OpenFunderse E2E DB-Auth");
@@ -216,15 +216,14 @@ async function main() {
 
   // 2) Sync to relayer via signature bootstrap (no pre-existing bot credentials).
   const expiresAt = Math.floor(Date.now() / 1000) + 600;
-  const nonce = `0x${randomBytes(16).toString("hex")}`;
+  const nonce = `0x${crypto.randomBytes(16).toString("hex")}`;
   const bootstrapMessage =
-    `OpenFunderse fund bootstrap\n` +
-    `fundId=${fundId}\n` +
-    `txHash=${txHash}\n` +
-    `strategyBotId=${strategyBotId}\n` +
-    `strategyBotAddress=${strategyBotAddress}\n` +
-    `strategyBotApiKeySha256=${strategyBotApiKeySha256}\n` +
-    `expiresAt=${expiresAt}\n` +
+    `OpenFunderse fund bootstrap\\n` +
+    `fundId=${fundId}\\n` +
+    `txHash=${txHash}\\n` +
+    `strategyBotId=${strategyBotId}\\n` +
+    `strategyBotAddress=${strategyBotAddress}\\n` +
+    `expiresAt=${expiresAt}\\n` +
     `nonce=${nonce}`;
 
   const signature = await strategyWalletClient.signMessage({
@@ -243,8 +242,6 @@ async function main() {
       txHash,
       verifierThresholdWeight: "1",
       intentThresholdWeight: "1",
-      strategyBotApiKeySha256: strategyBotApiKeySha256,
-      strategyBotScopes: "funds.bootstrap|bots.register|intents.propose",
       auth: {
         signature,
         expiresAt,
@@ -261,11 +258,10 @@ async function main() {
     throw new Error("sync-by-strategy response missing onchain deployment addresses");
   }
 
-  // 3) Register participant bot (also persists participant credential to DB).
+  // 3) Register participant bot (persist membership in fund_bots).
   const strategyHeaders = {
     "Content-Type": "application/json",
-    "x-bot-id": strategyBotId,
-    "x-bot-api-key": strategyBotApiKey
+    ...(await signAuthHeaders(signerKey, strategyBotId))
   };
 
   const register = await fetchJson("bots/register", baseUrl, `/api/v1/funds/${fundId}/bots/register`, {
@@ -275,8 +271,6 @@ async function main() {
       role: "participant",
       botId: participantBotId,
       botAddress: participantAccount.address,
-      botApiKeySha256: participantBotApiKeySha256,
-      botScopes: "claims.submit|intents.attest",
       policyUri: "ipfs://participant-policy-e2e",
       telegramHandle: "@participant_bot_e2e"
     }
@@ -290,8 +284,7 @@ async function main() {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-bot-id": participantBotId,
-      "x-bot-api-key": participantBotApiKey
+      ...(await signAuthHeaders(participantKey, participantBotId))
     },
     body: {
       claim: {
@@ -313,7 +306,10 @@ async function main() {
   // 5) Aggregate epoch as strategy.
   const aggregate = await fetchJson("epochs/aggregate", baseUrl, `/api/v1/funds/${fundId}/epochs/${epochId.toString()}/aggregate`, {
     method: "POST",
-    headers: strategyHeaders,
+    headers: {
+      "Content-Type": "application/json",
+      ...(await signAuthHeaders(signerKey, strategyBotId))
+    },
     body: {}
   });
   assertStatus("epochs/aggregate", aggregate.response, [200]);
@@ -358,7 +354,10 @@ async function main() {
 
   const propose = await fetchJson("intents/propose", baseUrl, `/api/v1/funds/${fundId}/intents/propose`, {
     method: "POST",
-    headers: strategyHeaders,
+    headers: {
+      "Content-Type": "application/json",
+      ...(await signAuthHeaders(signerKey, strategyBotId))
+    },
     body: {
       intent,
       executionRoute,
@@ -391,8 +390,7 @@ async function main() {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-bot-id": participantBotId,
-      "x-bot-api-key": participantBotApiKey
+      ...(await signAuthHeaders(participantKey, participantBotId))
     },
     body: {
       attestations: [
@@ -411,10 +409,7 @@ async function main() {
   // 8) Fetch onchain bundle (strategy).
   const bundle = await fetchJson("onchain-bundle", baseUrl, `/api/v1/funds/${fundId}/intents/${intentHash}/onchain-bundle`, {
     method: "GET",
-    headers: {
-      "x-bot-id": strategyBotId,
-      "x-bot-api-key": strategyBotApiKey
-    }
+    headers: await signAuthHeaders(signerKey, strategyBotId)
   });
   assertStatus("onchain-bundle", bundle.response, [200]);
 
@@ -431,7 +426,7 @@ async function main() {
       intentHash,
       snapshotHash,
       onchain: onchainDeployment,
-      note: "DB-backed bot auth validated via sync-by-strategy + bots/register; no BOT_API_KEYS required."
+      note: "Signature-backed bot auth validated via sync-by-strategy + bots/register."
     })
   );
 }

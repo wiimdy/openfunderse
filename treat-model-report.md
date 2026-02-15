@@ -29,7 +29,7 @@
 ### E2. Strategy Bot (펀드 전략 주체)
 - 핵심 목적: participant 관리, intent 제안, 온체인 ACK.
 - 핵심 함수/엔드포인트:
-  - `requireBotAuthAsync(..., ["intents.propose"|"bots.register"|"funds.bootstrap"])` (`/Users/ham-yunsig/Documents/github/claw-validation-market/packages/relayer/lib/bot-auth.ts`)
+  - `requireBotAuth(..., ["intents.propose"|"bots.register"|"funds.bootstrap"])` (`/Users/ham-yunsig/Documents/github/claw-validation-market/packages/relayer/lib/bot-auth.ts`)
   - `requireFundBotRole(..., allowedRoles:["strategy"])` (`/Users/wiimdy/agent/packages/relayer/lib/fund-bot-authz.ts:37`)
   - `POST /intents/propose` (`/Users/wiimdy/agent/packages/relayer/app/api/v1/funds/[fundId]/intents/propose/route.ts:23`)
   - `GET /intents/{intentHash}/onchain-bundle` (`/Users/wiimdy/agent/packages/relayer/app/api/v1/funds/[fundId]/intents/[intentHash]/onchain-bundle/route.ts:6`)
@@ -54,13 +54,13 @@
 
 ### E4. Relayer Auth/AuthZ 레이어
 - 핵심 함수:
-  - `requireBotAuthAsync()` (`/Users/ham-yunsig/Documents/github/claw-validation-market/packages/relayer/lib/bot-auth.ts`)
+  - `requireBotAuth()` (`/Users/ham-yunsig/Documents/github/claw-validation-market/packages/relayer/lib/bot-auth.ts`)
   - `requireFundBotRole()` / `isSameAddress()` (`/Users/wiimdy/agent/packages/relayer/lib/fund-bot-authz.ts:37`)
   - `requireAdminSession()` (`/Users/wiimdy/agent/packages/relayer/lib/authz.ts:27`)
 - 상호작용:
   - 모든 쓰기 API의 첫 경계.
-  - (권장) Supabase `bot_credentials`에 등록된 key/scopes + 펀드 멤버십 role 체크가 결합되어야 통과.
-  - (레거시 fallback) `BOT_API_KEYS` + `BOT_SCOPES` env로도 통과 가능.
+  - Supabase `fund_bots.bot_address`에 등록된 주소로 signature(EIP-191) 검증 + 펀드 멤버십 role 체크가 결합되어야 통과.
+  - `BOT_API_KEYS`/`BOT_SCOPES` 기반 auth는 제거됨.
 
 ### E5. Aggregator / 상태전이 엔진
 - 핵심 함수:

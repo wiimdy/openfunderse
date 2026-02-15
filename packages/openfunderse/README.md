@@ -53,5 +53,5 @@ On first install, the CLI also prints a ready-to-paste `@BotFather` `/setcommand
   - strategy: `~/.openclaw/workspace/.env.strategy`
   - participant: `~/.openclaw/workspace/.env.participant`
 - `bot-init` updates an existing role env file. If missing, create it first (or run `install` without `--no-init-env`).
-- `bot-init` auto-generates a random `BOT_API_KEY` when value is missing/placeholder.
+- `bot-init` generates a new wallet for the role (private key + address) and writes it into the role env file.
 - Use `--env-path` only when you want a custom filename/location.

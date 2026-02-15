@@ -9,7 +9,7 @@ import {
   type Address,
   type Hex
 } from "viem";
-import { requireBotAuthAsync } from "@/lib/bot-auth";
+import { requireBotAuth } from "@/lib/bot-auth";
 import { loadChainReadConfig, loadReadOnlyRuntimeConfig } from "@/lib/config";
 import {
   getFund,
@@ -17,8 +17,7 @@ import {
   getFundDeploymentByTxHash,
   upsertFund,
   upsertFundBot,
-  upsertFundDeployment,
-  upsertBotCredential
+  upsertFundDeployment
 } from "@/lib/supabase";
 
 const FUND_FACTORY_ABI = parseAbi([
@@ -125,10 +124,7 @@ function extractFundDeployedEvent(
 }
 
 export async function POST(request: Request) {
-  // Auth modes:
-  // 1) DB/env bot auth (preferred for repeat calls): x-bot-id + x-bot-api-key with scope funds.bootstrap.
-  // 2) Bootstrap signature (for first-time registration): verifyMessage against strategyBotAddress.
-  const botAuth = await requireBotAuthAsync(request, ["funds.bootstrap"]);
+  const botAuth = await requireBotAuth(request, ["funds.bootstrap"]);
 
   let body: Record<string, unknown>;
   try {
@@ -170,8 +166,6 @@ export async function POST(request: Request) {
   let strategyBotId: string;
   let strategyBotAddress: Address;
   let txHash: Hex;
-  let strategyBotApiKeySha256: string;
-  let strategyBotScopes: string;
   let bootstrapAuth: { signature: string; nonce: string; expiresAt: string } | null;
   let verifierThresholdWeight: bigint;
   let intentThresholdWeight: bigint;
@@ -181,8 +175,6 @@ export async function POST(request: Request) {
     strategyBotId = asString(body.strategyBotId);
     strategyBotAddress = parseAddressField(body.strategyBotAddress, "strategyBotAddress");
     txHash = parseTxHash(body.txHash, "txHash");
-    strategyBotApiKeySha256 = asString(body.strategyBotApiKeySha256).toLowerCase();
-    strategyBotScopes = asString(body.strategyBotScopes);
     const authObj = body.auth && typeof body.auth === "object" ? (body.auth as Record<string, unknown>) : null;
     bootstrapAuth = authObj
       ? {
@@ -200,9 +192,6 @@ export async function POST(request: Request) {
     }
     if (!strategyBotId) {
       throw new Error("strategyBotId is required");
-    }
-    if (!strategyBotApiKeySha256) {
-      throw new Error("strategyBotApiKeySha256 is required (sha256 hex from bot-init)");
     }
 
     verifierThresholdWeight =
@@ -246,7 +235,6 @@ export async function POST(request: Request) {
       `txHash=${txHash}\\n` +
       `strategyBotId=${strategyBotId}\\n` +
       `strategyBotAddress=${strategyBotAddress}\\n` +
-      `strategyBotApiKeySha256=${strategyBotApiKeySha256}\\n` +
       `expiresAt=${expiresAt}\\n` +
       `nonce=${bootstrapAuth.nonce}`;
     const ok = await verifyMessage({
@@ -379,14 +367,6 @@ export async function POST(request: Request) {
       { status: 409 }
     );
   }
-
-  // Persist strategy bot credential (DB-backed auth). This makes BOT_API_KEYS env optional for this bot.
-  await upsertBotCredential({
-    botId: strategyBotId,
-    apiKey: `sha256:${strategyBotApiKeySha256}`,
-    scopes: strategyBotScopes,
-    createdBy: botAuth.ok ? botAuth.botId : strategyBotId
-  });
 
   const tx = await publicClient.getTransaction({ hash: txHash });
 

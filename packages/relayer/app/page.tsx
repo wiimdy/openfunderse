@@ -108,7 +108,7 @@ export default function Page() {
             </a>
           </div>
           <div className="mt-2">
-            Bot write API requires <code>x-bot-id</code>, <code>x-bot-api-key</code>, and scope checks.
+            Bot write API requires <code>x-bot-id</code> plus signature headers (<code>x-bot-signature</code>, <code>x-bot-timestamp</code>, <code>x-bot-nonce</code>).
           </div>
         </div>
       </div>

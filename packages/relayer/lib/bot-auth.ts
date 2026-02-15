@@ -1,139 +1,78 @@
 import { NextResponse } from "next/server";
-import { createHash, timingSafeEqual } from "node:crypto";
-import { getBotCredential } from "@/lib/supabase";
+import { verifyMessage, type Address, type Hex } from "viem";
+import { getBotsByBotId } from "@/lib/supabase";
 
-const SHA256_PREFIX = "sha256:";
-const SHA256_HEX_REGEX = /^[0-9a-f]{64}$/;
+const AUTH_MAX_AGE_SECONDS = 300;
 
-function parseEntries(value: string | undefined): Record<string, string> {
-  const result: Record<string, string> = {};
-  if (!value) return result;
-
-  for (const raw of value.split(",")) {
-    const entry = raw.trim();
-    if (!entry) continue;
-
-    const separatorIndex = entry.indexOf(":");
-    if (separatorIndex <= 0) continue;
-    const id = entry.slice(0, separatorIndex);
-    const data = entry.slice(separatorIndex + 1);
-    if (!id || !data) continue;
-    result[id.trim()] = data.trim();
-  }
-
-  return result;
-}
-
-function parseScopes(value: string | undefined): Record<string, Set<string>> {
-  const map = parseEntries(value);
-  const out: Record<string, Set<string>> = {};
-
-  for (const [botId, scopeString] of Object.entries(map)) {
-    out[botId] = new Set(
-      scopeString
-        .split("|")
-        .map((scope) => scope.trim())
-        .filter(Boolean)
-    );
-  }
-
-  return out;
-}
-
-function parseScopeSet(value: string | undefined): Set<string> {
-  if (!value) return new Set();
-  return new Set(
-    value
-      .split("|")
-      .map((scope) => scope.trim())
-      .filter(Boolean)
-  );
-}
+const ROLE_SCOPES: Record<string, string[]> = {
+  strategy: ["intents.propose", "bots.register", "funds.bootstrap"],
+  participant: ["claims.submit", "intents.attest"]
+};
 
 function unauthorized(message: string) {
-  return NextResponse.json(
-    {
-      error: "UNAUTHORIZED",
-      message
-    },
-    { status: 401 }
-  );
+  return NextResponse.json({ error: "UNAUTHORIZED", message }, { status: 401 });
 }
 
-function secureEqual(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  if (leftBuffer.length !== rightBuffer.length) return false;
-  return timingSafeEqual(leftBuffer, rightBuffer);
-}
-
-function sha256Hex(value: string): string {
-  return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function verifyBotApiKey(expectedKey: string, providedKey: string): boolean {
-  const normalizedExpected = expectedKey.trim();
-  const lowerExpected = normalizedExpected.toLowerCase();
-
-  if (lowerExpected.startsWith(SHA256_PREFIX)) {
-    const expectedHash = normalizedExpected.slice(SHA256_PREFIX.length).trim().toLowerCase();
-    if (!SHA256_HEX_REGEX.test(expectedHash)) return false;
-
-    const providedHash = sha256Hex(providedKey);
-    return secureEqual(expectedHash, providedHash);
-  }
-
-  return secureEqual(normalizedExpected, providedKey);
-}
-
-export function requireBotAuth(
-  request: Request,
-  requiredScopes: string[] = []
-) {
-  throw new Error("requireBotAuth must be awaited; use requireBotAuthAsync()");
-}
-
-export async function requireBotAuthAsync(
+export async function requireBotAuth(
   request: Request,
   requiredScopes: string[] = []
 ) {
   const botId = request.headers.get("x-bot-id")?.trim() ?? "";
-  const providedKey = request.headers.get("x-bot-api-key")?.trim() ?? "";
+  const signature = request.headers.get("x-bot-signature")?.trim() ?? "";
+  const timestamp = request.headers.get("x-bot-timestamp")?.trim() ?? "";
+  const nonce = request.headers.get("x-bot-nonce")?.trim() ?? "";
 
-  if (!botId || !providedKey) {
+  if (!botId || !signature || !timestamp || !nonce) {
     return {
       ok: false as const,
-      response: unauthorized("x-bot-id and x-bot-api-key headers are required.")
+      response: unauthorized("x-bot-id, x-bot-signature, x-bot-timestamp, and x-bot-nonce headers are required.")
     };
   }
 
-  // Prefer DB-backed credentials (registered during fund/bot registration).
-  // Fall back to env BOT_API_KEYS/BOT_SCOPES for legacy deployments.
-  let expectedKey = "";
-  let scopes = new Set<string>();
+  const ts = Number(timestamp);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(ts) || Math.abs(now - ts) > AUTH_MAX_AGE_SECONDS) {
+    return {
+      ok: false as const,
+      response: unauthorized("Signature expired or invalid timestamp.")
+    };
+  }
 
+  const bots = await getBotsByBotId(botId);
+  if (!bots.length) {
+    return {
+      ok: false as const,
+      response: unauthorized("Bot not registered.")
+    };
+  }
+
+  const botAddress = bots[0].bot_address as Address;
+  const message = `openfunderse:auth:${botId}:${timestamp}:${nonce}`;
+
+  let valid = false;
   try {
-    const row = await getBotCredential(botId);
-    if (row?.api_key) {
-      expectedKey = row.api_key;
-      scopes = parseScopeSet(row.scopes);
-    }
+    valid = await verifyMessage({
+      address: botAddress,
+      message,
+      signature: signature as Hex
+    });
   } catch {
-    // ignore DB errors and fall back to env-based auth
+    valid = false;
   }
 
-  if (!expectedKey) {
-    const keys = parseEntries(process.env.BOT_API_KEYS);
-    expectedKey = keys[botId] ?? "";
-    const scopeMap = parseScopes(process.env.BOT_SCOPES);
-    scopes = scopeMap[botId] ?? new Set<string>();
-  }
-
-  if (!expectedKey || !verifyBotApiKey(expectedKey, providedKey)) {
+  if (!valid) {
     return {
       ok: false as const,
-      response: unauthorized("Invalid bot credentials.")
+      response: unauthorized("Invalid signature.")
     };
+  }
+
+  const roles = new Set(bots.map((b) => b.role));
+  const scopes = new Set<string>();
+  for (const role of Array.from(roles)) {
+    for (const scope of ROLE_SCOPES[role] ?? []) {
+      scopes.add(scope);
+    }
   }
 
   for (const scope of requiredScopes) {
@@ -141,11 +80,7 @@ export async function requireBotAuthAsync(
       return {
         ok: false as const,
         response: NextResponse.json(
-          {
-            error: "FORBIDDEN",
-            message: `Missing bot scope: ${scope}`,
-            botId
-          },
+          { error: "FORBIDDEN", message: `Missing bot scope: ${scope}`, botId },
           { status: 403 }
         )
       };
@@ -155,6 +90,7 @@ export async function requireBotAuthAsync(
   return {
     ok: true as const,
     botId,
+    botAddress,
     scopes: Array.from(scopes)
   };
 }

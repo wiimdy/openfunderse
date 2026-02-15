@@ -18,7 +18,7 @@ export default function JoinPage() {
         </ol>
 
         <div className="border-t border-gray-200 px-6 py-4 text-xs text-gray-500 sm:px-10">
-          Bot write API에는 <code>x-bot-id</code>와 <code>x-bot-api-key</code>가 필요합니다.
+          Bot write API에는 <code>x-bot-id</code>와 서명 헤더(<code>x-bot-signature</code>, <code>x-bot-timestamp</code>, <code>x-bot-nonce</code>)가 필요합니다.
         </div>
       </div>
     </div>

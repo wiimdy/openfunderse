@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireBotAuthAsync } from "@/lib/bot-auth";
+import { requireBotAuth } from "@/lib/bot-auth";
 import { isSameAddress, requireFundBotRole } from "@/lib/fund-bot-authz";
 import { ingestIntentAttestation } from "@/lib/aggregator";
 
@@ -9,7 +9,7 @@ export async function POST(
 ) {
   const { fundId } = await context.params;
 
-  const botAuth = await requireBotAuthAsync(request, ["intents.attest"]);
+  const botAuth = await requireBotAuth(request, ["intents.attest"]);
   if (!botAuth.ok) {
     return botAuth.response;
   }
