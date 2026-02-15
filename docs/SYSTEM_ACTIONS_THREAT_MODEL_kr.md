@@ -165,5 +165,4 @@ flowchart LR
 - indexer/dashboard/fundops/crawhub 독립 완성
 
 ## 8. 문서 정합성 주의
-- `docs/VERCEL_INTEGRATION_RUNBOOK_kr.md`에는 일부 과거 스캐폴드 표현(`501`)이 남아 있어, 현재 구현과 불일치 가능성이 있다.
-- 운영 전 runbook 문서와 실제 API 구현의 최신 동기화가 필요하다.
+- 운영 전 문서와 실제 API 구현의 최신 동기화가 필요하다.
