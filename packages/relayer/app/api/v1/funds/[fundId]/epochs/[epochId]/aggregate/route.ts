@@ -12,12 +12,19 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import {
+  getFund,
   getEpochStateByEpoch,
   getFundDeployment,
+  listActiveFundParticipants,
   listAllocationClaimsByEpoch,
   listStakeWeightsByFund,
   upsertEpochState
 } from "@/lib/supabase";
+import { parseFundAllowlistTokens } from "@/lib/claim-validation";
+import {
+  computeStakeWeightedAggregate,
+  filterAndWeighClaims
+} from "@/lib/aggregate-logic";
 
 const SNAPSHOT_BOOK_ABI = parseAbi([
   "function publishSnapshot(bytes32 snapshotRoot)",
@@ -26,10 +33,6 @@ const SNAPSHOT_BOOK_ABI = parseAbi([
 
 function parseBigints(values: unknown[]): bigint[] {
   return values.map((value) => BigInt(String(value)));
-}
-
-function sum(values: bigint[]): bigint {
-  return values.reduce((acc, value) => acc + value, BigInt(0));
 }
 
 export async function POST(
@@ -93,68 +96,61 @@ export async function POST(
     }
   }
 
-  const participants = Array.from(latestByParticipant.entries());
-  const dimensions = participants[0][1].weights.length;
-  for (const [, item] of participants) {
-    if (item.weights.length !== dimensions) {
-      return NextResponse.json(
-        { error: "BAD_REQUEST", message: "targetWeights dimension mismatch" },
-        { status: 400 }
-      );
-    }
-  }
+  const fund = await getFund(fundId);
+  const allowlistTokens = fund ? parseFundAllowlistTokens(fund) : null;
+  const expectedDim =
+    allowlistTokens && allowlistTokens.length > 0 ? allowlistTokens.length : null;
 
-  const claimScale = sum(participants[0][1].weights);
-  if (claimScale <= BigInt(0)) {
-    return NextResponse.json(
-      { error: "BAD_REQUEST", message: "targetWeights sum must be positive" },
-      { status: 400 }
-    );
-  }
-  for (const [, item] of participants) {
-    if (sum(item.weights) !== claimScale) {
-      return NextResponse.json(
-        { error: "BAD_REQUEST", message: "targetWeights sum mismatch across participants" },
-        { status: 400 }
-      );
-    }
-  }
+  const activeParticipants = await listActiveFundParticipants(fundId);
+  const registeredSet = new Set(
+    activeParticipants.map((bot) => bot.bot_address.toLowerCase())
+  );
 
   const stakeRows = await listStakeWeightsByFund(fundId);
-  const stakeMap = new Map(stakeRows.map((row) => [row.participant.toLowerCase(), row.weight]));
+  const stakeMap = new Map(
+    stakeRows.map((row) => [row.participant.toLowerCase(), row.weight])
+  );
 
-  let totalStake = BigInt(0);
-  const participantStake = new Map<string, bigint>();
-  for (const [participant] of participants) {
-    const stake = stakeMap.get(participant) ?? BigInt(1);
-    participantStake.set(participant, stake);
-    totalStake += stake;
-  }
+  const claimEntries = Array.from(latestByParticipant.entries()).map(
+    ([participant, item]) => ({
+      participant,
+      weights: item.weights,
+      claimHash: item.claimHash as string
+    })
+  );
 
-  if (totalStake <= BigInt(0)) {
+  const filtered = filterAndWeighClaims({
+    claims: claimEntries,
+    registeredParticipants: registeredSet,
+    stakeMap,
+    expectedDimensions: expectedDim
+  });
+
+  if (filtered.included.length === 0) {
     return NextResponse.json(
-      { error: "BAD_REQUEST", message: "total stake must be positive" },
+      {
+        error: "BAD_REQUEST",
+        message:
+          "no valid claims after filtering (unregistered, no stake, or dimension mismatch)",
+        validation: {
+          totalClaimsFound: rows.length,
+          uniqueParticipants: latestByParticipant.size,
+          skippedUnregistered: filtered.skipped.unregistered.length,
+          skippedNoStake: filtered.skipped.noStake.length,
+          skippedDimensionMismatch: filtered.skipped.dimensionMismatch.length
+        }
+      },
       { status: 400 }
     );
   }
 
-  const aggregate = Array.from({ length: dimensions }, () => BigInt(0));
-  for (const [participant, item] of participants) {
-    const stake = participantStake.get(participant) ?? BigInt(0);
-    for (let i = 0; i < dimensions; i += 1) {
-      aggregate[i] += item.weights[i] * stake;
-    }
-  }
+  const dimensions = filtered.included[0].weights.length;
+  const aggregateWeights = computeStakeWeightedAggregate(filtered.included, dimensions);
+  const claimScale = filtered.included[0].weights.reduce((a, b) => a + b, BigInt(0));
 
-  const aggregateWeights = aggregate.map((numerator) => numerator / totalStake);
-  const aggregateRemainder = claimScale - sum(aggregateWeights);
-  if (aggregateRemainder !== BigInt(0) && aggregateWeights.length > 0) {
-    aggregateWeights[0] += aggregateRemainder;
-  }
-
-  const claimHashes = participants
-    .map(([, item]) => item.claimHash)
-    .sort((a, b) => a.localeCompare(b));
+  const claimHashes = filtered.included
+    .map((claim) => claim.claimHash)
+    .sort((a, b) => a.localeCompare(b)) as Hex[];
 
   const epochState = buildEpochStateRecord({
     epochId: epoch,
@@ -323,12 +319,20 @@ export async function POST(
         txHash: publishTxHash
       },
       claimScale: claimScale.toString(),
-      participantCount: participants.length,
+      participantCount: filtered.included.length,
       claimCount: claimHashes.length,
       aggregateWeights: aggregateWeights.map((v) => v.toString()),
       rewardSettlement: {
         status: "TODO",
         message: "Reward/mint settlement is out of MVP scope (formula-only)."
+      },
+      validation: {
+        totalClaimsFound: rows.length,
+        uniqueParticipants: latestByParticipant.size,
+        includedAfterFilter: filtered.included.length,
+        skippedUnregistered: filtered.skipped.unregistered.length,
+        skippedNoStake: filtered.skipped.noStake.length,
+        skippedDimensionMismatch: filtered.skipped.dimensionMismatch.length
       }
     },
     { status: 200 }
