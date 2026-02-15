@@ -91,6 +91,7 @@ Parameters:
 
 ## MVP Scope
 - Included: participant co-investment claims (`targetWeights`) -> epoch aggregate -> strategy intent propose -> intent attestation/bundle -> ready-for-onchain execution payload.
+- Included: index mapping rule `targetWeights[i] <-> riskPolicy.allowlistTokens[i]`; strategy uses aggregate view to choose rebalance direction.
 - Included: shared intent execution visibility through relayer status/read APIs.
 - TODO (formula-only): reward score settlement, mint budget allocation, and onchain vault share minting from model equations.
 - Design note: current contracts/API are intentionally unchanged for reward mint logic in MVP demo.

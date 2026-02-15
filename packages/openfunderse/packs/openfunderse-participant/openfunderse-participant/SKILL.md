@@ -1,6 +1,6 @@
 ---
 name: openfunderse-participant
-description: Participant MoltBot for data mining (claims) and cross-verification (attestations)
+description: Participant MoltBot for allocation proposal, validation, and submission
 metadata:
   openclaw:
     installCommand: npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
@@ -21,7 +21,7 @@ metadata:
 
 # Participant MoltBot Skill
 
-The Participant MoltBot is responsible for mining data claims from specified sources and verifying claims or intents proposed by other agents. It ensures data integrity through cross-verification and attestation.
+Participant role proposes and validates `AllocationClaimV1` only.
 
 ## Quick Start
 
@@ -90,136 +90,74 @@ Note:
 - Always run `bot-init` before funding or running production actions.
 - `bot-init` generates a random `BOT_API_KEY` when current value is missing or placeholder.
 
-## Credential Scope
+`propose_allocation` outputs canonical allocation claim:
+- `claimVersion: "v1"`
+- `fundId`, `epochId`, `participant`
+- `targetWeights[]` (integer, non-negative, sum > 0)
+- `horizonSec`, `nonce`, `submittedAt`
 
-- `PARTICIPANT_PRIVATE_KEY` (or runtime fallback key) is used only for claim-attestation signing.
-- Do NOT use treasury/custody/admin keys.
-- Use a dedicated verifier/participant key with minimal privileges and rotation policy.
+No crawl/evidence/sourceRef schema is used.
 
-## Submission Safety Gates
+Vector mapping rule:
+- `targetWeights[i]` maps to strategy `riskPolicy.allowlistTokens[i]`.
+- Participants must submit weights in the same token order used by the strategy allowlist.
 
-`submit_mined_claim` and `attest_claim` are guarded by default:
+## Submission safety gates
 
-1. `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` (default) requires explicit `submit=true`.
-2. `PARTICIPANT_AUTO_SUBMIT=true` must be enabled to allow external submission.
-3. `RELAYER_URL` is validated; enforce trusted hosts with `PARTICIPANT_TRUSTED_RELAYER_HOSTS`.
-4. Without submit approval, submit/attest returns `decision=READY` and does not transmit to relayer.
+`submit_allocation` is guarded by default:
+1. `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` requires explicit `submit=true`.
+2. `PARTICIPANT_AUTO_SUBMIT=true` must be enabled for network transmission.
+3. `RELAYER_URL` host is checked by `PARTICIPANT_TRUSTED_RELAYER_HOSTS` when set.
 
-## Input
+If gate is closed, return `decision=READY` (no submit).
 
-The skill supports four operational modes: **Mining**, **Verification**, **Submission**, and **Attestation**.
+## Input contracts
 
-### Mode A: Mining (`mine_claim`)
-Used to extract data from a source and create a claim.
-
+### `propose_allocation`
 ```json
 {
-  "taskType": "mine_claim",
+  "taskType": "propose_allocation",
   "fundId": "string",
   "roomId": "string",
   "epochId": "number",
-  "sourceSpec": {
-    "sourceSpecId": "string",
-    "sourceRef": "string",
-    "extractor": "object",
-    "freshnessSeconds": "number"
-  },
-  "tokenContext": {
-    "symbol": "string",
-    "address": "string"
+  "allocation": {
+    "participant": "0x... optional",
+    "targetWeights": ["7000", "3000"],
+    "horizonSec": 3600,
+    "nonce": 1739500000
   }
 }
 ```
 
-### Mode B: Verification (`verify_claim_or_intent_validity`)
-Used to verify an existing claim or the technical validity of an intent.
-
+### `validate_allocation_or_intent`
 ```json
 {
-  "taskType": "verify_claim_or_intent_validity",
+  "taskType": "validate_allocation_or_intent",
   "fundId": "string",
   "roomId": "string",
   "epochId": "number",
   "subjectType": "CLAIM | INTENT",
-  "subjectHash": "string",
+  "subjectHash": "0x...",
   "subjectPayload": "object",
   "validationPolicy": {
-    "reproducible": "boolean",
-    "maxDataAgeSeconds": "number"
+    "reproducible": true,
+    "maxDataAgeSeconds": 300
   }
 }
 ```
 
-### Mode C: Submit (`submit_mined_claim`)
-Submits canonical claim payload to relayer (only when explicit submit gate is passed).
-
+### `submit_allocation`
 ```json
 {
-  "taskType": "submit_mined_claim",
+  "taskType": "submit_allocation",
   "fundId": "string",
   "epochId": "number",
-  "observation": "object",
-  "submit": "boolean (required for transmission when explicit-submit mode is enabled)"
+  "observation": "propose_allocation output observation",
+  "submit": true
 }
 ```
 
-### Mode D: Attest (`attest_claim`)
-Signs and submits claim attestation envelope (only when explicit submit gate is passed).
-
-```json
-{
-  "taskType": "attest_claim",
-  "fundId": "string",
-  "epochId": "number",
-  "claimHash": "0x...",
-  "submit": "boolean (required for transmission when explicit-submit mode is enabled)"
-}
-```
-
-## Output
-
-### Mining Output
-```json
-{
-  "status": "OK",
-  "taskType": "mine_claim",
-  "fundId": "string",
-  "epochId": "number",
-  "observation": {
-    "sourceSpecId": "string",
-    "token": "string",
-    "timestamp": "number",
-    "extracted": "string",
-    "responseHash": "string",
-    "evidenceURI": "string",
-    "crawler": "string"
-  },
-  "confidence": "number",
-  "assumptions": ["string"]
-}
-```
-
-### Verification Output
-```json
-{
-  "status": "OK",
-  "taskType": "verify_claim_or_intent_validity",
-  "fundId": "string",
-  "roomId": "string",
-  "epochId": "number",
-  "subjectType": "CLAIM | INTENT",
-  "subjectHash": "string",
-  "verdict": "PASS | FAIL | NEED_MORE_EVIDENCE",
-  "reason": "string",
-  "attestationDraft": {
-    "validator": "string",
-    "expiresAt": "number",
-    "nonce": "number"
-  },
-  "confidence": "number",
-  "assumptions": ["string"]
-}
-```
+## Verification rules
 
 ## Rules
 

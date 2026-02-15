@@ -149,7 +149,8 @@ The skill accepts a `propose_intent` task with the following schema:
   "snapshot": {
     "snapshotHash": "string",
     "finalized": "boolean",
-    "claimCount": "number"
+    "claimCount": "number",
+    "aggregateWeights": ["string | number (optional)"]
   },
   "marketState": {
     "network": "number",
@@ -184,7 +185,8 @@ The skill accepts a `propose_intent` task with the following schema:
   "snapshot": {
     "snapshotHash": "0xabc123...",
     "finalized": true,
-    "claimCount": 19
+    "claimCount": 19,
+    "aggregateWeights": ["7000", "3000"]
   },
   "marketState": {
     "network": 10143,
