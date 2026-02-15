@@ -45,21 +45,23 @@ The Strategy MoltBot is responsible for proposing structured trade intents based
 For NadFun venues, it must use lens quotes to derive `minAmountOut` and reject router mismatch.
 In runtime, use `proposeIntentAndSubmit` to build a canonical proposal first, then submit only when explicit submit gating is satisfied.
 
-## Quick Start (ClawHub Users)
+## Quick Start
 
-1) Install the skill:
+1) Install (pick one). You do **not** need to run both:
 
-```bash
-npx clawhub@latest install openfunderse-strategy
-```
-
-2) Install runtime + generate env scaffold:
+Manual (direct installer; run in a Node project dir, or `npm init -y` first):
 
 ```bash
 npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
 ```
 
-3) Rotate the temporary bootstrap key and write a fresh strategy wallet to env:
+ClawHub:
+
+```bash
+npx clawhub@latest install openfunderse-strategy
+```
+
+2) Rotate the temporary bootstrap key and write a fresh strategy wallet to env:
 
 ```bash
 npx @wiimdy/openfunderse@latest bot-init \
@@ -67,15 +69,44 @@ npx @wiimdy/openfunderse@latest bot-init \
   --yes
 ```
 
-4) Load env for the current shell:
+`bot-init` updates an existing `.env.strategy`.  
+If the env file is missing, run install first (without `--no-init-env`) or pass `--env-path`.
+
+### Environment Source of Truth (Hard Rule)
+
+- In OpenClaw runtime on Ubuntu, treat `/home/ubuntu/.openclaw/openclaw.json` (`env.vars`) as the canonical env source.
+- Do not require manual `.env` sourcing for normal skill execution.
+- If `.env*` and `openclaw.json` disagree, use `openclaw.json` values.
+- When user asks env setup, direct them to update `openclaw.json` first.
+
+3) Optional local shell export (debug only):
 
 ```bash
 set -a; source ~/.openclaw/workspace/.env.strategy; set +a
 ```
 
+This step is not required for normal OpenClaw skill execution.
+
+Telegram slash commands:
+
+```text
+/propose_intent --fund-id <id> --intent-file <path> --execution-route-file <path>
+/dry_run_intent --intent-hash <0x...> --intent-file <path> --execution-route-file <path>
+/attest_intent --fund-id <id> --intent-hash <0x...>
+/execute_intent --fund-id <id> [--limit <n>]
+/create_fund --fund-id <id> --fund-name <name> --deploy-config-file <path>
+```
+
+Notes:
+- Slash parser accepts underscores, so `/propose_intent` equals `/propose-intent`.
+- `key=value` style is also accepted (`fund_id=demo-fund`).
+- On first install, register these commands in Telegram via `@BotFather` -> `/setcommands`.
+
 OpenClaw note:
 - `install` / `bot-init` sync env keys into `~/.openclaw/openclaw.json` (`env.vars`) by default.
-- Use `--no-sync-openclaw-env` if you want file-only behavior.
+- `bot-init` also runs `openclaw gateway restart` after a successful env sync, so the gateway picks up updates.
+- Use `--no-sync-openclaw-env` for file-only behavior, or `--no-restart-openclaw-gateway` to skip the restart.
+- If env still looks stale: run `openclaw gateway restart` and verify values in `/home/ubuntu/.openclaw/openclaw.json`.
 
 Note:
 - The scaffold includes a temporary public key placeholder by default.
@@ -263,3 +294,4 @@ Returned when no trade is proposed due to risk constraints or market conditions.
 11. **Timestamp Normalization**: `openedAt` may be in seconds or milliseconds; normalize before age-based exits.
 12. **No Implicit Submit**: Do not submit to relayer/onchain unless explicit submit gating is passed.
 13. **Trusted Relayer**: In production, set `STRATEGY_TRUSTED_RELAYER_HOSTS` and avoid arbitrary relayer URLs.
+14. **Env Source Priority**: Resolve runtime env from `/home/ubuntu/.openclaw/openclaw.json` (`env.vars`) before local `.env*` files.

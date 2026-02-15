@@ -1,6 +1,6 @@
 {
   "name": "@wiimdy/openfunderse-sdk",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "Canonical hashing and EIP-712 helpers for Claw protocol components.",
   "license": "MIT",
   "type": "module",

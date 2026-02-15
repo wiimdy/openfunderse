@@ -10,7 +10,7 @@ npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
 # or
 npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
 
-# 2) create/rotate bot wallet and write env
+# 2) create/rotate bot wallet and update existing env
 npx @wiimdy/openfunderse@latest bot-init --skill-name strategy --yes
 # or
 npx @wiimdy/openfunderse@latest bot-init --skill-name participant --yes
@@ -24,6 +24,19 @@ set -a; source ~/.openclaw/workspace/.env.participant; set +a
 
 By default, `install` and `bot-init` also sync env keys into OpenClaw config (`~/.openclaw/openclaw.json > env.vars`).
 Disable this with `--no-sync-openclaw-env`.
+
+When `bot-init` syncs env keys into OpenClaw config, it also runs `openclaw gateway restart` to apply updates.
+Disable this with `--no-restart-openclaw-gateway`.
+
+## Telegram Slash Commands
+
+After runtime install, `@wiimdy/openfunderse-agents` accepts slash commands:
+
+- Strategy: `/propose_intent`, `/dry_run_intent`, `/attest_intent`, `/execute_intent`, `/create_fund`
+- Participant: `/propose_allocation`, `/validate_allocation`, `/submit_allocation`, `/allocation_e2e`
+
+Underscore and `key=value` arguments are supported (for example: `fund_id=demo-fund`).
+On first install, the CLI also prints a ready-to-paste `@BotFather` `/setcommands` block.
 
 ## Where Files Are Stored
 
@@ -39,5 +52,6 @@ Disable this with `--no-sync-openclaw-env`.
 - Default env scaffold path is role-based under OpenClaw workspace:
   - strategy: `~/.openclaw/workspace/.env.strategy`
   - participant: `~/.openclaw/workspace/.env.participant`
+- `bot-init` updates an existing role env file. If missing, create it first (or run `install` without `--no-init-env`).
 - `bot-init` auto-generates a random `BOT_API_KEY` when value is missing/placeholder.
 - Use `--env-path` only when you want a custom filename/location.

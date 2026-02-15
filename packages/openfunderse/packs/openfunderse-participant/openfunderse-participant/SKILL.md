@@ -11,7 +11,6 @@ metadata:
         - BOT_ID
         - BOT_API_KEY
         - CHAIN_ID
-        - CLAIM_ATTESTATION_VERIFIER_ADDRESS
         - PARTICIPANT_ADDRESS
       bins:
         - node
@@ -24,21 +23,23 @@ metadata:
 
 The Participant MoltBot is responsible for mining data claims from specified sources and verifying claims or intents proposed by other agents. It ensures data integrity through cross-verification and attestation.
 
-## Quick Start (ClawHub Users)
+## Quick Start
 
-1) Install the skill:
+1) Install (pick one). You do **not** need to run both:
+
+Manual (direct installer; run in a Node project dir, or `npm init -y` first):
+
+```bash
+npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
+```
+
+ClawHub:
 
 ```bash
 npx clawhub@latest install openfunderse-participant
 ```
 
-2) Install runtime + generate env scaffold:
-
-```bash
-npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
-```
-
-3) Rotate the temporary bootstrap key and write a fresh participant wallet to env:
+2) Rotate the temporary bootstrap key and write a fresh participant wallet to env:
 
 ```bash
 npx @wiimdy/openfunderse@latest bot-init \
@@ -46,15 +47,43 @@ npx @wiimdy/openfunderse@latest bot-init \
   --yes
 ```
 
-4) Load env for the current shell:
+`bot-init` updates an existing `.env.participant`.  
+If the env file is missing, run install first (without `--no-init-env`) or pass `--env-path`.
+
+### Environment Source of Truth (Hard Rule)
+
+- In OpenClaw runtime on Ubuntu, treat `/home/ubuntu/.openclaw/openclaw.json` (`env.vars`) as the canonical env source.
+- Do not require manual `.env` sourcing for normal skill execution.
+- If `.env*` and `openclaw.json` disagree, use `openclaw.json` values.
+- When user asks env setup, direct them to update `openclaw.json` first.
+
+3) Optional local shell export (debug only):
 
 ```bash
 set -a; source ~/.openclaw/workspace/.env.participant; set +a
 ```
 
+This step is not required for normal OpenClaw skill execution.
+
+Telegram slash commands:
+
+```text
+/propose_allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
+/validate_allocation --claim-file <path>
+/submit_allocation --claim-file <path> --submit
+/allocation_e2e --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--submit]
+```
+
+Notes:
+- Slash parser accepts underscores, so `/submit_allocation` equals `/submit-allocation`.
+- `key=value` style is also accepted (`fund_id=demo-fund`).
+- On first install, register these commands in Telegram via `@BotFather` -> `/setcommands`.
+
 OpenClaw note:
 - `install` / `bot-init` sync env keys into `~/.openclaw/openclaw.json` (`env.vars`) by default.
-- Use `--no-sync-openclaw-env` if you want file-only behavior.
+- `bot-init` also runs `openclaw gateway restart` after a successful env sync, so the gateway picks up updates.
+- Use `--no-sync-openclaw-env` for file-only behavior, or `--no-restart-openclaw-gateway` to skip the restart.
+- If env still looks stale: run `openclaw gateway restart` and verify values in `/home/ubuntu/.openclaw/openclaw.json`.
 
 Note:
 - The scaffold includes a temporary public key placeholder by default.
@@ -205,3 +234,4 @@ Signs and submits claim attestation envelope (only when explicit submit gate is 
 9. **Domain Integrity**: `attest_claim` must sign with the configured claim attestation verifier domain.
 10. **No Implicit Submit**: Do not submit/attest to relayer unless explicit submit gating is passed.
 11. **Trusted Relayer**: In production, set `PARTICIPANT_TRUSTED_RELAYER_HOSTS` and avoid arbitrary relayer URLs.
+12. **Env Source Priority**: Resolve runtime env from `/home/ubuntu/.openclaw/openclaw.json` (`env.vars`) before local `.env*` files.
