@@ -37,8 +37,8 @@ Vercel 프로젝트 생성 시 Root Directory를 아래로 지정:
 - `AUTH_SECRET`
 - `POSTGRES_URL`
 - `ADMIN_EMAILS`
-- `BOT_API_KEYS`
-- `BOT_SCOPES`
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
 
 권장:
 - `RPC_URL`
@@ -46,15 +46,45 @@ Vercel 프로젝트 생성 시 Root Directory를 아래로 지정:
 - `INTENT_BOOK_ADDRESS`
 - `CLAW_VAULT_ADDRESS`
 - `RELAYER_SIGNER_PRIVATE_KEY`
+- `BOT_API_KEYS` (레거시 fallback)
+- `BOT_SCOPES` (레거시 fallback)
 
 예시:
 ```env
 AUTH_SECRET=long-random-secret
 POSTGRES_URL=postgres://user:pass@host:5432/db
 ADMIN_EMAILS=ops1@yourdomain.com,ops2@yourdomain.com
-BOT_API_KEYS=bot-strategy-1:key1,bot-participant-1:key2
-BOT_SCOPES=bot-strategy-1:intents.propose,bot-participant-1:claims.submit|intents.attest
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_ANON_KEY=sb_publishable_xxx
+# Optional (legacy fallback; prefer DB-backed credentials via /sync-by-strategy + /bots/register)
+# BOT_API_KEYS=bot-strategy-1:sha256:<64hex>,bot-participant-1:sha256:<64hex>
+# BOT_SCOPES=bot-strategy-1:intents.propose|bots.register|funds.bootstrap,bot-participant-1:claims.submit|intents.attest
 ```
+
+## 2.1) Bot 인증(권장): DB-backed credentials
+
+### 개요
+Relayer write API는 항상 아래 헤더를 요구합니다:
+- `x-bot-id`
+- `x-bot-api-key`
+
+하지만 **API key의 “검증 원천”**은 두 가지 모드가 있습니다.
+
+1) **DB-backed (권장)**: Supabase `bot_credentials` 테이블에 등록된 key로 검증  
+2) **Env fallback (레거시)**: `BOT_API_KEYS`/`BOT_SCOPES`로 검증
+
+운영에서는 1)을 사용하고, 2)는 긴급/호환용으로만 유지합니다.
+
+### 등록 흐름(권장)
+1. Strategy bot가 `bot-init`으로 `BOT_API_KEY`를 생성하고, 그 sha256(hex) 값을 확보합니다.
+2. Fund 등록(sync) 시 strategy bot key를 Relayer DB에 등록합니다:
+   - `POST /api/v1/funds/sync-by-strategy`
+   - body에 `strategyBotApiKeySha256` 포함
+3. Strategy bot가 participant bot을 등록할 때 participant key도 같이 Relayer DB에 등록합니다:
+   - `POST /api/v1/funds/{fundId}/bots/register`
+   - body에 `botApiKeySha256` 포함
+
+이후부터는 Vercel env에 `BOT_API_KEYS`/`BOT_SCOPES`를 넣지 않아도, 등록된 봇들이 정상 인증됩니다.
 
 ## 3) 운영자/유저 동선
 
@@ -92,7 +122,7 @@ curl -i -X POST "$RELAYER_BASE_URL/api/v1/funds/fund-demo/claims"
 curl -i -X POST "$RELAYER_BASE_URL/api/v1/funds/fund-demo/claims" \
   -H "content-type: application/json" \
   -H "x-bot-id: bot-participant-1" \
-  -H "x-bot-api-key: key2" \
+  -H "x-bot-api-key: <your-bot-api-key>" \
   -d '{"claim":"demo"}'
 ```
 기대: `501 TODO` (현재 로직 미구현 상태에서는 정상)

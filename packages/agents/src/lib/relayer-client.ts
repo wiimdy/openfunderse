@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   buildCanonicalAllocationClaimRecord,
   type AllocationClaimV1,
@@ -141,12 +141,18 @@ export interface SyncFundDeploymentInput {
   strategyBotId: string;
   strategyBotAddress: Address;
   txHash: Hex;
+  // Optional override. If omitted, RelayerClient will sha256(BOT_API_KEY) and send it.
+  strategyBotApiKeySha256?: string;
   verifierThresholdWeight?: bigint | number | string;
   intentThresholdWeight?: bigint | number | string;
   strategyPolicyUri?: string;
   telegramRoomId?: string;
   telegramHandle?: string;
 }
+
+const sha256Hex = (value: string): string => {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+};
 
 const wait = async (ms: number): Promise<void> => {
   await new Promise((resolve) => {
@@ -413,6 +419,9 @@ export class RelayerClient {
   async syncFundDeployment(
     input: SyncFundDeploymentInput
   ): Promise<Record<string, unknown>> {
+    const strategyBotApiKeySha256 =
+      (input.strategyBotApiKeySha256 ?? '').trim() ||
+      (this.botApiKey ? sha256Hex(this.botApiKey) : '');
     return this.request<Record<string, unknown>>({
       method: 'POST',
       path: '/api/v1/funds/sync-by-strategy',
@@ -422,6 +431,7 @@ export class RelayerClient {
         strategyBotId: input.strategyBotId,
         strategyBotAddress: input.strategyBotAddress,
         txHash: input.txHash,
+        strategyBotApiKeySha256,
         verifierThresholdWeight:
           input.verifierThresholdWeight === undefined
             ? undefined

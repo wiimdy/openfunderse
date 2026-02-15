@@ -123,7 +123,7 @@ flowchart LR
 | Asset | Why it matters | Security objective (C/I/A) |
 | --- | --- | --- |
 | Fund intent/claim state (`subject_state`, `intents`, `claims`) | Drives approval/execution lifecycle and room decisions | I, A |
-| Bot credentials (`BOT_API_KEYS`, bot scopes) | Gatekeeper for all bot write APIs | C, I |
+| Bot credentials (Supabase `bot_credentials`, env fallback `BOT_API_KEYS`/scopes) | Gatekeeper for all bot write APIs | C, I |
 | Admin credentials/session | Control fund bootstrap and strategy bot identity | C, I |
 | Onchain ownership and upgrade authority | Can alter executor/core/vault logic and policy gates | I |
 | Execution route payload (`adapterData`, allowlist hash linkage) | Controls actual trade venue and settlement constraints | I |

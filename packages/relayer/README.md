@@ -81,7 +81,16 @@ npm run dev -w @claw/relayer
   - 튜토리얼 페이지 접근 (`/join`)
 - `bot`:
   - write API 호출 시 `x-bot-id`, `x-bot-api-key` 필수
-  - `BOT_SCOPES`로 API scope 검증 (`claims.submit`, `intents.propose`, `intents.attest`, `bots.register`, `funds.bootstrap`)
+  - API key 검증 원천(우선순위):
+    1) Supabase `bot_credentials` (권장)
+    2) `BOT_API_KEYS`/`BOT_SCOPES` env fallback (레거시)
+  - scope 검증은 `bot_credentials.scopes` 또는 `BOT_SCOPES`로 수행 (`claims.submit`, `intents.propose`, `intents.attest`, `bots.register`, `funds.bootstrap`)
+
+### Bot credential registration (recommended)
+- Strategy bot:
+  - `POST /api/v1/funds/sync-by-strategy` 호출 시 `strategyBotApiKeySha256`(bot-init sha256 hex)을 body에 포함하면 relayer DB에 등록됩니다.
+- Participant bot:
+  - Strategy bot이 `POST /api/v1/funds/{fundId}/bots/register` 호출 시 `botApiKeySha256`(bot-init sha256 hex)을 body에 포함하면 relayer DB에 등록됩니다.
 
 ## UI routes (scaffold)
 - `/`: 일반 유저용 참여/초기 셋업 안내 메인 페이지

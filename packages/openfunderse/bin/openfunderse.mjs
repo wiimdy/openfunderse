@@ -886,7 +886,8 @@ async function runBotInit(options) {
   }
 	  if (botApiKeyHashedEntry) {
 	    console.log(`Bot API key SHA-256: ${botApiKeyHash}`);
-	    console.log(`Relayer BOT_API_KEYS hashed entry: ${botApiKeyHashedEntry}`);
+	    console.log(`Relayer credential registration value (botApiKeySha256): ${botApiKeyHashedEntry.replace(/^.*:sha256:/, "")}`);
+	    console.log("Note: Prefer DB-backed relayer auth. Register this sha256 via /api/v1/funds/sync-by-strategy (strategy) or /api/v1/funds/{fundId}/bots/register (participants).");
 	  }
 	  if (syncMeta?.synced && options.restartOpenclawGateway) {
 	    console.log("Restarting OpenClaw gateway to apply env changes...");
