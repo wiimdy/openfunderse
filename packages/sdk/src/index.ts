@@ -1,5 +1,6 @@
 export * from "./types.js";
 export * from "./nadfun-types.js";
+export * from "./constants.js";
 export * from "./canonical.js";
 export * from "./hash.js";
 export * from "./eip712.js";

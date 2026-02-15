@@ -6,17 +6,20 @@ import {
   buildEpochStateRecord,
   buildCoreExecutionRequestFromIntent,
   buildIntentAllowlistHashFromRoute,
-  intentExecutionCallHash
+  intentExecutionCallHash,
+  CLAIM_WEIGHT_SCALE
 } from "../dist/index.js";
 
 test("buildCanonicalAllocationClaimRecord normalizes and hashes", () => {
+  const w60 = (CLAIM_WEIGHT_SCALE * 60n) / 100n;
+  const w40 = CLAIM_WEIGHT_SCALE - w60;
   const out = buildCanonicalAllocationClaimRecord({
     claim: {
       claimVersion: "v1",
       fundId: " fund-1 ",
       epochId: 1n,
       participant: "0x00000000000000000000000000000000000000A1",
-      targetWeights: [6000n, 4000n],
+      targetWeights: [w60, w40],
       horizonSec: 3600n,
       nonce: 7n,
       submittedAt: 1700000000n
@@ -25,6 +28,25 @@ test("buildCanonicalAllocationClaimRecord normalizes and hashes", () => {
 
   assert.equal(out.claim.fundId, "fund-1");
   assert.equal(out.claimHash.startsWith("0x"), true);
+});
+
+test("buildCanonicalAllocationClaimRecord rejects non-scale weights", () => {
+  assert.throws(
+    () =>
+      buildCanonicalAllocationClaimRecord({
+        claim: {
+          claimVersion: "v1",
+          fundId: "fund-1",
+          epochId: 1n,
+          participant: "0x00000000000000000000000000000000000000A1",
+          targetWeights: [6000n, 4000n],
+          horizonSec: 3600n,
+          nonce: 0n,
+          submittedAt: 1700000000n
+        }
+      }),
+    /CLAIM_WEIGHT_SCALE/
+  );
 });
 
 test("buildCanonicalIntentRecord validates deadline and constraints", () => {
