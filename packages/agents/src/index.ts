@@ -52,6 +52,9 @@ export type {
   RiskChecks
 } from './skills/strategy/index.js';
 
+export { computeTargetWeights } from './strategies/participant/strategies.js';
+export type { ParticipantStrategyId } from './strategies/participant/strategies.js';
+
 const argv = normalizeChatCommandArgv(process.argv.slice(2));
 loadDefaultEnvForArgv(argv);
 
