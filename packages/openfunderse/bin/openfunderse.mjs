@@ -53,20 +53,22 @@ PARTICIPANT_ADDRESS=0x0000000000000000000000000000000000000000
 const BOTFATHER_STRATEGY_COMMANDS = [
   "start - Show quick start",
   "help - Show command help",
-  "propose_intent - Propose a strategy intent",
-  "dry_run_intent - Dry-run core execution",
-  "attest_intent - Attest intent onchain",
-  "execute_intent - Execute ready intent onchain",
-  "create_fund - Create/sync fund",
+  "create_fund - Create fund onchain via Factory",
+  "propose_intent - Propose a trade intent from snapshot",
+  "dry_run_intent - Simulate intent execution against ClawCore",
+  "attest_intent - Submit intent attestation to IntentBook",
+  "execute_intent - Execute attested intent onchain",
 ];
 
 const BOTFATHER_PARTICIPANT_COMMANDS = [
   "start - Show quick start",
   "help - Show command help",
-  "propose_allocation - Mine allocation claim",
-  "validate_allocation - Validate allocation claim",
-  "submit_allocation - Submit allocation claim",
-  "allocation_e2e - Run allocation end-to-end",
+  "propose_allocation - Mine allocation claim with target weights",
+  "submit_allocation - Validate and submit claim to relayer",
+  "deposit - Deposit native MON or ERC-20 into vault",
+  "withdraw - Withdraw assets from vault (native or ERC-20)",
+  "redeem - Burn vault shares and receive assets",
+  "vault_info - Show vault status and user PnL",
 ];
 
 function botFatherCommandLinesForProfile(profile) {

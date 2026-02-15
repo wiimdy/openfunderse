@@ -96,6 +96,18 @@ Telegram slash commands:
 /create_fund --fund-id <id> --fund-name <name> --deploy-config-file <path>
 ```
 
+BotFather `/setcommands` (copy-paste ready):
+
+```text
+start - Show quick start
+help - Show command help
+create_fund - Create fund onchain via Factory
+propose_intent - Propose a trade intent from snapshot
+dry_run_intent - Simulate intent execution against ClawCore
+attest_intent - Submit intent attestation to IntentBook
+execute_intent - Execute attested intent onchain
+```
+
 Notes:
 - Slash parser accepts underscores, so `/propose_intent` equals `/propose-intent`.
 - `key=value` style is also accepted (`fund_id=demo-fund`).

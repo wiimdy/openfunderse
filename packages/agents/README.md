@@ -105,22 +105,9 @@ npm run participant:propose-allocation -w @claw/agents -- \
   --target-weights 7000,3000 \
   --out-file /tmp/participant-allocation.json
 
-# 2) Verify mined claim
-npm run participant:validate-allocation -w @claw/agents -- \
-  --claim-file /tmp/participant-allocation.json \
-  --max-data-age-seconds 300
-
-# 3) Submit mined claim to relayer
+# 2) Validate and submit (dry-run without --submit, submit with --submit)
 npm run participant:submit-allocation -w @claw/agents -- \
   --claim-file /tmp/participant-allocation.json \
-  --submit
-
-# 4) One-shot e2e (mine -> verify -> submit)
-npm run participant:allocation-e2e -w @claw/agents -- \
-  --fund-id demo-fund \
-  --epoch-id 1 \
-  --target-weights 7000,3000 \
-  --report-file /tmp/participant-allocation-e2e-report.json \
   --submit
 ```
 
@@ -141,9 +128,11 @@ EC2/systemd deployment:
 
 Slash aliases:
 - `/propose_allocation`
-- `/validate_allocation`
 - `/submit_allocation`
-- `/allocation_e2e`
+- `/deposit`
+- `/withdraw`
+- `/redeem`
+- `/vault_info`
 
 Default participant safety behavior:
 - `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` and no `--submit` => `decision: "READY"` (no relayer transmission)

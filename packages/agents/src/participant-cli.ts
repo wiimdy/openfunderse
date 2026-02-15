@@ -1,5 +1,15 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import {
+  createPublicClient,
+  createWalletClient,
+  defineChain,
+  http,
+  parseAbi,
+  type Address,
+  type Hex
+} from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import type { RelayerClientOptions } from './lib/relayer-client.js';
 import { createRelayerClient } from './lib/relayer-client.js';
 import { createMonadTestnetPublicClient } from './strategies/nadfun/client.js';
@@ -10,6 +20,41 @@ import {
   validateAllocationOrIntent,
   type ProposeAllocationObservation
 } from './skills/participant/index.js';
+
+const VAULT_ABI = parseAbi([
+  'function deposit(uint256 assets, address receiver) payable returns (uint256 shares)',
+  'function depositNative(address receiver) payable returns (uint256 shares)',
+  'function withdraw(uint256 assets, address receiver, address owner_) returns (uint256 shares)',
+  'function withdrawNative(uint256 assets, address receiver, address owner_) returns (uint256 shares)',
+  'function redeem(uint256 shares, address receiver, address owner_) returns (uint256 assets)',
+  'function balanceOf(address) view returns (uint256)',
+  'function totalAssets() view returns (uint256)',
+  'function totalSupply() view returns (uint256)',
+  'function sharePriceX18() view returns (uint256)',
+  'function previewDeposit(uint256 assets) view returns (uint256)',
+  'function previewWithdraw(uint256 assets) view returns (uint256)',
+  'function previewRedeem(uint256 shares) view returns (uint256)',
+  'function convertToAssets(uint256 shares) view returns (uint256)',
+  'function convertToShares(uint256 assets) view returns (uint256)',
+  'function userPerformance(address) view returns (uint256 shares, uint256 assetValue, uint256 principal, int256 pnl, uint256 ppsX18)',
+  'function asset() view returns (address)',
+  'function hasOpenPositions() view returns (bool)',
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function maxDeposit(address) view returns (uint256)',
+  'function maxWithdraw(address) view returns (uint256)',
+  'function maxRedeem(address) view returns (uint256)'
+]);
+
+const ERC20_ABI = parseAbi([
+  'function approve(address spender, uint256 amount) returns (bool)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function balanceOf(address) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)'
+]);
+
+const DEFAULT_MIN_SIGNER_BALANCE_WEI = 10_000_000_000_000_000n; // 0.01 MON
 
 interface ParsedCli {
   command?: string;
@@ -164,6 +209,63 @@ const parseTargetWeights = (raw: string): Array<string | number | bigint> => {
   });
 };
 
+const optionOrEnv = (parsed: ParsedCli, key: string, envName: string): string => {
+  const option = parsed.options.get(key);
+  if (option) return option;
+  const env = process.env[envName];
+  if (env) return env;
+  throw new Error(`--${key} or ${envName} is required`);
+};
+
+const parseAddress = (raw: string, label: string): Address => {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(raw)) {
+    throw new Error(`${label} must be a valid 0x-prefixed address: ${raw}`);
+  }
+  return raw as Address;
+};
+
+const participantPrivateKey = (): Hex => {
+  const raw = process.env.PARTICIPANT_PRIVATE_KEY ?? '';
+  if (!/^0x[0-9a-fA-F]{64}$/.test(raw)) {
+    throw new Error('PARTICIPANT_PRIVATE_KEY is required and must be a 32-byte hex private key');
+  }
+  return raw as Hex;
+};
+
+const participantRuntime = (): {
+  chainId: number;
+  rpcUrl: string;
+  chain: ReturnType<typeof defineChain>;
+} => {
+  const chainIdRaw = Number(process.env.CHAIN_ID ?? '10143');
+  if (!Number.isFinite(chainIdRaw) || chainIdRaw <= 0) {
+    throw new Error('CHAIN_ID must be a positive number');
+  }
+  const rpcUrl = process.env.RPC_URL ?? '';
+  if (!rpcUrl) {
+    throw new Error('RPC_URL is required');
+  }
+  const chainId = Math.trunc(chainIdRaw);
+  const chain = defineChain({
+    id: chainId,
+    name: `participant-signer-${chainId}`,
+    nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
+    rpcUrls: {
+      default: { http: [rpcUrl] },
+      public: { http: [rpcUrl] }
+    }
+  });
+  return { chainId, rpcUrl, chain };
+};
+
+const participantSignerClients = () => {
+  const { chainId, rpcUrl, chain } = participantRuntime();
+  const account = privateKeyToAccount(participantPrivateKey());
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  const walletClient = createWalletClient({ account, chain, transport: http(rpcUrl) });
+  return { chainId, rpcUrl, account, publicClient, walletClient };
+};
+
 const observationToClaimPayload = (
   observation: ProposeAllocationObservation
 ): Record<string, unknown> => {
@@ -227,10 +329,12 @@ const runParticipantProposeAllocation = async (parsed: ParsedCli): Promise<void>
   }
 };
 
-const runParticipantValidateAllocation = async (parsed: ParsedCli): Promise<void> => {
+const runParticipantSubmitAllocation = async (parsed: ParsedCli): Promise<void> => {
   const claimFile = requiredOption(parsed, 'claim-file');
   const bundle = await readObservationFromFile(claimFile);
-  const output = await validateAllocationOrIntent({
+  const submitRequested = parsed.flags.has('submit');
+
+  const validation = await validateAllocationOrIntent({
     taskType: 'validate_allocation_or_intent',
     fundId: bundle.fundId,
     roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
@@ -244,118 +348,422 @@ const runParticipantValidateAllocation = async (parsed: ParsedCli): Promise<void
     }
   });
 
-  console.log(jsonStringify(output));
-  const outFile = parsed.options.get('out-file');
-  if (outFile) {
-    await writeJsonFile(outFile, output);
-  }
-  if (output.verdict !== 'PASS') {
+  if (validation.verdict !== 'PASS') {
+    console.log(jsonStringify({
+      status: 'VALIDATION_FAILED',
+      command: 'participant-submit-allocation',
+      validation
+    }));
     process.exitCode = 2;
+    return;
   }
-};
 
-const runParticipantSubmitAllocation = async (parsed: ParsedCli): Promise<void> => {
-  const claimFile = requiredOption(parsed, 'claim-file');
-  const bundle = await readObservationFromFile(claimFile);
-  const submitRequested = parsed.flags.has('submit');
+  if (!submitRequested) {
+    console.log(jsonStringify({
+      status: 'OK',
+      command: 'participant-submit-allocation',
+      mode: 'DRY_RUN',
+      validation,
+      fundId: bundle.fundId,
+      epochId: bundle.epochId,
+      claimHash: bundle.observation.claimHash,
+      message: 'validation passed; pass --submit to send to relayer'
+    }));
+    return;
+  }
+
   const output = await submitAllocation({
     fundId: bundle.fundId,
     epochId: bundle.epochId,
     observation: bundle.observation,
     clientOptions: buildParticipantClientOptions(),
-    submit: submitRequested
+    submit: true
   });
-  console.log(jsonStringify(output));
+
+  console.log(jsonStringify({
+    ...output,
+    command: 'participant-submit-allocation',
+    mode: 'SUBMIT',
+    validation
+  }));
+
   if (output.status !== 'OK') {
     process.exitCode = 2;
   }
 };
 
-const runParticipantE2E = async (parsed: ParsedCli): Promise<void> => {
-  const fundId = requiredOption(parsed, 'fund-id');
-  const epochId = Number(requiredOption(parsed, 'epoch-id'));
-  const submitRequested = parsed.flags.has('submit');
-  if (!Number.isFinite(epochId)) {
-    throw new Error('--epoch-id must be a number');
+const runParticipantDeposit = async (parsed: ParsedCli): Promise<void> => {
+  const vaultAddress = parseAddress(
+    optionOrEnv(parsed, 'vault-address', 'CLAW_VAULT_ADDRESS'),
+    'vault-address'
+  );
+  const amountRaw = requiredOption(parsed, 'amount');
+  const amount = BigInt(amountRaw);
+  if (amount <= 0n) throw new Error('--amount must be positive');
+
+  const isNative = parsed.flags.has('native');
+  const submit = parsed.flags.has('submit');
+  const skipGasCheck = parsed.flags.has('skip-gas-check');
+
+  const { account, publicClient, walletClient } = participantSignerClients();
+
+  const receiverRaw = parsed.options.get('receiver') ?? account.address;
+  const receiver = parseAddress(receiverRaw, 'receiver');
+
+  const [signerBalance, hasOpenPositions, assetAddress] = await Promise.all([
+    publicClient.getBalance({ address: account.address }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'hasOpenPositions' }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'asset' })
+  ]);
+
+  if (hasOpenPositions) {
+    throw new Error('vault has open positions; deposits are blocked until all positions are closed');
   }
 
-  const mine = await proposeAllocation({
-    taskType: 'propose_allocation',
-    fundId,
-    roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
-    epochId: Math.trunc(epochId),
-    allocation: {
-      participant: parsed.options.get('participant'),
-      targetWeights: parseTargetWeights(requiredOption(parsed, 'target-weights')),
-      horizonSec: toNumberOption(parsed, 'horizon-sec', 3600),
-      nonce: parsed.options.has('nonce')
-        ? toNumberOption(parsed, 'nonce', Math.trunc(Date.now() / 1000))
-        : undefined
+  const minBal = DEFAULT_MIN_SIGNER_BALANCE_WEI;
+  if (!skipGasCheck && signerBalance < minBal + (isNative ? amount : 0n)) {
+    throw new Error(
+      `signer balance too low: ${signerBalance.toString()} wei (need at least ${(minBal + (isNative ? amount : 0n)).toString()} wei)`
+    );
+  }
+
+  let needsApproval = false;
+  let tokenBalance = 0n;
+  let currentAllowance = 0n;
+
+  if (!isNative) {
+    [tokenBalance, currentAllowance] = await Promise.all([
+      publicClient.readContract({ address: assetAddress, abi: ERC20_ABI, functionName: 'balanceOf', args: [account.address] }),
+      publicClient.readContract({ address: assetAddress, abi: ERC20_ABI, functionName: 'allowance', args: [account.address, vaultAddress] })
+    ]);
+
+    if (tokenBalance < amount) {
+      throw new Error(`insufficient token balance: have=${tokenBalance.toString()}, need=${amount.toString()}`);
     }
+    needsApproval = currentAllowance < amount;
+  }
+
+  const previewShares = await publicClient.readContract({
+    address: vaultAddress,
+    abi: VAULT_ABI,
+    functionName: 'previewDeposit',
+    args: [amount]
   });
-  if (mine.status !== 'OK' || !mine.observation) {
-    console.log(jsonStringify({ step: 'mine', result: mine }));
-    process.exitCode = 2;
+
+  if (!submit) {
+    console.log(jsonStringify({
+      status: 'OK',
+      command: 'participant-deposit',
+      mode: 'DRY_RUN',
+      vaultAddress,
+      receiver,
+      amount: amount.toString(),
+      isNative,
+      previewShares: previewShares.toString(),
+      needsApproval,
+      signerAddress: account.address,
+      signerBalanceWei: signerBalance.toString(),
+      assetAddress,
+      tokenBalance: isNative ? undefined : tokenBalance.toString(),
+      currentAllowance: isNative ? undefined : currentAllowance.toString()
+    }));
     return;
   }
 
-  const verify = await validateAllocationOrIntent({
-    taskType: 'validate_allocation_or_intent',
-    fundId,
-    roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
-    epochId: Math.trunc(epochId),
-    subjectType: 'CLAIM',
-    subjectHash: mine.observation.claimHash,
-    subjectPayload: observationToClaimPayload(mine.observation),
-    validationPolicy: {
-      reproducible: true,
-      maxDataAgeSeconds: toNumberOption(parsed, 'max-data-age-seconds', 300)
-    }
+  if (!isNative && needsApproval) {
+    const approveSim = await publicClient.simulateContract({
+      account,
+      address: assetAddress,
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [vaultAddress, amount]
+    });
+    const approveTx = await walletClient.writeContract(approveSim.request);
+    await publicClient.waitForTransactionReceipt({ hash: approveTx });
+  }
+
+  const simulation = isNative
+    ? await publicClient.simulateContract({
+        account,
+        address: vaultAddress,
+        abi: VAULT_ABI,
+        functionName: 'deposit',
+        args: [0n, receiver],
+        value: amount
+      })
+    : await publicClient.simulateContract({
+        account,
+        address: vaultAddress,
+        abi: VAULT_ABI,
+        functionName: 'deposit',
+        args: [amount, receiver]
+      });
+
+  const txHash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+  if (receipt.status !== 'success') {
+    throw new Error(`deposit transaction reverted: ${txHash}`);
+  }
+
+  const sharesAfter = await publicClient.readContract({
+    address: vaultAddress,
+    abi: VAULT_ABI,
+    functionName: 'balanceOf',
+    args: [receiver]
   });
-  if (verify.verdict !== 'PASS') {
-    console.log(jsonStringify({ step: 'verify', result: verify }));
-    process.exitCode = 2;
+
+  console.log(jsonStringify({
+    status: 'OK',
+    command: 'participant-deposit',
+    mode: 'SUBMIT',
+    vaultAddress,
+    receiver,
+    amount: amount.toString(),
+    isNative,
+    txHash,
+    blockNumber: receipt.blockNumber,
+    sharesAfter: sharesAfter.toString()
+  }));
+};
+
+const runParticipantWithdraw = async (parsed: ParsedCli): Promise<void> => {
+  const vaultAddress = parseAddress(
+    optionOrEnv(parsed, 'vault-address', 'CLAW_VAULT_ADDRESS'),
+    'vault-address'
+  );
+  const amountRaw = requiredOption(parsed, 'amount');
+  const amount = BigInt(amountRaw);
+  if (amount <= 0n) throw new Error('--amount must be positive');
+
+  const isNative = parsed.flags.has('native');
+  const submit = parsed.flags.has('submit');
+
+  const { account, publicClient, walletClient } = participantSignerClients();
+
+  const receiverRaw = parsed.options.get('receiver') ?? account.address;
+  const receiver = parseAddress(receiverRaw, 'receiver');
+
+  const [hasOpenPositions, userShares, maxWithdrawable] = await Promise.all([
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'hasOpenPositions' }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'balanceOf', args: [account.address] }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'maxWithdraw', args: [account.address] })
+  ]);
+
+  if (hasOpenPositions) {
+    throw new Error('vault has open positions; withdrawals are blocked until all positions are closed');
+  }
+  if (amount > maxWithdrawable) {
+    throw new Error(`withdraw amount exceeds max: requested=${amount.toString()}, max=${maxWithdrawable.toString()}`);
+  }
+
+  const previewShares = await publicClient.readContract({
+    address: vaultAddress,
+    abi: VAULT_ABI,
+    functionName: 'previewWithdraw',
+    args: [amount]
+  });
+
+  if (!submit) {
+    console.log(jsonStringify({
+      status: 'OK',
+      command: 'participant-withdraw',
+      mode: 'DRY_RUN',
+      vaultAddress,
+      receiver,
+      amount: amount.toString(),
+      isNative,
+      previewSharesBurned: previewShares.toString(),
+      currentShares: userShares.toString(),
+      maxWithdrawable: maxWithdrawable.toString(),
+      signerAddress: account.address
+    }));
     return;
   }
 
-  const submit = await submitAllocation({
-    fundId,
-    epochId: Math.trunc(epochId),
-    observation: mine.observation,
-    clientOptions: buildParticipantClientOptions(),
-    submit: submitRequested
+  const fnName = isNative ? 'withdrawNative' : 'withdraw';
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: vaultAddress,
+    abi: VAULT_ABI,
+    functionName: fnName,
+    args: [amount, receiver, account.address]
   });
-  if (submit.status !== 'OK' || !submit.claimHash) {
-    console.log(jsonStringify({ step: 'submit', result: submit }));
-    process.exitCode = 2;
+
+  const txHash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
+
+  if (receipt.status !== 'success') {
+    throw new Error(`withdraw transaction reverted: ${txHash}`);
+  }
+
+  const sharesAfter = await publicClient.readContract({
+    address: vaultAddress,
+    abi: VAULT_ABI,
+    functionName: 'balanceOf',
+    args: [account.address]
+  });
+
+  console.log(jsonStringify({
+    status: 'OK',
+    command: 'participant-withdraw',
+    mode: 'SUBMIT',
+    vaultAddress,
+    receiver,
+    amount: amount.toString(),
+    isNative,
+    txHash,
+    blockNumber: receipt.blockNumber,
+    sharesAfter: sharesAfter.toString()
+  }));
+};
+
+const runParticipantRedeem = async (parsed: ParsedCli): Promise<void> => {
+  const vaultAddress = parseAddress(
+    optionOrEnv(parsed, 'vault-address', 'CLAW_VAULT_ADDRESS'),
+    'vault-address'
+  );
+  const sharesRaw = requiredOption(parsed, 'shares');
+  const shares = BigInt(sharesRaw);
+  if (shares <= 0n) throw new Error('--shares must be positive');
+
+  const submit = parsed.flags.has('submit');
+
+  const { account, publicClient, walletClient } = participantSignerClients();
+
+  const receiverRaw = parsed.options.get('receiver') ?? account.address;
+  const receiver = parseAddress(receiverRaw, 'receiver');
+
+  const [hasOpenPositions, userShares, maxRedeemable] = await Promise.all([
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'hasOpenPositions' }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'balanceOf', args: [account.address] }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'maxRedeem', args: [account.address] })
+  ]);
+
+  if (hasOpenPositions) {
+    throw new Error('vault has open positions; redemptions are blocked until all positions are closed');
+  }
+  if (shares > maxRedeemable) {
+    throw new Error(`redeem shares exceeds max: requested=${shares.toString()}, max=${maxRedeemable.toString()}`);
+  }
+
+  const previewAssets = await publicClient.readContract({
+    address: vaultAddress,
+    abi: VAULT_ABI,
+    functionName: 'previewRedeem',
+    args: [shares]
+  });
+
+  if (!submit) {
+    console.log(jsonStringify({
+      status: 'OK',
+      command: 'participant-redeem',
+      mode: 'DRY_RUN',
+      vaultAddress,
+      receiver,
+      shares: shares.toString(),
+      previewAssetsOut: previewAssets.toString(),
+      currentShares: userShares.toString(),
+      maxRedeemable: maxRedeemable.toString(),
+      signerAddress: account.address
+    }));
     return;
   }
 
-  const report = {
-    step: 'participant-allocation-e2e',
-    mode: submit.decision === 'SUBMITTED' ? 'SUBMITTED' : 'READY',
-    fundId,
-    epochId: Math.trunc(epochId),
-    claimHash: submit.claimHash,
-    mine,
-    verify,
-    submit,
-    finalize:
-      submit.decision === 'SUBMITTED'
-        ? undefined
-        : {
-            status: 'SKIPPED',
-            reason:
-              'participant submit gate is not enabled; pass --submit and set PARTICIPANT_AUTO_SUBMIT=true'
-          }
-  };
+  const simulation = await publicClient.simulateContract({
+    account,
+    address: vaultAddress,
+    abi: VAULT_ABI,
+    functionName: 'redeem',
+    args: [shares, receiver, account.address]
+  });
 
-  console.log(jsonStringify(report));
+  const txHash = await walletClient.writeContract(simulation.request);
+  const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash });
 
-  const reportFile = parsed.options.get('report-file');
-  if (reportFile) {
-    await writeJsonFile(reportFile, report);
+  if (receipt.status !== 'success') {
+    throw new Error(`redeem transaction reverted: ${txHash}`);
   }
+
+  const sharesAfter = await publicClient.readContract({
+    address: vaultAddress,
+    abi: VAULT_ABI,
+    functionName: 'balanceOf',
+    args: [account.address]
+  });
+
+  console.log(jsonStringify({
+    status: 'OK',
+    command: 'participant-redeem',
+    mode: 'SUBMIT',
+    vaultAddress,
+    receiver,
+    shares: shares.toString(),
+    txHash,
+    blockNumber: receipt.blockNumber,
+    sharesAfter: sharesAfter.toString()
+  }));
+};
+
+const runParticipantVaultInfo = async (parsed: ParsedCli): Promise<void> => {
+  const vaultAddress = parseAddress(
+    optionOrEnv(parsed, 'vault-address', 'CLAW_VAULT_ADDRESS'),
+    'vault-address'
+  );
+
+  const { chain } = participantRuntime();
+  const rpcUrl = process.env.RPC_URL ?? '';
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+
+  const accountRaw = parsed.options.get('account')
+    ?? process.env.PARTICIPANT_ADDRESS
+    ?? process.env.PARTICIPANT_BOT_ADDRESS;
+
+  const [vaultName, vaultSymbol, totalAssets, totalSupply, ppsX18, hasOpenPositions, assetAddress] = await Promise.all([
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'name' }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'symbol' }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'totalAssets' }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'totalSupply' }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'sharePriceX18' }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'hasOpenPositions' }),
+    publicClient.readContract({ address: vaultAddress, abi: VAULT_ABI, functionName: 'asset' })
+  ]);
+
+  let userInfo: Record<string, unknown> | undefined;
+  if (accountRaw) {
+    const userAddress = parseAddress(accountRaw, 'account');
+    const [shares, assetValue, principal, pnl, userPps] = await publicClient.readContract({
+      address: vaultAddress,
+      abi: VAULT_ABI,
+      functionName: 'userPerformance',
+      args: [userAddress]
+    });
+
+    userInfo = {
+      address: userAddress,
+      shares: shares.toString(),
+      assetValue: assetValue.toString(),
+      principal: principal.toString(),
+      pnl: pnl.toString(),
+      sharePriceX18: userPps.toString()
+    };
+  }
+
+  console.log(jsonStringify({
+    status: 'OK',
+    command: 'participant-vault-info',
+    vault: {
+      address: vaultAddress,
+      name: vaultName,
+      symbol: vaultSymbol,
+      asset: assetAddress,
+      totalAssets: totalAssets.toString(),
+      totalSupply: totalSupply.toString(),
+      sharePriceX18: ppsX18.toString(),
+      hasOpenPositions
+    },
+    user: userInfo ?? null
+  }));
 };
 
 const sleep = async (ms: number): Promise<void> =>
@@ -466,13 +874,22 @@ participant-propose-allocation
   --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
   [--participant <0x...>] [--horizon-sec <n>] [--nonce <n>] [--room-id <id>] [--out-file <path>]
 
-participant-validate-allocation
-  --claim-file <path>
-  [--max-data-age-seconds <n>] [--out-file <path>]
-
 participant-submit-allocation
-  --claim-file <path> [--submit]
+  --claim-file <path> [--max-data-age-seconds <n>] [--submit]
+  validates claim hash first; without --submit shows dry-run, with --submit sends to relayer
 
+participant-deposit
+  --amount <wei> [--vault-address <0x...>] [--receiver <0x...>] [--native] [--submit]
+  [--skip-gas-check]
+
+participant-withdraw
+  --amount <wei> [--vault-address <0x...>] [--receiver <0x...>] [--native] [--submit]
+
+participant-redeem
+  --shares <wei> [--vault-address <0x...>] [--receiver <0x...>] [--submit]
+
+participant-vault-info
+  [--vault-address <0x...>] [--account <0x...>]
 participant-allocation-e2e
   --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
   [--participant <0x...>] [--horizon-sec <n>] [--report-file <path>] [--submit]
@@ -501,16 +918,24 @@ export const runParticipantCli = async (argv: string[]): Promise<boolean> => {
     await runParticipantProposeAllocation(parsed);
     return true;
   }
-  if (command === 'participant-validate-allocation') {
-    await runParticipantValidateAllocation(parsed);
-    return true;
-  }
   if (command === 'participant-submit-allocation') {
     await runParticipantSubmitAllocation(parsed);
     return true;
   }
-  if (command === 'participant-allocation-e2e') {
-    await runParticipantE2E(parsed);
+  if (command === 'participant-deposit') {
+    await runParticipantDeposit(parsed);
+    return true;
+  }
+  if (command === 'participant-withdraw') {
+    await runParticipantWithdraw(parsed);
+    return true;
+  }
+  if (command === 'participant-redeem') {
+    await runParticipantRedeem(parsed);
+    return true;
+  }
+  if (command === 'participant-vault-info') {
+    await runParticipantVaultInfo(parsed);
     return true;
   }
   if (command === 'participant-daemon') {

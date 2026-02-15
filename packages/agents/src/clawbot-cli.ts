@@ -55,21 +55,23 @@ const stripOption = (args: string[], key: string): string[] => {
 
 const mapCommand = (role: string, action: string): string => {
   if (role === 'strategy') {
+    if (action === 'create_fund' || action === 'create_fund_onchain') return 'strategy-create-fund';
     if (action === 'daemon') return 'daemon';
     if (action === 'create_fund_onchain') return 'strategy-create-fund';
     if (action === 'propose_intent') return 'strategy-propose';
-    if (action === 'dry_run_intent_execution') return 'strategy-dry-run-intent';
-    if (action === 'attest_intent_onchain') return 'strategy-attest-onchain';
-    if (action === 'execute_intent_onchain') return 'strategy-execute-ready';
+    if (action === 'dry_run_intent' || action === 'dry_run_intent_execution') return 'strategy-dry-run-intent';
+    if (action === 'attest_intent' || action === 'attest_intent_onchain') return 'strategy-attest-onchain';
+    if (action === 'execute_intent' || action === 'execute_intent_onchain') return 'strategy-execute-ready';
   }
 
   if (role === 'participant') {
     if (action === 'daemon') return 'daemon';
     if (action === 'propose_allocation') return 'participant-propose-allocation';
-    if (action === 'validate_allocation') return 'participant-validate-allocation';
-    if (action === 'validate_allocation_or_intent') return 'participant-validate-allocation';
     if (action === 'submit_allocation') return 'participant-submit-allocation';
-    if (action === 'allocation_e2e') return 'participant-allocation-e2e';
+    if (action === 'deposit') return 'participant-deposit';
+    if (action === 'withdraw') return 'participant-withdraw';
+    if (action === 'redeem') return 'participant-redeem';
+    if (action === 'vault_info') return 'participant-vault-info';
   }
 
   throw new Error(`unsupported clawbot action: role=${role}, action=${action}`);
@@ -82,12 +84,16 @@ const printUsage = (): void => {
 clawbot-run --role <strategy|participant> --action <action> [action options...]
 
 Telegram slash aliases:
+  /create_fund, /propose_intent, /dry_run_intent, /attest_intent, /execute_intent
+  /propose_allocation, /submit_allocation, /deposit, /withdraw, /redeem, /vault_info
   /propose_intent, /dry_run_intent, /attest_intent, /execute_intent, /create_fund, /daemon
   /propose_allocation, /validate_allocation, /submit_allocation, /allocation_e2e
 
 Examples:
   clawbot-run --role strategy --action propose_intent --fund-id demo-fund --intent-file ./intent.json --execution-route-file ./route.json
   clawbot-run --role participant --action propose_allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000
+  clawbot-run --role participant --action submit_allocation --claim-file /tmp/claim.json --submit
+  clawbot-run --role participant --action deposit --vault-address 0x... --amount 1000000000000000000 --native --submit
   clawbot-run --role strategy --action daemon --fund-id demo-fund
   clawbot-run --role participant --action daemon --fund-id demo-fund
 `);
