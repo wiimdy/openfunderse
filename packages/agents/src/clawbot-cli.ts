@@ -1,5 +1,6 @@
 import { runParticipantCli } from './participant-cli.js';
 import { runStrategyCli } from './strategy-cli.js';
+import { startDaemon } from './daemon.js';
 import { resolveStrategySubmitGate } from './lib/strategy-safety.js';
 
 interface ParsedCli {
@@ -55,6 +56,8 @@ const stripOption = (args: string[], key: string): string[] => {
 const mapCommand = (role: string, action: string): string => {
   if (role === 'strategy') {
     if (action === 'create_fund' || action === 'create_fund_onchain') return 'strategy-create-fund';
+    if (action === 'daemon') return 'daemon';
+    if (action === 'create_fund_onchain') return 'strategy-create-fund';
     if (action === 'propose_intent') return 'strategy-propose';
     if (action === 'dry_run_intent' || action === 'dry_run_intent_execution') return 'strategy-dry-run-intent';
     if (action === 'attest_intent' || action === 'attest_intent_onchain') return 'strategy-attest-onchain';
@@ -62,6 +65,7 @@ const mapCommand = (role: string, action: string): string => {
   }
 
   if (role === 'participant') {
+    if (action === 'daemon') return 'daemon';
     if (action === 'propose_allocation') return 'participant-propose-allocation';
     if (action === 'submit_allocation') return 'participant-submit-allocation';
     if (action === 'deposit') return 'participant-deposit';
@@ -82,12 +86,16 @@ clawbot-run --role <strategy|participant> --action <action> [action options...]
 Telegram slash aliases:
   /create_fund, /propose_intent, /dry_run_intent, /attest_intent, /execute_intent
   /propose_allocation, /submit_allocation, /deposit, /withdraw, /redeem, /vault_info
+  /propose_intent, /dry_run_intent, /attest_intent, /execute_intent, /create_fund, /daemon
+  /propose_allocation, /validate_allocation, /submit_allocation, /allocation_e2e
 
 Examples:
   clawbot-run --role strategy --action propose_intent --fund-id demo-fund --intent-file ./intent.json --execution-route-file ./route.json
   clawbot-run --role participant --action propose_allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000
   clawbot-run --role participant --action submit_allocation --claim-file /tmp/claim.json --submit
   clawbot-run --role participant --action deposit --vault-address 0x... --amount 1000000000000000000 --native --submit
+  clawbot-run --role strategy --action daemon --fund-id demo-fund
+  clawbot-run --role participant --action daemon --fund-id demo-fund
 `);
 };
 
@@ -114,6 +122,34 @@ export const runClawbotCli = async (argv: string[]): Promise<boolean> => {
 
   if (mapped === 'strategy-propose') {
     resolveStrategySubmitGate(parsed.flags.has('submit'));
+  }
+
+  if (mapped === 'daemon') {
+    const fundId = parsed.options.get('fund-id') ?? '';
+    if (!fundId) throw new Error('missing required option --fund-id for daemon mode');
+
+    const relayerUrl = process.env.RELAYER_URL ?? '';
+    const botId = process.env.BOT_ID ?? '';
+    const privateKey =
+      process.env.STRATEGY_PRIVATE_KEY ?? process.env.PARTICIPANT_PRIVATE_KEY ?? '';
+
+    console.log(`[daemon] starting ${role} daemon for fund ${fundId}`);
+    const instance = startDaemon({
+      role: role as 'strategy' | 'participant',
+      fundId,
+      relayerUrl,
+      botId,
+      privateKey
+    });
+
+    process.on('SIGINT', () => {
+      console.log('[daemon] shutting down...');
+      instance.stop();
+      process.exit(0);
+    });
+
+    await new Promise<void>(() => undefined);
+    return true;
   }
 
   if (mapped.startsWith('strategy-')) {

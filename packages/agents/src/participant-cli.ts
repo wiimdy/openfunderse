@@ -11,6 +11,9 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { RelayerClientOptions } from './lib/relayer-client.js';
+import { createRelayerClient } from './lib/relayer-client.js';
+import { createMonadTestnetPublicClient } from './strategies/nadfun/client.js';
+import { computeTargetWeights, type ParticipantStrategyId } from './strategies/participant/strategies.js';
 import {
   proposeAllocation,
   submitAllocation,
@@ -763,6 +766,106 @@ const runParticipantVaultInfo = async (parsed: ParsedCli): Promise<void> => {
   }));
 };
 
+const sleep = async (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+const runParticipantDaemon = async (parsed: ParsedCli): Promise<void> => {
+  const fundId = requiredOption(parsed, 'fund-id');
+  const strategyRaw = requiredOption(parsed, 'strategy').trim().toUpperCase();
+  const strategy = strategyRaw as ParticipantStrategyId;
+  if (!['A', 'B', 'C'].includes(strategy)) {
+    throw new Error('--strategy must be one of A,B,C');
+  }
+
+  const intervalSec = toNumberOption(parsed, 'interval-sec', 60);
+  const submitRequested = parsed.flags.has('submit');
+  const once = parsed.flags.has('once');
+  const horizonSec = toNumberOption(parsed, 'horizon-sec', 3600);
+
+  const epochSource = optionOrDefault(parsed, 'epoch-source', 'relayer')
+    .trim()
+    .toLowerCase();
+  const fixedEpochIdRaw = parsed.options.get('epoch-id');
+
+  const clientOptions = buildParticipantClientOptions();
+  if (!clientOptions) {
+    throw new Error(
+      'participant daemon requires bot credentials: set PARTICIPANT_BOT_ID/PARTICIPANT_PRIVATE_KEY (or BOT_ID/PARTICIPANT_PRIVATE_KEY)'
+    );
+  }
+
+  const relayerUrl = process.env.RELAYER_URL ?? '';
+  if (!relayerUrl) throw new Error('RELAYER_URL is required');
+
+  const relayer = createRelayerClient(clientOptions);
+  const publicClient = createMonadTestnetPublicClient(process.env.RPC_URL);
+
+  const resolveEpochId = async (): Promise<number> => {
+    if (epochSource === 'fixed') {
+      if (!fixedEpochIdRaw) throw new Error('--epoch-id is required when --epoch-source fixed');
+      const fixed = Number(fixedEpochIdRaw);
+      if (!Number.isFinite(fixed) || fixed <= 0) throw new Error('--epoch-id must be a positive number');
+      return Math.trunc(fixed);
+    }
+
+    // relayer-based clock: use latest epochId + 1, or default to 1 if none.
+    try {
+      const latest = await relayer.getLatestEpoch(fundId);
+      const epochState = (latest.epochState ?? latest.epoch_state ?? null) as any;
+      const epochId = epochState?.epochId ?? epochState?.epoch_id ?? null;
+      if (epochId === null || epochId === undefined) return 1;
+      const next = Number(epochId) + 1;
+      if (!Number.isFinite(next) || next <= 0) return 1;
+      return Math.trunc(next);
+    } catch {
+      return 1;
+    }
+  };
+
+  for (;;) {
+    const epochId = await resolveEpochId();
+    const targetWeights = await computeTargetWeights(strategy, { client: publicClient });
+
+    const mine = await proposeAllocation({
+      taskType: 'propose_allocation',
+      fundId,
+      roomId: optionOrDefault(parsed, 'room-id', 'participant-room'),
+      epochId,
+      allocation: {
+        targetWeights,
+        horizonSec
+      }
+    });
+
+    if (mine.status !== 'OK' || !mine.observation) {
+      console.log(jsonStringify({ step: 'propose_allocation', result: mine }));
+    } else {
+      const submit = await submitAllocation({
+        fundId,
+        epochId,
+        observation: mine.observation,
+        clientOptions,
+        submit: submitRequested
+      });
+      console.log(
+        jsonStringify({
+          step: 'participant-daemon',
+          strategy,
+          fundId,
+          epochId,
+          decision: submit.decision ?? 'ERROR',
+          claimHash: submit.claimHash ?? mine.observation.claimHash,
+          weights: mine.observation.targetWeights,
+          submit
+        })
+      );
+    }
+
+    if (once) return;
+    await sleep(intervalSec * 1000);
+  }
+};
+
 const printUsage = (): void => {
   console.log(`
 [agents] participant commands
@@ -787,6 +890,15 @@ participant-redeem
 
 participant-vault-info
   [--vault-address <0x...>] [--account <0x...>]
+participant-allocation-e2e
+  --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
+  [--participant <0x...>] [--horizon-sec <n>] [--report-file <path>] [--submit]
+
+participant-daemon
+  --fund-id <id> --strategy <A|B|C>
+  [--epoch-source <relayer|fixed>] [--epoch-id <n>]
+  [--interval-sec <n>] [--horizon-sec <n>] [--room-id <id>]
+  [--submit] [--once]
 `);
 };
 
@@ -824,6 +936,10 @@ export const runParticipantCli = async (argv: string[]): Promise<boolean> => {
   }
   if (command === 'participant-vault-info') {
     await runParticipantVaultInfo(parsed);
+    return true;
+  }
+  if (command === 'participant-daemon') {
+    await runParticipantDaemon(parsed);
     return true;
   }
 

@@ -21,6 +21,7 @@ import {
   insertIntent,
   upsertSubjectState
 } from "@/lib/supabase";
+import { publishEvent } from "@/lib/event-publisher";
 
 const SNAPSHOT_BOOK_ABI = parseAbi([
   "function isSnapshotFinalized(bytes32 snapshotHash) view returns (bool)"
@@ -301,6 +302,13 @@ export async function POST(
     subjectHash: built.intentHash,
     epochId: BigInt(latestEpochState.epoch_id),
     thresholdWeight: BigInt(fund.intent_threshold_weight)
+  });
+
+  await publishEvent("intent:proposed", fundId, {
+    intentHash: built.intentHash,
+    snapshotHash: built.intent.snapshotHash,
+    action: String(intent.action),
+    botId: botAuth.botId
   });
 
   return NextResponse.json(

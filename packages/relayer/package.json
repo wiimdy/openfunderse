@@ -12,10 +12,14 @@
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
     "factory:create-fund": "node scripts/factory-create-fund.mjs",
-    "smoke:all-apis": "node scripts/smoke-all-apis.mjs"
+    "smoke:all-apis": "node scripts/smoke-all-apis.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@claw/protocol-sdk": "file:../sdk",
+    "@supabase/supabase-js": "^2.49.1",
     "@types/node": "^20.10.5",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
@@ -24,18 +28,19 @@
     "geist": "^1.2.0",
     "next": "^16.1.6",
     "next-auth": "^5.0.0-beta.30",
-    "@supabase/supabase-js": "^2.49.1",
     "postgres": "^3.4.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "viem": "^2.38.2"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.18",
     "autoprefixer": "^10.4.16",
     "eslint": "8.56.0",
     "eslint-config-next": "^14.0.4",
     "postcss": "^8.4.32",
     "tailwindcss": "^3.4.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.0.18"
   }
 }
