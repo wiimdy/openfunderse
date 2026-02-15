@@ -1,6 +1,6 @@
 {
   "name": "@wiimdy/openfunderse",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Install OpenFunderse skill packs into Openclaw",
   "type": "module",
   "bin": {

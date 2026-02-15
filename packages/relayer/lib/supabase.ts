@@ -106,6 +106,24 @@ export interface StakeWeightRow {
   updated_at: number;
 }
 
+export async function getStakeWeight(input: {
+  fundId: string;
+  participant: string;
+  epochId?: string;
+}): Promise<StakeWeightRow | undefined> {
+  const db = supabase();
+  const epochId = input.epochId ?? "__global__";
+  const { data, error } = await db
+    .from("stake_weights")
+    .select("id,fund_id,participant,weight,epoch_id,created_at,updated_at")
+    .eq("fund_id", input.fundId)
+    .eq("participant", input.participant.toLowerCase())
+    .eq("epoch_id", epochId)
+    .maybeSingle();
+  throwIfError(error, null);
+  return (data as StakeWeightRow | null) ?? undefined;
+}
+
 export interface IntentRow {
   id: number;
   fund_id: string;

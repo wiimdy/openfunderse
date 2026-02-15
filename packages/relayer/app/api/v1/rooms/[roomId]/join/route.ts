@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireBotAuthAllowUnregistered } from "@/lib/bot-auth";
-import { getFundByTelegramRoomId, upsertFundBot, upsertStakeWeight } from "@/lib/supabase";
+import { getFundBot, getFundByTelegramRoomId, getStakeWeight, upsertFundBot, upsertStakeWeight } from "@/lib/supabase";
 
 export async function POST(
   request: Request,
@@ -25,6 +25,20 @@ export async function POST(
     );
   }
 
+  const existingMembership = await getFundBot(fund.fund_id, botAuth.botId);
+  if (existingMembership && existingMembership.role !== "participant") {
+    return NextResponse.json(
+      {
+        error: "CONFLICT",
+        message: "botId is already registered in this fund with a different role",
+        fundId: fund.fund_id,
+        botId: botAuth.botId,
+        existingRole: existingMembership.role
+      },
+      { status: 409 }
+    );
+  }
+
   await upsertFundBot({
     fundId: fund.fund_id,
     botId: botAuth.botId,
@@ -36,12 +50,18 @@ export async function POST(
     registeredBy: botAuth.botId
   });
 
-  // Default stake weight for newly joined participants.
-  await upsertStakeWeight({
+  // Default stake weight for newly joined participants, without overwriting existing weights.
+  const existingStake = await getStakeWeight({
     fundId: fund.fund_id,
-    participant: botAuth.botAddress,
-    weight: BigInt(1)
+    participant: botAuth.botAddress
   });
+  if (!existingStake) {
+    await upsertStakeWeight({
+      fundId: fund.fund_id,
+      participant: botAuth.botAddress,
+      weight: BigInt(1)
+    });
+  }
 
   return NextResponse.json(
     {
@@ -52,9 +72,8 @@ export async function POST(
       fundName: fund.fund_name,
       participantBotId: botAuth.botId,
       participantBotAddress: botAuth.botAddress,
-      message: "Participant bot joined fund."
+      message: existingMembership ? "Participant bot already joined fund." : "Participant bot joined fund."
     },
     { status: 200 }
   );
 }
-
