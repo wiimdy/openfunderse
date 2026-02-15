@@ -88,6 +88,7 @@ export function snapshotHashFromUnordered(epochId: bigint, claimHashes: Hex[]): 
 }
 
 const MERKLE_NODE_PAIR = parseAbiParameters("bytes32 a, bytes32 b");
+const EPOCH_STATE_HASH_INPUT = parseAbiParameters("uint64 epochId,bytes32 merkleRoot");
 
 function merkleHashPair(a: Hex, b: Hex): Hex {
   const left = a.toLowerCase() < b.toLowerCase() ? a : b;
@@ -130,13 +131,14 @@ export function merkleRootFromUnorderedLeaves(leaves: Hex[]): Hex {
  */
 export function epochStateHash(epochId: bigint, orderedClaimHashes: Hex[]): Hex {
   assertUint64(epochId, "epochId");
-  return merkleRoot(orderedClaimHashes);
+  const root = merkleRoot(orderedClaimHashes);
+  return keccak256(encodeAbiParameters(EPOCH_STATE_HASH_INPUT, [epochId, root]));
 }
 
 export function epochStateHashFromUnordered(epochId: bigint, claimHashes: Hex[]): Hex {
   assertUint64(epochId, "epochId");
   const ordered = canonicalOrderedClaimHashes(claimHashes);
-  return merkleRoot(ordered);
+  return epochStateHash(epochId, ordered);
 }
 
 export function merkleProof(orderedLeaves: Hex[], leaf: Hex): Hex[] {

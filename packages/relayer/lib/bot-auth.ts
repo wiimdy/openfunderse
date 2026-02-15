@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyMessage, type Address, type Hex } from "viem";
-import { getBotsByBotId } from "@/lib/supabase";
+import { getBotsByBotId, insertBotAuthNonce } from "@/lib/supabase";
 
 const AUTH_MAX_AGE_SECONDS = 300;
 
@@ -64,6 +64,14 @@ export async function requireBotAuth(
     return {
       ok: false as const,
       response: unauthorized("Invalid signature.")
+    };
+  }
+
+  const nonceInsert = await insertBotAuthNonce(botId, nonce);
+  if (!nonceInsert.ok) {
+    return {
+      ok: false as const,
+      response: unauthorized("nonce already used")
     };
   }
 

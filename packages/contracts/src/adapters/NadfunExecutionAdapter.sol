@@ -39,9 +39,11 @@ contract NadfunExecutionAdapter is Initializable, OwnableUpgradeable, UUPSUpgrad
     address public bondingCurveRouter;
     address public dexRouter;
     bool public upgradesFrozen;
+    mapping(address => bool) public authorizedCallers;
 
     event NadfunBuyExecuted(address indexed router, address indexed token, uint256 amountIn, uint256 amountOut, address indexed recipient);
     event UpgradesFrozen();
+    event AuthorizedCallerUpdated(address indexed caller, bool authorized);
 
     error UnsupportedAction();
     error InvalidExecutionData();
@@ -82,12 +84,19 @@ contract NadfunExecutionAdapter is Initializable, OwnableUpgradeable, UUPSUpgrad
         emit UpgradesFrozen();
     }
 
+    function setAuthorizedCaller(address caller, bool authorized) external onlyOwner {
+        if (caller == address(0)) revert InvalidExecutionData();
+        authorizedCallers[caller] = authorized;
+        emit AuthorizedCallerUpdated(caller, authorized);
+    }
+
     receive() external payable {}
 
     function execute(address vault, address tokenIn, address tokenOut, uint256 amountIn, bytes calldata data)
         external
         returns (uint256 amountOut)
     {
+        require(authorizedCallers[msg.sender], "unauthorized caller");
         NadfunExecutionDataV1 memory decoded = _decode(data);
         if (decoded.version != 1) revert InvalidExecutionData();
         if (decoded.action == 1) {

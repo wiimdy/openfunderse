@@ -1,5 +1,6 @@
 import { runParticipantCli } from './participant-cli.js';
 import { runStrategyCli } from './strategy-cli.js';
+import { resolveStrategySubmitGate } from './lib/strategy-safety.js';
 
 interface ParsedCli {
   command?: string;
@@ -115,6 +116,10 @@ export const runClawbotCli = async (argv: string[]): Promise<boolean> => {
   const mapped = mapCommand(role, action);
   const forwarded = stripOption(stripOption(argv.slice(1), 'role'), 'action');
   const delegatedArgv = [mapped, ...forwarded];
+
+  if (mapped === 'strategy-propose') {
+    resolveStrategySubmitGate(parsed.flags.has('submit'));
+  }
 
   if (mapped.startsWith('strategy-')) {
     await runStrategyCli(delegatedArgv);

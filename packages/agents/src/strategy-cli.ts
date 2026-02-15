@@ -16,6 +16,7 @@ import {
   type TradeIntent
 } from '@claw/protocol-sdk';
 import { createRelayerClient, type ReadyExecutionPayloadItem } from './lib/relayer-client.js';
+import { resolveStrategySubmitGate } from './lib/strategy-safety.js';
 
 interface ParsedCli {
   command?: string;
@@ -901,6 +902,7 @@ const runStrategyPropose = async (parsed: ParsedCli): Promise<void> => {
   const routeFile = requiredOption(parsed, 'execution-route-file');
   const intentUri = parsed.options.get('intent-uri');
   const maxNotional = optionBigInt(parsed, 'max-notional');
+  const safety = resolveStrategySubmitGate(parsed.flags.has('submit'));
 
   const intentRaw = JSON.parse(await readFile(intentFile, 'utf8')) as unknown;
   const routeRaw = JSON.parse(await readFile(routeFile, 'utf8')) as unknown;
@@ -916,6 +918,21 @@ const runStrategyPropose = async (parsed: ParsedCli): Promise<void> => {
       adapterData: executionRoute.adapterData ?? '0x'
     }
   });
+
+  if (!safety.shouldSubmit) {
+    console.log(
+      jsonStringify({
+        status: 'OK',
+        command: 'strategy-propose',
+        fundId,
+        decision: 'READY',
+        reason:
+          'strategy submit gate is not enabled; pass --submit and set STRATEGY_AUTO_SUBMIT=true',
+        safety
+      })
+    );
+    return;
+  }
 
   const relayer = createRelayerClient();
   const response = await relayer.proposeIntent(fundId, {
@@ -933,8 +950,10 @@ const runStrategyPropose = async (parsed: ParsedCli): Promise<void> => {
       status: 'OK',
       command: 'strategy-propose',
       fundId,
+      decision: 'SUBMITTED',
       intentHash: response.intentHash ?? null,
       subjectState: response.subjectState ?? null,
+      safety,
       response
     })
   );
@@ -1013,7 +1032,7 @@ strategy-execute-ready
 
 strategy-propose
   --fund-id <id> --intent-file <path> --execution-route-file <path>
-  [--max-notional <wei>] [--intent-uri <uri>]
+  [--max-notional <wei>] [--intent-uri <uri>] [--submit]
 
 strategy-dry-run-intent
   --intent-hash <0x...> --intent-file <path> --execution-route-file <path>
