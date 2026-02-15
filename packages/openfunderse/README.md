@@ -33,7 +33,7 @@ Disable this with `--no-restart-openclaw-gateway`.
 After runtime install, `@wiimdy/openfunderse-agents` accepts slash commands:
 
 - Strategy: `/propose_intent`, `/dry_run_intent`, `/attest_intent`, `/execute_intent`, `/create_fund`
-- Participant: `/propose_allocation`, `/validate_allocation`, `/submit_allocation`, `/allocation_e2e`, `/deposit`, `/withdraw`, `/redeem`, `/vault_info`
+- Participant: `/propose_allocation`, `/submit_allocation`, `/deposit`, `/withdraw`, `/redeem`, `/vault_info`
 
 Underscore and `key=value` arguments are supported (for example: `fund_id=demo-fund`).
 On first install, the CLI also prints a ready-to-paste `@BotFather` `/setcommands` block.

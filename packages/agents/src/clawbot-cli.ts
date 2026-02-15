@@ -63,10 +63,7 @@ const mapCommand = (role: string, action: string): string => {
 
   if (role === 'participant') {
     if (action === 'propose_allocation') return 'participant-propose-allocation';
-    if (action === 'validate_allocation') return 'participant-validate-allocation';
-    if (action === 'validate_allocation_or_intent') return 'participant-validate-allocation';
     if (action === 'submit_allocation') return 'participant-submit-allocation';
-    if (action === 'allocation_e2e') return 'participant-allocation-e2e';
     if (action === 'deposit') return 'participant-deposit';
     if (action === 'withdraw') return 'participant-withdraw';
     if (action === 'redeem') return 'participant-redeem';
@@ -83,13 +80,13 @@ const printUsage = (): void => {
 clawbot-run --role <strategy|participant> --action <action> [action options...]
 
 Telegram slash aliases:
-  /propose_intent, /dry_run_intent, /attest_intent, /execute_intent, /create_fund
-  /propose_allocation, /validate_allocation, /submit_allocation, /allocation_e2e
-  /deposit, /withdraw, /redeem, /vault_info
+  /create_fund, /propose_intent, /dry_run_intent, /attest_intent, /execute_intent
+  /propose_allocation, /submit_allocation, /deposit, /withdraw, /redeem, /vault_info
 
 Examples:
   clawbot-run --role strategy --action propose_intent --fund-id demo-fund --intent-file ./intent.json --execution-route-file ./route.json
   clawbot-run --role participant --action propose_allocation --fund-id demo-fund --epoch-id 1 --target-weights 7000,3000
+  clawbot-run --role participant --action submit_allocation --claim-file /tmp/claim.json --submit
   clawbot-run --role participant --action deposit --vault-address 0x... --amount 1000000000000000000 --native --submit
 `);
 };

@@ -68,14 +68,15 @@ Telegram slash commands:
 
 ```text
 /propose_allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...>
-/validate_allocation --claim-file <path>
-/submit_allocation --claim-file <path> --submit
-/allocation_e2e --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--submit]
+/submit_allocation --claim-file <path> [--max-data-age-seconds <n>] [--submit]
 /deposit --amount <wei> [--vault-address <0x...>] [--native] [--submit]
 /withdraw --amount <wei> [--vault-address <0x...>] [--native] [--submit]
 /redeem --shares <wei> [--vault-address <0x...>] [--submit]
 /vault_info [--vault-address <0x...>] [--account <0x...>]
 ```
+
+`submit_allocation` validates the claim hash first. Without `--submit` it shows a dry-run
+(validation-only result). With `--submit` it validates then sends to the relayer.
 
 BotFather `/setcommands` (copy-paste ready):
 
@@ -83,9 +84,7 @@ BotFather `/setcommands` (copy-paste ready):
 start - Show quick start
 help - Show command help
 propose_allocation - Mine allocation claim with target weights
-validate_allocation - Verify allocation claim hash
-submit_allocation - Submit signed claim to relayer
-allocation_e2e - Mine, verify, and submit in one shot
+submit_allocation - Validate and submit claim to relayer
 deposit - Deposit native MON or ERC-20 into vault
 withdraw - Withdraw assets from vault (native or ERC-20)
 redeem - Burn vault shares and receive assets
@@ -168,24 +167,11 @@ If gate is closed, return `decision=READY` (no submit).
 }
 ```
 
-### `validate_allocation_or_intent`
-```json
-{
-  "taskType": "validate_allocation_or_intent",
-  "fundId": "string",
-  "roomId": "string",
-  "epochId": "number",
-  "subjectType": "CLAIM | INTENT",
-  "subjectHash": "0x...",
-  "subjectPayload": "object",
-  "validationPolicy": {
-    "reproducible": true,
-    "maxDataAgeSeconds": 300
-  }
-}
-```
-
 ### `submit_allocation`
+
+Validates the claim hash first, then submits to relayer if `--submit` is passed.
+Without `--submit`, returns validation-only dry-run result.
+
 ```json
 {
   "taskType": "submit_allocation",
@@ -198,7 +184,7 @@ If gate is closed, return `decision=READY` (no submit).
 
 ## Rules
 
-1. **Supported Tasks Only**: Use only `propose_allocation`, `validate_allocation_or_intent`, `submit_allocation`.
+1. **Supported Tasks Only**: Use only `propose_allocation`, `submit_allocation` (validates automatically before submission).
 2. **Schema Rule**: Claim schema is `AllocationClaimV1` only (`claimVersion`, `fundId`, `epochId`, `participant`, `targetWeights`, `horizonSec`, `nonce`, `submittedAt`).
 3. **Weights Rule**: `targetWeights` must be integer, non-negative, non-empty, and sum > 0.
 4. **Index Mapping Rule**: `targetWeights[i]` MUST map to strategy `riskPolicy.allowlistTokens[i]` in the same order.
