@@ -1,7 +1,7 @@
 {
   "name": "@wiimdy/openfunderse",
-  "version": "1.2.5",
-  "description": "Install OpenFunderse skill packs into Codex",
+  "version": "2.0.1",
+  "description": "Install OpenFunderse skill packs into Openclaw",
   "type": "module",
   "bin": {
     "openfunderse": "./bin/openfunderse.mjs"

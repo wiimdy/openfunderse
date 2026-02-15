@@ -3,24 +3,39 @@ name: openfunderse-participant
 description: Participant MoltBot for allocation proposal, validation, and submission
 metadata:
   openclaw:
-    installCommand: npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
+    installCommand: npx @wiimdy/openfunderse@2.0.0 install openfunderse-participant --with-runtime
     requires:
       env:
         - RELAYER_URL
         - PARTICIPANT_PRIVATE_KEY
         - BOT_ID
         - CHAIN_ID
+        - RPC_URL
         - PARTICIPANT_ADDRESS
+        - PARTICIPANT_AUTO_SUBMIT
+        - PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT
+        - PARTICIPANT_TRUSTED_RELAYER_HOSTS
+        - PARTICIPANT_ALLOW_HTTP_RELAYER
       bins:
         - node
         - npm
-    primaryEnv: RELAYER_URL
+    primaryEnv: PARTICIPANT_PRIVATE_KEY
     skillKey: participant
 ---
 
 # Participant MoltBot Skill
 
 Participant role proposes and validates `AllocationClaimV1` only.
+
+## Security / Consent Notes (Read First)
+
+- Installing via `npx @wiimdy/openfunderse@2.0.0 ...` executes code fetched from npm. Prefer pinning a known version (as shown) and reviewing the package source before running in production.
+- `PARTICIPANT_PRIVATE_KEY` is highly sensitive. Use a dedicated wallet key for this bot; never reuse treasury/admin keys.
+- `bot-init` is a **destructive** rotation tool: it generates a fresh wallet, updates `.env.participant`, and stores wallet backups under `~/.openclaw/workspace/openfunderse/wallets`.
+- By default, `install` and `bot-init` also sync env vars into `~/.openclaw/openclaw.json` and `bot-init` runs `openclaw gateway restart`. This mutates global OpenClaw runtime state and can affect other skills.
+  - Use `--no-sync-openclaw-env` for file-only behavior.
+  - Use `--no-restart-openclaw-gateway` to avoid restarting the gateway.
+  - Before mutating global config, back up `~/.openclaw/openclaw.json`.
 
 ## Quick Start
 
@@ -29,7 +44,7 @@ Participant role proposes and validates `AllocationClaimV1` only.
 Manual (direct installer; run in a Node project dir, or `npm init -y` first):
 
 ```bash
-npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
+npm init -y && npx @wiimdy/openfunderse@2.0.0 install openfunderse-participant --with-runtime
 ```
 
 ClawHub:
@@ -38,16 +53,22 @@ ClawHub:
 npx clawhub@latest install openfunderse-participant
 ```
 
-2) Rotate the temporary bootstrap key and write a fresh participant wallet to env:
+2) Optional: create or rotate a dedicated participant signer key.
+
+If you already have a key, set `PARTICIPANT_PRIVATE_KEY` and `PARTICIPANT_ADDRESS` directly in OpenClaw env (`/home/ubuntu/.openclaw/openclaw.json` -> `env.vars`) or in `~/.openclaw/workspace/.env.participant`. You do not need to run `bot-init`.
+
+If you want the installer to generate a new wallet and write it into the role env file:
 
 ```bash
-npx @wiimdy/openfunderse@latest bot-init \
+npx @wiimdy/openfunderse@2.0.0 bot-init \
   --skill-name participant \
-  --yes
+  --yes \
+  --no-restart-openclaw-gateway
 ```
 
 `bot-init` updates an existing `.env.participant`.  
 If the env file is missing, run install first (without `--no-init-env`) or pass `--env-path`.
+If `PARTICIPANT_PRIVATE_KEY` is already set (not a placeholder), re-run with `--force` to rotate.
 
 ### Environment Source of Truth (Hard Rule)
 
@@ -65,6 +86,8 @@ set -a; source ~/.openclaw/workspace/.env.participant; set +a
 This step is not required for normal OpenClaw skill execution.
 
 Telegram slash commands:
+
+Note: Telegram integration is handled by your OpenClaw gateway. This pack does not require a Telegram bot token; configure Telegram credentials at the gateway layer.
 
 ```text
 /allocation --fund-id <id> --epoch-id <n> --target-weights <w1,w2,...> [--verify] [--submit]
@@ -107,7 +130,7 @@ OpenClaw note:
 - If env still looks stale: run `openclaw gateway restart` and verify values in `/home/ubuntu/.openclaw/openclaw.json`.
 
 Note:
-- The scaffold includes a temporary public key placeholder by default.
+- The scaffold includes a temporary private key placeholder by default.
 - Always run `bot-init` before funding or running production actions.
 - `bot-init` generates a new wallet (private key + address) and writes it into the role env file.
 
@@ -151,7 +174,7 @@ For MVP, the participant runtime supports an always-on daemon that:
 2) computes `targetWeights[]` using a fixed allowlist order,
 3) submits `AllocationClaimV1` to the relayer on a timer.
 
-Use `PARTICIPANT_STRATEGY` via the command flag:
+Use the `--strategy` command flag:
 - `A`: momentum (buy pressure)
 - `B`: graduation proximity (progress)
 - `C`: impact-aware (quote-based)
@@ -162,6 +185,7 @@ Use `PARTICIPANT_STRATEGY` via the command flag:
 1. `PARTICIPANT_REQUIRE_EXPLICIT_SUBMIT=true` requires explicit `submit=true`.
 2. `PARTICIPANT_AUTO_SUBMIT=true` must be enabled for network transmission.
 3. `RELAYER_URL` host is checked by `PARTICIPANT_TRUSTED_RELAYER_HOSTS` when set.
+4. `RELAYER_URL` must use `https` unless `PARTICIPANT_ALLOW_HTTP_RELAYER=true` (local development only).
 
 If gate is closed, return `decision=READY` (no submit).
 

@@ -1,7 +1,7 @@
 {
   "name": "openfunderse-strategy-pack",
   "version": "1.1.1",
-  "installCommand": "npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime",
+  "installCommand": "npx @wiimdy/openfunderse@2.0.0 install openfunderse-strategy --with-runtime",
   "description": "Standalone OpenFunderse strategy skill pack.",
   "bundles": [
     {

@@ -6,14 +6,15 @@ Install OpenFunderse split skill packs (`strategy`, `participant`) for OpenClaw/
 
 ```bash
 # 1) install skill + runtime
-npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
+npx @wiimdy/openfunderse@2.0.0 install openfunderse-strategy --with-runtime
 # or
-npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
+npx @wiimdy/openfunderse@2.0.0 install openfunderse-participant --with-runtime
 
-# 2) create/rotate bot wallet and update existing env
-npx @wiimdy/openfunderse@latest bot-init --skill-name strategy --yes
+# 2) (optional) create/rotate bot wallet and update existing env
+# If you already have keys, set *_PRIVATE_KEY and *_ADDRESS directly; you do not need bot-init.
+npx @wiimdy/openfunderse@2.0.0 bot-init --skill-name strategy --yes --no-restart-openclaw-gateway
 # or
-npx @wiimdy/openfunderse@latest bot-init --skill-name participant --yes
+npx @wiimdy/openfunderse@2.0.0 bot-init --skill-name participant --yes --no-restart-openclaw-gateway
 
 # 3) (optional) load env in current shell
 # @wiimdy/openfunderse-agents auto-loads env files from the workspace cwd by command role.
@@ -37,6 +38,7 @@ After runtime install, `@wiimdy/openfunderse-agents` accepts slash commands:
 
 Underscore and `key=value` arguments are supported (for example: `fund_id=demo-fund`).
 On first install, the CLI also prints a ready-to-paste `@BotFather` `/setcommands` block.
+Telegram credentials (bot token/webhook) are configured at the OpenClaw gateway layer, not in these packs.
 
 ## Where Files Are Stored
 

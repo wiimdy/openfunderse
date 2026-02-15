@@ -266,8 +266,8 @@ Implemented modules:
 Target onboarding UX:
 
 ```bash
-npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
-npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime
+npx @wiimdy/openfunderse@2.0.0 install openfunderse-strategy --with-runtime
+npx @wiimdy/openfunderse@2.0.0 install openfunderse-participant --with-runtime
 ```
 
 Canonical pack files are maintained at:

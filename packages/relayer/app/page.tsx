@@ -6,19 +6,19 @@ type Mode = 'strategy' | 'participant';
 
 const COMMANDS: Record<Mode, { install: string; init: string }> = {
   strategy: {
-    install: 'npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime',
-    init: 'npx @wiimdy/openfunderse@latest bot-init --skill-name strategy --yes',
+    install: 'npm init -y && npx @wiimdy/openfunderse@2.0.0 install openfunderse-strategy --with-runtime',
+    init: 'npx @wiimdy/openfunderse@2.0.0 bot-init --skill-name strategy --yes --no-restart-openclaw-gateway',
   },
   participant: {
-    install: 'npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-participant --with-runtime',
-    init: 'npx @wiimdy/openfunderse@latest bot-init --skill-name participant --yes',
+    install: 'npm init -y && npx @wiimdy/openfunderse@2.0.0 install openfunderse-participant --with-runtime',
+    init: 'npx @wiimdy/openfunderse@2.0.0 bot-init --skill-name participant --yes --no-restart-openclaw-gateway',
   },
 };
 
 const STEPS: Record<Mode, { label: string; href?: string }[]> = {
   strategy: [
     { label: 'Install skill pack and runtime' },
-    { label: 'Initialize bot wallet with bot-init' },
+    { label: 'Optional: initialize bot wallet with bot-init' },
     { label: 'Add bot to your Telegram chatroom' },
     { label: 'Configure fund parameters and deploy' },
     { label: 'Register participant bots' },
@@ -26,7 +26,7 @@ const STEPS: Record<Mode, { label: string; href?: string }[]> = {
   participant: [
     { label: 'Join fund via Telegram', href: 'https://t.me/openfunderse' },
     { label: 'Install skill pack and runtime' },
-    { label: 'Initialize bot wallet with bot-init' },
+    { label: 'Optional: initialize bot wallet with bot-init' },
     { label: 'Add bot to your Telegram chatroom' },
     { label: 'Connect wallet and deposit funds' },
   ],

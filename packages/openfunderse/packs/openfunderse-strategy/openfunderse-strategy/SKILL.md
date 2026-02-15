@@ -5,7 +5,7 @@ always: false
 disable-model-invocation: false
 metadata:
   openclaw:
-    installCommand: npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
+    installCommand: npx @wiimdy/openfunderse@2.0.0 install openfunderse-strategy --with-runtime
     requires:
       env:
         - RELAYER_URL
@@ -44,6 +44,16 @@ The Strategy MoltBot is responsible for proposing structured trade intents based
 For NadFun venues, it must use lens quotes to derive `minAmountOut` and reject router mismatch.
 In runtime, use `proposeIntentAndSubmit` to build a canonical proposal first, then submit only when explicit submit gating is satisfied.
 
+## Security / Consent Notes (Read First)
+
+- Installing via `npx @wiimdy/openfunderse@2.0.0 ...` executes code fetched from npm. Prefer pinning a known version (as shown) and reviewing the package source before running in production.
+- `STRATEGY_PRIVATE_KEY` is highly sensitive. Use a dedicated wallet key for this bot; never reuse treasury/admin keys.
+- `bot-init` is a **destructive** rotation tool: it generates a fresh wallet, updates `.env.strategy`, and stores wallet backups under `~/.openclaw/workspace/openfunderse/wallets`.
+- `install` and `bot-init` can sync env vars into `~/.openclaw/openclaw.json`, and `bot-init` may run `openclaw gateway restart`. This mutates global OpenClaw runtime state and can affect other skills.
+  - Use `--no-sync-openclaw-env` for file-only behavior.
+  - Use `--no-restart-openclaw-gateway` to avoid restarting the gateway.
+  - Before mutating global config, back up `~/.openclaw/openclaw.json`.
+
 ## Quick Start
 
 1) Install (pick one). You do **not** need to run both:
@@ -51,7 +61,7 @@ In runtime, use `proposeIntentAndSubmit` to build a canonical proposal first, th
 Manual (direct installer; run in a Node project dir, or `npm init -y` first):
 
 ```bash
-npm init -y && npx @wiimdy/openfunderse@latest install openfunderse-strategy --with-runtime
+npm init -y && npx @wiimdy/openfunderse@2.0.0 install openfunderse-strategy --with-runtime
 ```
 
 ClawHub:
@@ -60,12 +70,17 @@ ClawHub:
 npx clawhub@latest install openfunderse-strategy
 ```
 
-2) Rotate the temporary bootstrap key and write a fresh strategy wallet to env:
+2) Optional: create or rotate a dedicated strategy signer key.
+
+If you already have a key, set `STRATEGY_PRIVATE_KEY` and `STRATEGY_ADDRESS` directly in OpenClaw env (`/home/ubuntu/.openclaw/openclaw.json` -> `env.vars`) or in `~/.openclaw/workspace/.env.strategy`. You do not need to run `bot-init`.
+
+If you want the installer to generate a new wallet and write it into the role env file:
 
 ```bash
-npx @wiimdy/openfunderse@latest bot-init \
+npx @wiimdy/openfunderse@2.0.0 bot-init \
   --skill-name strategy \
-  --yes
+  --yes \
+  --no-restart-openclaw-gateway
 ```
 
 `bot-init` updates an existing `.env.strategy`.  
@@ -87,6 +102,8 @@ set -a; source ~/.openclaw/workspace/.env.strategy; set +a
 This step is not required for normal OpenClaw skill execution.
 
 Telegram slash commands:
+
+Note: Telegram integration is handled by your OpenClaw gateway. This pack does not require a Telegram bot token; configure Telegram credentials at the gateway layer.
 
 ```text
 /propose_intent --fund-id <id> --intent-file <path> --execution-route-file <path>
@@ -114,15 +131,18 @@ Notes:
 - On first install, register these commands in Telegram via `@BotFather` -> `/setcommands`.
 
 OpenClaw note:
-- `install` / `bot-init` sync env keys into `~/.openclaw/openclaw.json` (`env.vars`) by default.
-- `bot-init` also runs `openclaw gateway restart` after a successful env sync, so the gateway picks up updates.
-- Use `--no-sync-openclaw-env` for file-only behavior, or `--no-restart-openclaw-gateway` to skip the restart.
-- If env still looks stale: run `openclaw gateway restart` and verify values in `/home/ubuntu/.openclaw/openclaw.json`.
+- `install` / `bot-init` can sync env keys into `~/.openclaw/openclaw.json` (`env.vars`).
+- `bot-init` may also run `openclaw gateway restart` so the gateway picks up updated env.
+- These are operational side effects. If you do not want files modified or services restarted, use:
+  - `--no-sync-openclaw-env` for file-only behavior
+  - `--no-restart-openclaw-gateway` to skip the restart (restart later manually if desired)
+- If env still looks stale: verify values in `/home/ubuntu/.openclaw/openclaw.json` and run `openclaw gateway restart` intentionally.
 
 Note:
 - The scaffold includes a temporary public key placeholder by default.
-- Always run `bot-init` before funding or running production actions.
-- `bot-init` generates a new wallet (private key + address) and writes it into the role env file.
+- Do not use the scaffold placeholder key for real funds.
+- If you are not using `bot-init`, you must still supply a real `STRATEGY_PRIVATE_KEY` + `STRATEGY_ADDRESS` (dedicated, least-privilege) before any production action.
+- `bot-init` generates a new wallet (private key + address) and writes it into the role env file; treat the generated private key as a secret.
 
 ## Relayer Bot Authentication (Signature)
 
