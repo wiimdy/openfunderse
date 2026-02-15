@@ -13,6 +13,7 @@
     "lint": "eslint . --ext .ts,.tsx",
     "factory:create-fund": "node scripts/factory-create-fund.mjs",
     "smoke:all-apis": "node scripts/smoke-all-apis.mjs",
+    "pretest": "npm --prefix ../sdk run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
