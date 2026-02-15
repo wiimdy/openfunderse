@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireBotAuth } from "@/lib/bot-auth";
-import { getFund, listFundBots, upsertFundBot } from "@/lib/supabase";
+import { getFund, listFundBots, upsertFundBot, upsertStakeWeight } from "@/lib/supabase";
 
 const ALLOWED_ROLES = new Set(["participant"]);
 
@@ -77,6 +77,14 @@ export async function POST(
     telegramHandle: body.telegramHandle ? String(body.telegramHandle) : null,
     registeredBy: botAuth.botId
   });
+
+  if (role === "participant" && botAddress) {
+    await upsertStakeWeight({
+      fundId,
+      participant: botAddress,
+      weight: BigInt(1)
+    });
+  }
 
   return NextResponse.json(
     {
