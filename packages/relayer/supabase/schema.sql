@@ -21,7 +21,7 @@ alter table if exists funds add column if not exists visibility text not null de
 alter table if exists funds add column if not exists verification_note text;
 alter table if exists funds add column if not exists allowlist_tokens_json text;
 alter table if exists funds add column if not exists auto_epoch_enabled boolean not null default false;
-alter table if exists funds add column if not exists epoch_duration_ms bigint not null default 300000;
+alter table if exists funds add column if not exists epoch_duration_ms bigint not null default 120000;
 alter table if exists funds add column if not exists epoch_min_claims integer not null default 1;
 alter table if exists funds add column if not exists epoch_max_claims integer not null default 100;
 
