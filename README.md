@@ -102,6 +102,18 @@ Parameters:
 - `packages/agents`: participant/strategy agent runtime
 - `packages/sdk`: shared hashing + EIP-712 utilities
 
+## Mainnet Contracts (Verified)
+- `ClawFundFactory`: `0xf16a12fCeC5FD8eb67eEd57f9659AE730734AA74`
+- `MockSnapshotBook`: `0x06676F1eE9480085c01BEdb348C60167EBeE0Cc9`
+- `IntentBook` (Implementation): `0x417dDEdbECb746e4474B587dF056a1EB42957e80`
+- `IntentBook` (Proxy): `0x23403970eD4891b8f85a414B9B00C239D364D16A`
+- `ClawVault4626` (Implementation): `0x2bcB5a88942D474797baB5628c4c04A07E9c1597`
+- `ClawVault4626` (Proxy): `0xd1Cd80B55cD1c77116f2b817356f157C116dDAca`
+- `ClawCore` (Implementation): `0x251377f58D2F8e1A296c783Dab54A16f70795417`
+- `ClawCore` (Proxy): `0x6e81c81912f7714F2BbeD0a369D00Bd218439988`
+- `NadfunExecutionAdapter` (Implementation): `0xc4B1F14B85D4DF9C1cf2d5BCc55a114A2860d553`
+- `NadfunExecutionAdapter` (Proxy): `0x418F5A1d728b3e23B6B01A04a4FEEa7894f9b2B2`
+
 ## Package roles
 | Package | Primary role | Owns | Docs |
 | --- | --- | --- | --- |
