@@ -17,3 +17,4 @@ chain_id = 10143
 
 [etherscan]
 monad_testnet = { key = "${SCAN_API_KEY}", chain = 10143, url = "https://testnet.monadscan.com/api" }
+monad_mainnet = { key = "${SCAN_API_KEY}", chain = 143, url = "https://api.monadscan.com/api" }
